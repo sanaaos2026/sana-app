@@ -184,7 +184,13 @@ async function completeTask(id){
   const res = await fetch(`/api/tasks/${id}/complete`, {method:'POST'});
   const json = await res.json();
   if(json.success){
-    showToast(json.data.new_asset_score !== null ? `تم إنجاز المهمة — ارتفع الأصل إلى ${json.data.new_asset_score}` : 'تم إنجاز المهمة');
+    const assets = json.data.updated_assets || [];
+    if(assets.length){
+      const parts = assets.map(a => `${a.asset_name} إلى ${a.new_score}`);
+      showToast(`تم إنجاز المهمة — ارتفعت: ${parts.join('، ')}`);
+    } else {
+      showToast('تم إنجاز المهمة');
+    }
   } else {
     showToast('تعذر إنجاز المهمة — قد تكون منجزة بالفعل');
   }

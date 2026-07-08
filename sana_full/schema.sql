@@ -97,3 +97,13 @@ CREATE TABLE tasks (
     FOREIGN KEY (company_id) REFERENCES companies(company_id),
     FOREIGN KEY (decision_id) REFERENCES decisions(decision_id)
 );
+
+CREATE TABLE decision_asset_impacts (
+    impact_id TEXT PRIMARY KEY,
+    decision_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
+    score_impact INTEGER NOT NULL,
+    is_primary INTEGER DEFAULT 0,
+    FOREIGN KEY (decision_id) REFERENCES decisions(decision_id),
+    FOREIGN KEY (asset_id) REFERENCES assets(asset_id)
+);

@@ -42,6 +42,18 @@ def init_db(force=False):
         with open(os.path.join(BASE_DIR, "schema.sql"), "r", encoding="utf-8") as f:
             conn.executescript(f.read())
         conn.commit()
+    else:
+        # قاعدة بيانات موجودة أصلاً — أضف الجدول الجديد فقط دون مسح أي بيانات حالية
+        conn.execute("""CREATE TABLE IF NOT EXISTS decision_asset_impacts (
+            impact_id TEXT PRIMARY KEY,
+            decision_id TEXT NOT NULL,
+            asset_id TEXT NOT NULL,
+            score_impact INTEGER NOT NULL,
+            is_primary INTEGER DEFAULT 0,
+            FOREIGN KEY (decision_id) REFERENCES decisions(decision_id),
+            FOREIGN KEY (asset_id) REFERENCES assets(asset_id)
+        )""")
+        conn.commit()
     conn.close()
     return fresh
 
@@ -106,6 +118,27 @@ def seed_db():
         ("TSK001", "C001", "D001", "كتابة أول مسودة SOP لعملية التعبئة",
          "U001", "2026-07-14", "قيد التنفيذ", "عالية"))
 
+    conn.commit()
+    conn.close()
+
+
+def seed_decision_impacts():
+    """يربط القرار D001 بعدة أصول دفعة واحدة — فقط إذا كان الجدول فارغًا."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM decision_asset_impacts")
+    if cur.fetchone()[0] > 0:
+        conn.close()
+        return  # already seeded
+
+    impacts = [
+        ("IMP001", "D001", "A001", 5, 1),
+        ("IMP002", "D001", "A002", 3, 0),
+        ("IMP003", "D001", "A005", 3, 0),
+    ]
+    cur.executemany("""INSERT INTO decision_asset_impacts
+        (impact_id, decision_id, asset_id, score_impact, is_primary)
+        VALUES (?,?,?,?,?)""", impacts)
     conn.commit()
     conn.close()
 
@@ -338,23 +371,57 @@ def complete_task(task_id):
     if cur.rowcount == 0:
         return jsonify({"success": False, "error": "TASK_ALREADY_COMPLETED"}), 409
 
-    new_score = None
     decision = None
     if task["decision_id"]:
         decision = db.execute(
             "SELECT * FROM decisions WHERE decision_id=?", (task["decision_id"],)
         ).fetchone()
 
-    if decision and decision["asset_id"]:
-        asset = db.execute(
-            "SELECT * FROM assets WHERE asset_id=?", (decision["asset_id"],)
-        ).fetchone()
-        if asset:
-            new_score = min(100, asset["current_score"] + 5)
-            db.execute(
-                "UPDATE assets SET current_score=? WHERE asset_id=?",
-                (new_score, asset["asset_id"])
-            )
+    updated_assets = []
+    if decision:
+        impacts = db.execute(
+            "SELECT * FROM decision_asset_impacts WHERE decision_id=? "
+            "ORDER BY is_primary DESC, impact_id ASC",
+            (decision["decision_id"],)
+        ).fetchall()
+
+        if impacts:
+            for impact in impacts:
+                asset = db.execute(
+                    "SELECT * FROM assets WHERE asset_id=?", (impact["asset_id"],)
+                ).fetchone()
+                if not asset:
+                    continue
+                new_score = min(100, asset["current_score"] + impact["score_impact"])
+                db.execute(
+                    "UPDATE assets SET current_score=? WHERE asset_id=?",
+                    (new_score, asset["asset_id"])
+                )
+                updated_assets.append({
+                    "asset_id": asset["asset_id"],
+                    "asset_name": asset["asset_name"],
+                    "previous_score": asset["current_score"],
+                    "new_score": new_score,
+                    "is_primary": bool(impact["is_primary"])
+                })
+        elif decision["asset_id"]:
+            # قرارات قديمة بلا سجلات تأثير — تحافظ على السلوك السابق (أصل واحد فقط)
+            asset = db.execute(
+                "SELECT * FROM assets WHERE asset_id=?", (decision["asset_id"],)
+            ).fetchone()
+            if asset:
+                new_score = min(100, asset["current_score"] + 5)
+                db.execute(
+                    "UPDATE assets SET current_score=? WHERE asset_id=?",
+                    (new_score, asset["asset_id"])
+                )
+                updated_assets.append({
+                    "asset_id": asset["asset_id"],
+                    "asset_name": asset["asset_name"],
+                    "previous_score": asset["current_score"],
+                    "new_score": new_score,
+                    "is_primary": True
+                })
 
     db.commit()
     return jsonify({
@@ -362,8 +429,10 @@ def complete_task(task_id):
         "data": {
             "task_id": task_id,
             "status": "منجزة",
-            "asset_id": decision["asset_id"] if decision else None,
-            "new_asset_score": new_score
+            "updated_assets": updated_assets,
+            # حقول متوافقة مع النسخة السابقة (أصل واحد) لتجنّب كسر أي مستهلك قديم
+            "asset_id": updated_assets[0]["asset_id"] if updated_assets else None,
+            "new_asset_score": updated_assets[0]["new_score"] if updated_assets else None
         }
     })
 
@@ -371,6 +440,7 @@ def complete_task(task_id):
 if __name__ == "__main__":
     fresh = init_db()
     seed_db()
+    seed_decision_impacts()
     print("=" * 60)
     print("سنع — الخادم يعمل الآن")
     print("افتح المتصفح على: http://localhost:5000")
