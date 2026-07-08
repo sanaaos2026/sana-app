@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F5F6FB">
+<title>سنع — القضية</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme: light; background:#F5F6FB; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{ background:#F5F6FB; color:#333940; font-family:'IBM Plex Sans Arabic', sans-serif; line-height:1.6; }
+  .num{ font-family:'Space Grotesk', sans-serif; }
+  a{ color:inherit; text-decoration:none; }
+
+  .concept-nav{ background:#080E1F; padding:10px 20px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
+  .concept-nav a.active{ background:rgba(242,178,51,0.15); color:#F2B233; font-weight:600; }
+
+  header{ background:#080E1F; padding:14px 28px; color:#fff; display:flex; align-items:center; gap:14px; }
+  .back{ font-size:12.5px; color:rgba(255,255,255,0.6); }
+  .case-title{ font-weight:600; font-size:15px; }
+  .tag{ background:rgba(242,178,51,0.15); color:#F2B233; font-size:11px; padding:3px 10px; border-radius:20px; }
+
+  main{ max-width:900px; margin:0 auto; padding:26px 20px 60px; }
+
+  .qbox{ background:#0B132B; color:#fff; border-radius:12px; padding:22px; margin-bottom:20px; }
+  .qbox .lbl{ font-size:11px; color:rgba(255,255,255,0.5); margin-bottom:6px; text-transform:uppercase; letter-spacing:1px; font-family:'Space Grotesk'; }
+  .qbox .declared{ font-size:13.5px; color:rgba(255,255,255,0.55); margin-bottom:14px; text-decoration:line-through; }
+  .qbox .real{ font-size:17px; font-weight:600; color:#F2B233; }
+
+  section{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:20px; margin-bottom:16px; }
+  section h2{ font-size:14.5px; font-weight:600; color:#0B132B; margin-bottom:12px; }
+
+  .evidence-item{ display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid #DEE1EC; font-size:13px; }
+  .evidence-item:last-child{ border-bottom:none; }
+  .evidence-item .dot{ width:6px; height:6px; border-radius:50%; background:#0EA5A5; margin-top:6px; flex-shrink:0; }
+  .evidence-item .conf-tag{ font-family:'Space Grotesk'; font-size:11px; color:#6E7580; }
+
+  .add-form{ display:flex; gap:8px; margin-top:12px; }
+  .add-form input{ flex:1; padding:9px 12px; border:1px solid #DEE1EC; border-radius:7px; font-family:'IBM Plex Sans Arabic'; font-size:13px; }
+  .add-form button{ padding:9px 16px; background:#0EA5A5; color:#fff; border:none; border-radius:7px; font-size:13px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans Arabic'; }
+
+  .decision-box{ border:1px solid #DEE1EC; border-radius:10px; padding:16px; background:#F5F6FB; }
+  .decision-box .t{ font-weight:600; color:#0B132B; margin-bottom:6px; }
+  .decision-box .r{ font-size:12.5px; color:#6E7580; margin-bottom:12px; }
+  .btn{ padding:9px 18px; border-radius:7px; font-size:13px; font-weight:600; cursor:pointer; border:none; font-family:'IBM Plex Sans Arabic'; }
+  .btn-primary{ background:#0B132B; color:#fff; }
+  .btn-primary:disabled{ opacity:0.5; }
+  .link-out{ display:inline-block; margin-top:10px; font-size:12.5px; color:#0EA5A5; font-weight:600; }
+  .skeleton{ color:#9AA0AB; font-size:13px; padding:40px 0; text-align:center; }
+  #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; }
+  #toast.show{ opacity:1; }
+</style>
+</head>
+<body>
+
+<div class="concept-nav">
+  <a href="/">① الدخول</a>
+  <a href="/home">② CEO Home</a>
+  <a href="/case/{{ case_id }}" class="active">③ القضية</a>
+  <a href="/passport">④ جواز الشركة</a>
+</div>
+
+<header>
+  <a href="/home" class="back">← الرئيسية</a>
+  <div class="case-title" id="caseTitle">...</div>
+  <span class="tag" id="caseType"></span>
+</header>
+
+<main id="app">
+  <div class="skeleton">يجمع سنع تفاصيل القضية...</div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const CASE_ID = "{{ case_id }}";
+
+async function loadCase(){
+  const res = await fetch(`/api/cases/${CASE_ID}`);
+  const json = await res.json();
+  if(!json.success){ document.getElementById('app').innerHTML = '<p>تعذر تحميل القضية</p>'; return; }
+  render(json.data);
+}
+
+function render(d){
+  const c = d.case;
+  document.getElementById('caseTitle').textContent = c.case_title;
+  document.getElementById('caseType').textContent = c.case_type || '';
+
+  let html = `
+    <div class="qbox">
+      <div class="lbl">Real Question</div>
+      <div class="declared">المشكلة كما وصفها المالك: "${c.declared_problem || ''}"</div>
+      <div class="real">السؤال الحقيقي: ${c.real_question || ''}</div>
+    </div>
+
+    <section>
+      <h2>الأدلة المرتبطة (${d.evidence.length})</h2>
+  `;
+  if(d.evidence.length === 0){ html += `<p style="color:#6E7580; font-size:13px;">لا توجد أدلة بعد.</p>`; }
+  d.evidence.forEach(e => {
+    html += `<div class="evidence-item"><span class="dot"></span><div>${e.title} <span class="conf-tag">— ${e.source_type}, ثقة ${e.confidence}٪</span></div></div>`;
+  });
+  html += `
+    <div class="add-form">
+      <input type="text" id="newEvidence" placeholder="أضف دليلًا جديدًا...">
+      <button onclick="addEvidence()">إضافة</button>
+    </div>
+  </section>`;
+
+  html += `<section><h2>القرارات الناتجة</h2>`;
+  if(d.decisions.length === 0){ html += `<p style="color:#6E7580; font-size:13px;">لا توجد قرارات بعد لهذه القضية.</p>`; }
+  d.decisions.forEach(dec => {
+    html += `
+      <div class="decision-box" style="margin-bottom:10px;">
+        <div class="t">${dec.title}</div>
+        <div class="r">${dec.reason || ''} — ثقة ${dec.confidence_score}٪</div>
+        <button class="btn btn-primary" onclick="approveDecision('${dec.decision_id}')" ${dec.status==='معتمد'?'disabled':''}>
+          ${dec.status==='معتمد' ? 'تم الاعتماد ✓' : 'اعتماد القرار'}
+        </button>
+      </div>`;
+  });
+  html += `<a href="/passport" class="link-out">← بعد تنفيذ القرارات، شاهد أثرها على قيمة الشركة الكاملة</a></section>`;
+
+  document.getElementById('app').innerHTML = html;
+}
+
+async function addEvidence(){
+  const input = document.getElementById('newEvidence');
+  const title = input.value.trim();
+  if(!title) return;
+  const res = await fetch(`/api/companies/C001/evidence`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({title, case_id: CASE_ID, source_type:'ملاحظة مباشرة', confidence:50})
+  });
+  const json = await res.json();
+  if(json.success){ showToast('تمت إضافة الدليل'); input.value=''; loadCase(); }
+}
+
+async function approveDecision(id){
+  const res = await fetch(`/api/decisions/${id}/approve`, {method:'POST'});
+  const json = await res.json();
+  if(json.success){ showToast('تم اعتماد القرار — أُنشئت مهمة تنفيذية تلقائيًا'); loadCase(); }
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+loadCase();
+</script>
+</body>
+</html>

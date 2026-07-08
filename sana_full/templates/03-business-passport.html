@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F5F6FB">
+<title>سنع — جواز سفر الشركة</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme: light; background:#F5F6FB; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{ background:#F5F6FB; color:#333940; font-family:'IBM Plex Sans Arabic', sans-serif; line-height:1.6; }
+  .num{ font-family:'Space Grotesk', sans-serif; }
+  a{ color:inherit; text-decoration:none; }
+
+  .concept-nav{ background:#080E1F; padding:10px 20px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
+  .concept-nav a.active{ background:rgba(242,178,51,0.15); color:#F2B233; font-weight:600; }
+
+  .cover{ background:#0B132B; color:#fff; padding:40px 28px 34px; text-align:center; }
+  .cover .name{ font-size:22px; font-weight:700; margin-bottom:4px; }
+  .cover .sub{ font-size:12.5px; color:rgba(255,255,255,0.5); margin-bottom:26px; }
+  .cover .value-row{ display:flex; justify-content:center; gap:40px; flex-wrap:wrap; }
+  .cover .vitem .label{ font-size:11px; color:rgba(255,255,255,0.5); margin-bottom:6px; }
+  .cover .vitem .val{ font-family:'Space Grotesk'; font-size:24px; font-weight:600; }
+  .cover .vitem.gold .val{ color:#F2B233; }
+  .cover .vitem.teal .val{ color:#0EA5A5; }
+
+  main{ max-width:900px; margin:0 auto; padding:26px 20px 60px; }
+  section{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:22px; margin-bottom:18px; }
+  section h2{ font-size:15px; font-weight:600; color:#0B132B; margin-bottom:14px; }
+
+  .gap-bar{ height:30px; border-radius:8px; background:#EBEDF5; position:relative; overflow:hidden; margin-bottom:10px; }
+  .gap-bar .fill{ position:absolute; top:0; right:0; height:100%; background:#0EA5A5; }
+  .gap-labels{ display:flex; justify-content:space-between; font-size:12px; color:#6E7580; }
+
+  .disclaimer{ font-size:11px; color:#9AA0AB; margin-top:10px; font-style:italic; }
+
+  .asset-row{ display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid #DEE1EC; font-size:13px; }
+  .asset-row:last-child{ border-bottom:none; }
+  .skeleton{ color:#9AA0AB; font-size:13px; padding:40px 0; text-align:center; }
+</style>
+</head>
+<body>
+
+<div class="concept-nav">
+  <a href="/">① الدخول</a>
+  <a href="/home">② CEO Home</a>
+  <a href="/case/CS001">③ القضية</a>
+  <a href="/passport" class="active">④ جواز الشركة</a>
+</div>
+
+<div id="app">
+  <div class="skeleton">يحسب سنع قيمة الشركة...</div>
+</div>
+
+<script>
+const COMPANY_ID = "C001";
+
+async function loadPassport(){
+  const res = await fetch(`/api/companies/${COMPANY_ID}/passport`);
+  const json = await res.json();
+  if(!json.success){ document.getElementById('app').innerHTML = '<p>تعذر تحميل الجواز</p>'; return; }
+  render(json.data, json.meta);
+}
+
+function render(d, meta){
+  const gapPct = Math.round((d.current_value / d.potential_value) * 100);
+
+  let html = `
+    <div class="cover">
+      <div class="name">${d.company.name}</div>
+      <div class="sub">جواز سفر الشركة · مُحدَّث الآن</div>
+      <div class="value-row">
+        <div class="vitem gold"><div class="label">القيمة الحالية</div><div class="val num">${(d.current_value/1000).toFixed(0)}<span style="font-size:13px;">ألف</span></div></div>
+        <div class="vitem teal"><div class="label">القيمة الممكنة</div><div class="val num">${(d.potential_value/1000).toFixed(0)}<span style="font-size:13px;">ألف</span></div></div>
+        <div class="vitem"><div class="label">درجة الجودة</div><div class="val num">${d.quality_score}<span style="font-size:13px;">/100</span></div></div>
+      </div>
+    </div>
+
+    <main>
+      <section>
+        <h2>فجوة القيمة</h2>
+        <div class="gap-bar"><div class="fill" style="width:${gapPct}%"></div></div>
+        <div class="gap-labels"><span>سنع: ${(d.current_value/1000).toFixed(0)} ألف</span><span>الممكن: ${(d.potential_value/1000).toFixed(0)} ألف</span></div>
+        <div class="disclaimer">${meta.disclaimer}</div>
+      </section>
+
+      <section>
+        <h2>الأصول (من الأضعف للأقوى)</h2>
+  `;
+  d.assets.slice().sort((a,b)=>a.current_score-b.current_score).forEach(a=>{
+    html += `<div class="asset-row"><span>${a.asset_name}</span><span class="num" style="font-weight:600;">${a.current_score}</span></div>`;
+  });
+  html += `</section>
+      <section style="text-align:center;">
+        <a href="/case/CS001" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح القضية المرتبطة به</a>
+      </section>
+    </main>
+  `;
+  document.getElementById('app').innerHTML = html;
+}
+
+loadPassport();
+</script>
+</body>
+</html>

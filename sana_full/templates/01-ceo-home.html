@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F5F6FB">
+<title>سنع — CEO Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme: light; background:#F5F6FB; }
+  :root{
+    --navy:#0B132B; --navy-deep:#080E1F; --teal:#0EA5A5; --teal-light:#E1F5F5;
+    --gold:#F2B233; --paper:#F5F6FB; --paper-warm:#EBEDF5; --ink:#333940; --slate:#6E7580;
+    --line:#DEE1EC; --red-risk:#B23A2E;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{ background:#F5F6FB; color:#333940; font-family:'IBM Plex Sans Arabic', sans-serif; line-height:1.6; }
+  .num{ font-family:'Space Grotesk', sans-serif; }
+  a{ color:inherit; text-decoration:none; }
+
+  .concept-nav{ background:#080E1F; padding:10px 20px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
+  .concept-nav a.active{ background:rgba(242,178,51,0.15); color:#F2B233; font-weight:600; }
+
+  header{ background:#080E1F; padding:16px 28px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.08); }
+  .brand{ display:flex; align-items:center; gap:10px; color:#fff; font-weight:600; }
+  .brand .mark{ width:26px; height:26px; }
+  .company-chip{ background:rgba(255,255,255,0.06); color:#fff; padding:5px 12px; border-radius:20px; font-size:12.5px; display:flex; align-items:center; gap:6px; }
+  .company-chip .dot{ width:6px; height:6px; border-radius:50%; background:#4CAF7D; }
+
+  .context-bar{ background:#fff; border-bottom:1px solid #DEE1EC; padding:10px 28px; display:flex; justify-content:space-between; font-size:12px; color:#6E7580; }
+  .state-badge{ background:#EBEDF5; padding:3px 10px; border-radius:20px; }
+
+  main{ max-width:1000px; margin:0 auto; padding:28px 20px 60px; }
+  .eyebrow{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#0EA5A5; font-weight:600; margin-bottom:12px; display:block; }
+  h1{ font-size:clamp(20px,3vw,28px); font-weight:600; color:#0B132B; margin-bottom:20px; }
+  h1 .hl{ color:#F2B233; }
+
+  .grid5{ display:grid; grid-template-columns:repeat(5,1fr); border:1px solid #DEE1EC; background:#fff; border-radius:10px; overflow:hidden; margin-bottom:28px; }
+  .cell{ padding:16px 14px; border-left:1px solid #DEE1EC; }
+  .cell:last-child{ border-left:none; }
+  .cell .label{ font-size:10.5px; color:#6E7580; margin-bottom:6px; }
+  .cell .val{ font-family:'Space Grotesk'; font-size:18px; font-weight:600; color:#0B132B; }
+  .cell.gold .val{ color:#F2B233; }
+  .cell.risk .val{ color:#B23A2E; font-size:13px; font-family:'IBM Plex Sans Arabic'; }
+  .cell.opp .val{ color:#0EA5A5; font-size:13px; font-family:'IBM Plex Sans Arabic'; }
+
+  section{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:22px; margin-bottom:18px; }
+  section h2{ font-size:15.5px; font-weight:600; color:#0B132B; margin-bottom:14px; }
+  .decision-title{ font-size:16px; font-weight:600; color:#0B132B; margin-bottom:6px; }
+  .decision-reason{ color:#6E7580; font-size:13px; margin-bottom:16px; }
+  .btn{ padding:10px 20px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; border:none; font-family:'IBM Plex Sans Arabic'; }
+  .btn-primary{ background:#0B132B; color:#fff; }
+  .btn-primary:disabled{ opacity:0.5; cursor:not-allowed; }
+  .asset-row{ display:grid; grid-template-columns:110px 1fr 40px; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid #DEE1EC; font-size:13px; }
+  .asset-row:last-child{ border-bottom:none; }
+  .bar{ height:6px; background:#EBEDF5; border-radius:4px; overflow:hidden; }
+  .bar span{ display:block; height:100%; }
+  .weak{ background:#B23A2E; } .mid{ background:#F2B233; } .strong{ background:#0EA5A5; }
+  .link-out{ display:inline-block; margin-top:10px; font-size:12.5px; color:#0EA5A5; font-weight:600; }
+  #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; }
+  #toast.show{ opacity:1; }
+  .skeleton{ color:#9AA0AB; font-size:13px; padding:20px 0; text-align:center; }
+</style>
+</head>
+<body>
+
+<div class="concept-nav">
+  <a href="/">① الدخول</a>
+  <a href="/home" class="active">② CEO Home</a>
+  <a href="/case/CS001">③ القضية</a>
+  <a href="/passport">④ جواز الشركة</a>
+</div>
+
+<header>
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 100 100"><path d="M78,32 L78,17 L19,17 L19,83 L78,83 L78,68" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="square"/><rect x="44" y="41" width="19" height="19" fill="#F2B233"/></svg>
+    سنع
+  </div>
+  <div class="company-chip"><span class="dot"></span> <span id="companyName">...</span></div>
+</header>
+
+<div class="context-bar">
+  <div>الرئيسية</div>
+  <div style="display:flex; gap:10px;">
+    <span class="state-badge">قيد التنفيذ</span>
+    <span class="state-badge">النضج: Level 2</span>
+  </div>
+</div>
+
+<main id="app">
+  <div class="skeleton">يجمع سنع بيانات الشركة...</div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const COMPANY_ID = "C001";
+
+function barClass(score){ if(score<40) return 'weak'; if(score<65) return 'mid'; return 'strong'; }
+
+async function loadData(){
+  const res = await fetch(`/api/companies/${COMPANY_ID}/summary`);
+  const json = await res.json();
+  if(!json.success){ document.getElementById('app').innerHTML = '<p>تعذر تحميل البيانات</p>'; return; }
+  render(json.data);
+}
+
+function render(d){
+  const c = d.company;
+  document.getElementById('companyName').textContent = `${c.name} — ${c.sector}`;
+  const topDecision = d.top_decision;
+
+  let html = `
+    <span class="eyebrow">الملخص التنفيذي</span>
+    <h1>أكبر فرصة اليوم في <span class="hl">${d.weakest_asset ? d.weakest_asset.asset_name : ''}</span>. قرار واحد ينتظر اعتمادك.</h1>
+
+    <div class="grid5">
+      <div class="cell gold"><div class="label">الدرجة</div><div class="val num">${d.quality_score}<span style="font-size:11px;">/100</span></div></div>
+      <div class="cell"><div class="label">الإيرادات</div><div class="val num">${(c.annual_revenue/1000).toFixed(0)}<span style="font-size:10px;">ألف</span></div></div>
+      <div class="cell risk"><div class="label">أهم خطر</div><div class="val">${d.weakest_asset ? d.weakest_asset.asset_name + ' ضعيف' : '—'}</div></div>
+      <div class="cell opp"><div class="label">أهم فرصة</div><div class="val">${topDecision ? topDecision.title : '—'}</div></div>
+      <div class="cell"><div class="label">قرارات مفتوحة</div><div class="val num">${d.open_decisions_count}</div></div>
+    </div>
+  `;
+
+  if(topDecision){
+    html += `
+    <section>
+      <h2>القرار المطلوب اليوم</h2>
+      <div class="decision-title">${topDecision.title}</div>
+      <div class="decision-reason">${topDecision.reason || ''}</div>
+      <button class="btn btn-primary" onclick="approveDecision('${topDecision.decision_id}')" ${topDecision.status==='معتمد'?'disabled':''}>
+        ${topDecision.status==='معتمد' ? 'تم الاعتماد ✓' : 'اعتماد القرار'}
+      </button>
+      <a href="/case/${topDecision.case_id}" class="link-out" style="display:block; margin-top:12px;">← افتح القضية الكاملة لرؤية التفاصيل والأدلة</a>
+    </section>`;
+  }
+
+  html += `<section><h2>خريطة الأصول</h2>`;
+  d.assets.forEach(a => {
+    html += `<div class="asset-row"><div>${a.asset_name}</div><div class="bar"><span class="${barClass(a.current_score)}" style="width:${a.current_score}%"></span></div><div class="num" style="text-align:left;">${a.current_score}</div></div>`;
+  });
+  html += `<a href="/passport" class="link-out">← شاهد كيف تتحول هذه الأصول إلى قيمة الشركة الكاملة (Business Passport)</a></section>`;
+
+  document.getElementById('app').innerHTML = html;
+}
+
+async function approveDecision(id){
+  const res = await fetch(`/api/decisions/${id}/approve`, {method:'POST'});
+  const json = await res.json();
+  if(json.success){ showToast('تم اعتماد القرار — أُنشئت مهمة تنفيذية تلقائيًا'); loadData(); }
+}
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+loadData();
+</script>
+</body>
+</html>

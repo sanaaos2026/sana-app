@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F5F6FB">
+<title>سنع — ما الذي تريد تحقيقه اليوم؟</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme: light; background:#F5F6FB; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{
+    background:#F5F6FB; color:#333940; font-family:'IBM Plex Sans Arabic', sans-serif;
+    min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:40px 20px; text-align:center;
+  }
+  .mark{ width:38px; height:38px; margin-bottom:20px; }
+  .eyebrow{ font-family:'Space Grotesk'; font-size:12px; letter-spacing:2px; text-transform:uppercase; color:#B8860B; font-weight:600; margin-bottom:18px; }
+  h1{ font-size:clamp(22px,4vw,30px); font-weight:600; margin-bottom:12px; max-width:600px; color:#0B132B; }
+  .sub{ color:#6E7580; font-size:14px; margin-bottom:40px; max-width:420px; }
+  .goals{ display:grid; grid-template-columns:repeat(2,1fr); gap:14px; max-width:640px; width:100%; }
+  .goal-card{
+    background:#fff; border:1px solid #DEE1EC;
+    border-radius:12px; padding:20px 16px; cursor:pointer; transition:all .15s;
+    text-decoration:none; color:#0B132B; display:flex; flex-direction:column; align-items:center; gap:10px;
+  }
+  .goal-card:hover{ border-color:#F2B233; box-shadow:0 6px 16px rgba(11,19,43,0.08); transform:translateY(-2px); }
+  .goal-card .ico{ width:34px; height:34px; border-radius:8px; background:#FCEFD2; display:flex; align-items:center; justify-content:center; }
+  .goal-card .ico span{ width:10px; height:10px; background:#F2B233; border-radius:2px; }
+  .goal-card .title{ font-size:14px; font-weight:600; }
+  .goal-card .desc{ font-size:11.5px; color:#6E7580; }
+  footer{ margin-top:44px; font-size:11.5px; color:#9AA0AB; }
+  .live-tag{ position:fixed; top:14px; left:14px; background:#E1F5F5; color:#0E7C7B; font-size:10.5px; padding:3px 10px; border-radius:20px; font-family:'Space Grotesk'; }
+  @media (max-width:600px){ .goals{ grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+  <span class="live-tag">● متصل بقاعدة بيانات حقيقية</span>
+
+  <svg class="mark" viewBox="0 0 100 100">
+    <path d="M78,32 L78,17 L19,17 L19,83 L78,83 L78,68" fill="none" stroke="#0B132B" stroke-width="9" stroke-linecap="square"/>
+    <rect x="44" y="41" width="19" height="19" fill="#F2B233"/>
+  </svg>
+
+  <span class="eyebrow">سنع · Sana</span>
+  <h1>ما الذي تريد تحقيقه اليوم؟</h1>
+  <p class="sub">اختر هدفًا واحدًا، وسنبني لك الطريق تلقائيًا — لا قوائم، لا تصفّح عشوائي.</p>
+
+  <div class="goals">
+    <a href="/case/CS001" class="goal-card">
+      <div class="ico"><span></span></div>
+      <div class="title">تشخيص شركتي</div>
+      <div class="desc">أفهم أين المشكلة الحقيقية</div>
+    </a>
+    <a href="/passport" class="goal-card">
+      <div class="ico"><span></span></div>
+      <div class="title">رفع قيمة الشركة</div>
+      <div class="desc">أعرف الفجوة وكيف أسدّها</div>
+    </a>
+    <a href="/passport" class="goal-card">
+      <div class="ico"><span></span></div>
+      <div class="title">تقييم الشركة</div>
+      <div class="desc">كم تساوي شركتي فعليًا؟</div>
+    </a>
+    <a href="/home" class="goal-card">
+      <div class="ico"><span></span></div>
+      <div class="title">استكشاف عام</div>
+      <div class="desc">أريد رؤية الصورة الكاملة أولاً</div>
+    </a>
+  </div>
+
+  <footer>سنع — نكتشف الفرص · نصنع النمو</footer>
+
+</body>
+</html>
