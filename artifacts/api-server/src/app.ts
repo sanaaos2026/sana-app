@@ -37,6 +37,28 @@ app.use(router);
 // proxy (which only knows how to route to registered artifact services).
 const SANA_FLASK_PORT = 5000;
 
+// Hop-by-hop headers must not be forwarded by a proxy (RFC 7230 §6.1).
+const HOP_BY_HOP_HEADERS = [
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+];
+
+function stripHopByHopHeaders(
+  headers: http.IncomingHttpHeaders,
+): http.IncomingHttpHeaders {
+  const cleaned = { ...headers };
+  for (const header of HOP_BY_HOP_HEADERS) {
+    delete cleaned[header];
+  }
+  return cleaned;
+}
+
 app.use((req, res) => {
   const proxyReq = http.request(
     {
@@ -44,10 +66,13 @@ app.use((req, res) => {
       port: SANA_FLASK_PORT,
       path: req.url,
       method: req.method,
-      headers: req.headers,
+      headers: stripHopByHopHeaders(req.headers),
     },
     (proxyRes) => {
-      res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
+      res.writeHead(
+        proxyRes.statusCode ?? 502,
+        stripHopByHopHeaders(proxyRes.headers),
+      );
       proxyRes.pipe(res, { end: true });
     },
   );
@@ -58,6 +83,14 @@ app.use((req, res) => {
       res.writeHead(502, { "content-type": "text/plain" });
     }
     res.end("Bad Gateway: could not reach the Sana Flask app.");
+  });
+
+  // If the client disconnects mid-request, stop waiting on the upstream
+  // Flask app instead of leaving the connection dangling.
+  res.on("close", () => {
+    if (!res.writableEnded) {
+      proxyReq.destroy();
+    }
   });
 
   req.pipe(proxyReq, { end: true });
