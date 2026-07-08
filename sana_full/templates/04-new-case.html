@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F5F6FB">
+<title>سنع — تشخيص جديد</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme: light; background:#F5F6FB; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{ background:#F5F6FB; color:#333940; font-family:'IBM Plex Sans Arabic', sans-serif; line-height:1.6; }
+  a{ color:inherit; text-decoration:none; }
+
+  .concept-nav{ background:#080E1F; padding:10px 20px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
+  .concept-nav a.active{ background:rgba(242,178,51,0.15); color:#F2B233; font-weight:600; }
+
+  header{ background:#080E1F; padding:14px 28px; color:#fff; display:flex; align-items:center; gap:14px; }
+  .back{ font-size:12.5px; color:rgba(255,255,255,0.6); }
+  .case-title{ font-weight:600; font-size:15px; }
+
+  main{ max-width:640px; margin:0 auto; padding:34px 20px 60px; }
+  .eyebrow{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#0EA5A5; font-weight:600; margin-bottom:12px; display:block; }
+  h1{ font-size:clamp(20px,3vw,26px); font-weight:600; color:#0B132B; margin-bottom:8px; }
+  .sub{ color:#6E7580; font-size:13.5px; margin-bottom:26px; }
+
+  section{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:22px; }
+  label{ display:block; font-size:12.5px; font-weight:600; color:#0B132B; margin-bottom:8px; }
+  .field{ margin-bottom:18px; }
+  input[type="text"], textarea{
+    width:100%; padding:11px 14px; border:1px solid #DEE1EC; border-radius:8px;
+    font-family:'IBM Plex Sans Arabic'; font-size:13.5px; color:#333940; background:#F5F6FB;
+  }
+  input[type="text"]:focus, textarea:focus{ outline:none; border-color:#0EA5A5; background:#fff; }
+  textarea{ resize:vertical; min-height:110px; }
+  .hint{ font-size:11.5px; color:#9AA0AB; margin-top:6px; }
+
+  .btn{ padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; border:none; font-family:'IBM Plex Sans Arabic'; }
+  .btn-primary{ background:#0B132B; color:#fff; width:100%; }
+  .btn-primary:disabled{ opacity:0.5; cursor:not-allowed; }
+  .error{ color:#B23A2E; font-size:12.5px; margin-top:10px; display:none; }
+  .error.show{ display:block; }
+</style>
+</head>
+<body>
+
+<div class="concept-nav">
+  <a href="/">① الدخول</a>
+  <a href="/home">② CEO Home</a>
+  <a href="/case/new" class="active">③ القضية</a>
+  <a href="/passport">④ جواز الشركة</a>
+</div>
+
+<header>
+  <a href="/home" class="back">← الرئيسية</a>
+  <div class="case-title">تشخيص جديد</div>
+</header>
+
+<main>
+  <span class="eyebrow">قضية جديدة</span>
+  <h1>ما المشكلة التي تريد تشخيصها؟</h1>
+  <p class="sub">صف المشكلة بكلماتك، وسيبني سنع قضية حقيقية حولها لتتبّع الأدلة والقرارات.</p>
+
+  <section>
+    <div class="field">
+      <label for="caseTitle">عنوان مختصر للقضية</label>
+      <input type="text" id="caseTitle" placeholder="مثال: تأخر تسليم الطلبات للعملاء">
+    </div>
+    <div class="field">
+      <label for="declaredProblem">صف المشكلة بكلماتك</label>
+      <textarea id="declaredProblem" placeholder="اشرح ما تلاحظه بشكل عملي، دون داعٍ للدقة الكاملة"></textarea>
+    </div>
+    <button class="btn btn-primary" id="submitBtn" onclick="openCase()">فتح القضية</button>
+    <div class="error" id="errorMsg">يرجى تعبئة الحقلين قبل فتح القضية.</div>
+  </section>
+</main>
+
+<script>
+const COMPANY_ID = "C001";
+
+async function openCase(){
+  const title = document.getElementById('caseTitle').value.trim();
+  const problem = document.getElementById('declaredProblem').value.trim();
+  const errorMsg = document.getElementById('errorMsg');
+  const btn = document.getElementById('submitBtn');
+
+  if(!title || !problem){
+    errorMsg.classList.add('show');
+    return;
+  }
+  errorMsg.classList.remove('show');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ فتح القضية...';
+
+  try{
+    const res = await fetch(`/api/companies/${COMPANY_ID}/cases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ case_title: title, declared_problem: problem })
+    });
+    const json = await res.json();
+    if(json.success){
+      window.location.href = `/case/${json.data.case_id}`;
+    } else {
+      errorMsg.textContent = 'تعذر فتح القضية، حاول مرة أخرى.';
+      errorMsg.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = 'فتح القضية';
+    }
+  } catch(e){
+    errorMsg.textContent = 'تعذر الاتصال بالخادم، حاول مرة أخرى.';
+    errorMsg.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'فتح القضية';
+  }
+}
+</script>
+
+</body>
+</html>

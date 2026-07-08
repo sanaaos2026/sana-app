@@ -157,6 +157,11 @@ def ceo_home():
     return render_template("01-ceo-home.html")
 
 
+@app.route("/case/new")
+def new_case():
+    return render_template("04-new-case.html")
+
+
 @app.route("/case/<case_id>")
 def case_workspace(case_id):
     return render_template("02-case-workspace.html", case_id=case_id)
