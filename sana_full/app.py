@@ -317,6 +317,57 @@ def add_evidence(company_id):
     return jsonify({"success": True, "data": {"evidence_id": evidence_id}}), 201
 
 
+# ------------------------------------------------------------------
+# API — Tasks (إنجاز المهمة = ترفع الأصل المرتبط بالقرار تلقائيًا)
+# ------------------------------------------------------------------
+
+@app.route("/api/tasks/<task_id>/complete", methods=["POST"])
+def complete_task(task_id):
+    db = get_db()
+    task = db.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+    if not task:
+        return jsonify({"success": False, "error": "TASK_NOT_FOUND"}), 404
+    if task["status"] == "منجزة":
+        return jsonify({"success": False, "error": "TASK_ALREADY_COMPLETED"}), 409
+
+    cur = db.execute(
+        "UPDATE tasks SET status='منجزة', completed_at=datetime('now') "
+        "WHERE task_id=? AND status != 'منجزة'",
+        (task_id,)
+    )
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "error": "TASK_ALREADY_COMPLETED"}), 409
+
+    new_score = None
+    decision = None
+    if task["decision_id"]:
+        decision = db.execute(
+            "SELECT * FROM decisions WHERE decision_id=?", (task["decision_id"],)
+        ).fetchone()
+
+    if decision and decision["asset_id"]:
+        asset = db.execute(
+            "SELECT * FROM assets WHERE asset_id=?", (decision["asset_id"],)
+        ).fetchone()
+        if asset:
+            new_score = min(100, asset["current_score"] + 5)
+            db.execute(
+                "UPDATE assets SET current_score=? WHERE asset_id=?",
+                (new_score, asset["asset_id"])
+            )
+
+    db.commit()
+    return jsonify({
+        "success": True,
+        "data": {
+            "task_id": task_id,
+            "status": "منجزة",
+            "asset_id": decision["asset_id"] if decision else None,
+            "new_asset_score": new_score
+        }
+    })
+
+
 if __name__ == "__main__":
     fresh = init_db()
     seed_db()

@@ -157,6 +157,20 @@ function render(d){
   });
   html += `<div class="decision-reason" style="margin-top:12px;">المسار الفاتح يمثل النقطة الأولى عند إنشاء قاعدة البيانات، والمسار الداكن هو الوضع الحالي.</div></section>`;
 
+  html += `<section><h2>المهام الحالية</h2>`;
+  if(d.tasks && d.tasks.length){
+    d.tasks.forEach(t => {
+      const done = t.status === 'منجزة';
+      html += `<div class="asset-row" style="grid-template-columns:1fr auto;">
+        <div>${t.title}${done ? ' <span style="color:#4CAF7D; font-size:12px;">— منجزة ✓</span>' : ''}</div>
+        <div style="text-align:left;">${done ? '' : `<button class="btn btn-primary" onclick="completeTask('${t.task_id}')">إنجاز المهمة</button>`}</div>
+      </div>`;
+    });
+  } else {
+    html += `<div class="decision-reason">لا توجد مهام حاليًا.</div>`;
+  }
+  html += `</section>`;
+
   document.getElementById('app').innerHTML = html;
 }
 
@@ -164,6 +178,17 @@ async function approveDecision(id){
   const res = await fetch(`/api/decisions/${id}/approve`, {method:'POST'});
   const json = await res.json();
   if(json.success){ showToast('تم اعتماد القرار — أُنشئت مهمة تنفيذية تلقائيًا'); loadData(); }
+}
+
+async function completeTask(id){
+  const res = await fetch(`/api/tasks/${id}/complete`, {method:'POST'});
+  const json = await res.json();
+  if(json.success){
+    showToast(json.data.new_asset_score !== null ? `تم إنجاز المهمة — ارتفع الأصل إلى ${json.data.new_asset_score}` : 'تم إنجاز المهمة');
+  } else {
+    showToast('تعذر إنجاز المهمة — قد تكون منجزة بالفعل');
+  }
+  loadData();
 }
 function showToast(msg){
   const t = document.getElementById('toast');
