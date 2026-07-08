@@ -145,6 +145,18 @@ function render(d){
   });
   html += `<a href="/passport" class="link-out">← شاهد كيف تتحول هذه الأصول إلى قيمة الشركة الكاملة (Business Passport)</a></section>`;
 
+  const baselineScores = { Knowledge: 18, Operations: 41, Brand: 72, Data: 65, Independence: 22 };
+  html += `<section><h2>التحسّن منذ البداية</h2>`;
+  d.assets.forEach(a => {
+    const baseline = baselineScores[a.asset_type];
+    if(baseline === undefined) return;
+    const diff = a.current_score - baseline;
+    const diffClass = diff > 0 ? 'opp' : (diff < 0 ? 'risk' : '');
+    const diffLabel = diff > 0 ? `+${diff}` : `${diff}`;
+    html += `<div class="asset-row"><div>${a.asset_name}</div><div class="bar" style="position:relative;"><span class="${barClass(baseline)}" style="position:absolute; top:0; right:0; height:100%; width:${baseline}%; opacity:0.35;"></span><span class="${barClass(a.current_score)}" style="position:absolute; top:0; right:0; height:100%; width:${a.current_score}%"></span></div><div class="num ${diffClass}" style="text-align:left;">${diffLabel}</div></div>`;
+  });
+  html += `<div class="decision-reason" style="margin-top:12px;">المسار الفاتح يمثل النقطة الأولى عند إنشاء قاعدة البيانات، والمسار الداكن هو الوضع الحالي.</div></section>`;
+
   document.getElementById('app').innerHTML = html;
 }
 
