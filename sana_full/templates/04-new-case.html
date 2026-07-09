@@ -22,21 +22,44 @@
   .back{ font-size:12.5px; color:rgba(255,255,255,0.6); }
   .case-title{ font-weight:600; font-size:15px; }
 
-  main{ max-width:640px; margin:0 auto; padding:34px 20px 60px; }
+  main{ max-width:680px; margin:0 auto; padding:34px 20px 60px; }
   .eyebrow{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#0EA5A5; font-weight:600; margin-bottom:12px; display:block; }
   h1{ font-size:clamp(20px,3vw,26px); font-weight:600; color:#0B132B; margin-bottom:8px; }
   .sub{ color:#6E7580; font-size:13.5px; margin-bottom:26px; }
 
-  section{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:22px; }
-  label{ display:block; font-size:12.5px; font-weight:600; color:#0B132B; margin-bottom:8px; }
+  section{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:22px; margin-bottom:16px; }
+  .step-num{ display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; background:#EBEDF5; color:#6E7580; font-size:11px; font-weight:600; font-family:'Space Grotesk'; margin-left:8px; }
+  label{ display:flex; align-items:center; font-size:12.5px; font-weight:600; color:#0B132B; margin-bottom:8px; }
   .field{ margin-bottom:18px; }
+  .field:last-child{ margin-bottom:0; }
   input[type="text"], textarea{
     width:100%; padding:11px 14px; border:1px solid #DEE1EC; border-radius:8px;
     font-family:'IBM Plex Sans Arabic'; font-size:13.5px; color:#333940; background:#F5F6FB;
   }
   input[type="text"]:focus, textarea:focus{ outline:none; border-color:#0EA5A5; background:#fff; }
-  textarea{ resize:vertical; min-height:110px; }
+  textarea{ resize:vertical; min-height:90px; }
   .hint{ font-size:11.5px; color:#9AA0AB; margin-top:6px; }
+  .suggestion-bar{ display:none; align-items:center; gap:8px; background:#F0FBF9; border:1px solid #A8DEDD; border-radius:8px; padding:9px 13px; margin-top:10px; font-size:12.5px; color:#0B132B; }
+  .suggestion-bar.visible{ display:flex; }
+  .suggestion-bar .icon{ font-size:15px; flex-shrink:0; }
+  .suggestion-bar strong{ font-weight:600; color:#0EA5A5; }
+
+  .asset-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:10px; }
+  .asset-card{
+    border:1.5px solid #DEE1EC; border-radius:10px; padding:12px; cursor:pointer;
+    text-align:right; background:#F5F6FB; transition:all .12s;
+  }
+  .asset-card:hover{ border-color:#F2B233; }
+  .asset-card.selected{ border-color:#0EA5A5; background:#E1F5F5; }
+  .asset-card .name{ font-size:12.5px; font-weight:600; color:#0B132B; margin-bottom:6px; }
+  .asset-card .score{ font-family:'Space Grotesk'; font-size:16px; font-weight:600; color:#0B132B; }
+  .asset-card .score-lbl{ font-size:10px; color:#6E7580; }
+  .asset-skeleton{ color:#9AA0AB; font-size:12.5px; padding:10px 0; }
+
+  .hypothesis-box{ background:#0B132B; color:#fff; border-radius:12px; padding:20px; margin-bottom:16px; }
+  .hypothesis-box .lbl{ font-size:11px; color:rgba(255,255,255,0.5); margin-bottom:8px; text-transform:uppercase; letter-spacing:1px; font-family:'Space Grotesk'; }
+  .hypothesis-box .q{ font-size:15.5px; font-weight:600; color:#F2B233; line-height:1.7; }
+  .hypothesis-box .q .ph{ color:rgba(255,255,255,0.4); }
 
   .btn{ padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; border:none; font-family:'IBM Plex Sans Arabic'; }
   .btn-primary{ background:#0B132B; color:#fff; width:100%; }
@@ -61,33 +84,154 @@
 
 <main>
   <span class="eyebrow">قضية جديدة</span>
-  <h1>ما المشكلة التي تريد تشخيصها؟</h1>
-  <p class="sub">صف المشكلة بكلماتك، وسيبني سنع قضية حقيقية حولها لتتبّع الأدلة والقرارات.</p>
+  <h1>لنبنِ فرضية قابلة للاختبار، لا حكمًا نهائيًا</h1>
+  <p class="sub">منهجية سنع تبدأ بالملاحظة، لا بالاستنتاج — كل خطوة تقرّبنا من السبب الحقيقي دون القفز إليه.</p>
+
+  <div class="hypothesis-box">
+    <div class="lbl">السؤال الحقيقي الذي سيُفتح به الملف</div>
+    <div class="q" id="hypothesisPreview">هل <span class="ph">"صف ما تلاحظه..."</span> فعلًا بسبب ضعف <span class="ph">الأصل الذي تختاره</span>، أم يوجد سبب آخر لم يُكتشف بعد؟</div>
+  </div>
 
   <section>
     <div class="field">
-      <label for="caseTitle">عنوان مختصر للقضية</label>
+      <label><span class="step-num">أ</span> ماذا تلاحظ فعليًا؟ (العرض لا السبب)</label>
+      <textarea id="observation" placeholder="مثال: تأخر تسليم الطلبات للعملاء خلال الأسبوعين الماضيين" oninput="onObservationInput()"></textarea>
+      <div class="hint">اكتب ما يحدث أمامك فعليًا، وليس تفسيرك الشخصي لسببه.</div>
+    </div>
+
+    <div class="field">
+      <label><span class="step-num">ب</span> أي أصل تظن أنه المتأثر؟</label>
+      <div class="asset-grid" id="assetGrid">
+        <div class="asset-skeleton">يجمع سنع أصول الشركة...</div>
+      </div>
+      <div class="suggestion-bar" id="suggestionBar">
+        <span class="icon">💡</span>
+        <span>اقتراح سنع: <strong id="suggestionLabel"></strong></span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label><span class="step-num">ج</span> ما الدليل الذي يجعلك تربط المشكلة بهذا الأصل؟</label>
+      <textarea id="supportingEvidence" placeholder="مثال: لا يوجد ملف SOP موثق لعملية الشحن، فاعتمدنا على شخص واحد"></textarea>
+      <div class="hint">اختياري — إن أدخلته سيُسجَّل فورًا كأول دليل في القضية.</div>
+    </div>
+
+    <div class="field">
+      <label><span class="step-num">د</span> عنوان مختصر للقضية</label>
       <input type="text" id="caseTitle" placeholder="مثال: تأخر تسليم الطلبات للعملاء">
     </div>
-    <div class="field">
-      <label for="declaredProblem">صف المشكلة بكلماتك</label>
-      <textarea id="declaredProblem" placeholder="اشرح ما تلاحظه بشكل عملي، دون داعٍ للدقة الكاملة"></textarea>
-    </div>
+
     <button class="btn btn-primary" id="submitBtn" onclick="openCase()">فتح القضية</button>
-    <div class="error" id="errorMsg">يرجى تعبئة الحقلين قبل فتح القضية.</div>
+    <div class="error" id="errorMsg"></div>
   </section>
 </main>
 
 <script>
 const COMPANY_ID = "C001";
+let selectedAssetId = null;
+let selectedAssetName = null;
+let assets = [];
+let userLockedChoice = false; // true بعد أي نقرة يدوية — يوقف التدخل التلقائي
+
+// محرك المطابقة: كلمات مفتاحية لكل نوع أصل
+const ASSET_KEYWORDS = {
+  Operations: ['تسليم','تأخر','تأخير','عملية','جودة','إنتاج','شحن','خدمة','عميل','مخزون','وقت','كفاءة','تنفيذ','إجراء','اجراء'],
+  Knowledge:  ['توثيق','sop','تدريب','تعليم','دليل','كتيب','وثيقة','معرفة','معلومة','موظف','استقالة','رحيل','نقل'],
+  Brand:      ['براند','ماركة','تسويق','سمعة','صورة','عملاء جدد','اكتساب','ولاء','انطباع','وسائل','سوشيال','اعلان','إعلان'],
+  Data:       ['بيانات','تقرير','تحليل','لوحة','مؤشر','kpi','قياس','رقم','احصاء','إحصاء','متابعة'],
+  Independence:['أنا فقط','وحدي','غياب','اعتماد','اعتمدنا','شخص واحد','لا يوجد غيري','فريد','لا أحد غيري']
+};
+
+function barClass(score){ if(score<40) return '#B23A2E'; if(score<65) return '#F2B233'; return '#0EA5A5'; }
+
+// يُعيد asset_type الأكثر تطابقًا مع النص (أو null إن لا تطابق)
+function suggestAssetType(text){
+  const lower = text.toLowerCase();
+  let best = null, bestCount = 0;
+  for(const [type, keywords] of Object.entries(ASSET_KEYWORDS)){
+    const count = keywords.filter(k => lower.includes(k)).length;
+    if(count > bestCount){ bestCount = count; best = type; }
+  }
+  return bestCount > 0 ? best : null;
+}
+
+async function loadAssets(){
+  const res = await fetch(`/api/companies/${COMPANY_ID}/summary`);
+  const json = await res.json();
+  const grid = document.getElementById('assetGrid');
+  if(!json.success || !json.data.assets.length){
+    grid.innerHTML = '<div class="asset-skeleton">تعذر تحميل الأصول.</div>';
+    return;
+  }
+  assets = json.data.assets;
+  grid.innerHTML = assets.map(a => `
+    <div class="asset-card" id="asset-${a.asset_id}" onclick="selectAsset('${a.asset_id}', true)">
+      <div class="name">${a.asset_name}</div>
+      <div class="score" style="color:${barClass(a.current_score)};">${a.current_score}</div>
+      <div class="score-lbl">الدرجة الحالية</div>
+    </div>
+  `).join('');
+  // إن كان المستخدم كتب قبل اكتمال التحميل، طبّق الاقتراح الآن
+  const earlyText = document.getElementById('observation').value.trim();
+  if(earlyText) runAutoSuggest(earlyText);
+}
+
+// byUser=true عند النقر اليدوي — يُقفل الاقتراح ويُخفيه
+function selectAsset(assetId, byUser){
+  selectedAssetId = assetId;
+  const asset = assets.find(a => a.asset_id === assetId);
+  selectedAssetName = asset ? asset.asset_name : null;
+  document.querySelectorAll('.asset-card').forEach(el => el.classList.remove('selected'));
+  document.getElementById(`asset-${assetId}`).classList.add('selected');
+  if(byUser){
+    userLockedChoice = true;
+    document.getElementById('suggestionBar').classList.remove('visible');
+  }
+  updatePreview();
+}
+
+function runAutoSuggest(observation){
+  if(userLockedChoice) return; // المستخدم اختار يدويًا — لا تتدخل
+  const suggestedType = suggestAssetType(observation);
+  const bar = document.getElementById('suggestionBar');
+  if(!suggestedType || !assets.length){
+    bar.classList.remove('visible');
+    return;
+  }
+  const match = assets.find(a => a.asset_type === suggestedType);
+  if(!match){ bar.classList.remove('visible'); return; }
+  // اختر تلقائيًا وأظهر الشريط
+  selectedAssetId = match.asset_id;
+  selectedAssetName = match.asset_name;
+  document.querySelectorAll('.asset-card').forEach(el => el.classList.remove('selected'));
+  document.getElementById(`asset-${match.asset_id}`).classList.add('selected');
+  document.getElementById('suggestionLabel').textContent = match.asset_name;
+  bar.classList.add('visible');
+}
+
+function updatePreview(){
+  const observation = document.getElementById('observation').value.trim();
+  const preview = document.getElementById('hypothesisPreview');
+  const obsText = observation ? `"${observation}"` : '<span class="ph">"صف ما تلاحظه..."</span>';
+  const assetText = selectedAssetName ? selectedAssetName : '<span class="ph">الأصل الذي تختاره</span>';
+  preview.innerHTML = `هل ${obsText} فعلًا بسبب ضعف ${assetText}، أم يوجد سبب آخر لم يُكتشف بعد؟`;
+}
+
+function onObservationInput(){
+  const observation = document.getElementById('observation').value.trim();
+  runAutoSuggest(observation);
+  updatePreview();
+}
 
 async function openCase(){
+  const observation = document.getElementById('observation').value.trim();
+  const supportingEvidence = document.getElementById('supportingEvidence').value.trim();
   const title = document.getElementById('caseTitle').value.trim();
-  const problem = document.getElementById('declaredProblem').value.trim();
   const errorMsg = document.getElementById('errorMsg');
   const btn = document.getElementById('submitBtn');
 
-  if(!title || !problem){
+  if(!observation || !selectedAssetId || !title){
+    errorMsg.textContent = 'يرجى وصف الملاحظة، واختيار الأصل المتأثر، وكتابة عنوان مختصر قبل فتح القضية.';
     errorMsg.classList.add('show');
     return;
   }
@@ -99,10 +243,15 @@ async function openCase(){
     const res = await fetch(`/api/companies/${COMPANY_ID}/cases`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ case_title: title, declared_problem: problem })
+      body: JSON.stringify({
+        case_title: title,
+        declared_problem: observation,
+        related_asset_id: selectedAssetId,
+        supporting_evidence: supportingEvidence
+      })
     });
     const json = await res.json();
-    if(json.success){
+    if(res.ok && json.success){
       window.location.href = `/case/${json.data.case_id}`;
     } else {
       errorMsg.textContent = 'تعذر فتح القضية، حاول مرة أخرى.';
@@ -117,6 +266,8 @@ async function openCase(){
     btn.textContent = 'فتح القضية';
   }
 }
+
+loadAssets();
 </script>
 
 </body>

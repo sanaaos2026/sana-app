@@ -328,11 +328,45 @@ def create_case(company_id):
     body = request.get_json(force=True)
     db = get_db()
     import uuid
+
+    observation = (body.get("declared_problem") or "").strip()
+    asset_id = body.get("related_asset_id")
+    supporting_evidence = (body.get("supporting_evidence") or "").strip()
+    case_title = (body.get("case_title") or "").strip()
+
+    if not observation or not case_title or not asset_id:
+        return jsonify({
+            "success": False,
+            "error": "MISSING_REQUIRED_FIELDS",
+            "message": "يلزم تحديد الملاحظة، والأصل المتأثر، وعنوان القضية."
+        }), 400
+
+    asset = db.execute(
+        "SELECT * FROM assets WHERE asset_id=? AND company_id=?", (asset_id, company_id)
+    ).fetchone()
+    if not asset:
+        return jsonify({"success": False, "error": "ASSET_NOT_FOUND"}), 400
+
+    # القانون الثاني: كل قضية تشخيصية تُصاغ كفرضية قابلة للاختبار، لا كحكم نهائي
+    asset_name = asset["asset_name"]
+    real_question = f'هل "{observation}" فعلًا بسبب ضعف {asset_name}، أم يوجد سبب آخر لم يُكتشف بعد؟'
+
     case_id = "CS" + uuid.uuid4().hex[:6].upper()
-    db.execute("""INSERT INTO cases (case_id, company_id, case_title, declared_problem, real_question, case_status)
-        VALUES (?,?,?,?,?, 'Open')""",
-        (case_id, company_id, body.get("case_title", "قضية جديدة"),
-         body.get("declared_problem", ""), body.get("real_question", "")))
+    db.execute("""INSERT INTO cases
+        (case_id, company_id, case_title, case_type, case_status, declared_problem, real_question,
+         related_asset_id, confidence_score)
+        VALUES (?,?,?,?,?,?,?,?,?)""",
+        (case_id, company_id, case_title, "Diagnostic Case", "Open",
+         observation, real_question, asset_id, 45))
+
+    if supporting_evidence:
+        evidence_id = "E" + uuid.uuid4().hex[:6].upper()
+        db.execute("""INSERT INTO evidence
+            (evidence_id, company_id, case_id, asset_id, title, source_type, confidence)
+            VALUES (?,?,?,?,?,?,?)""",
+            (evidence_id, company_id, case_id, asset_id,
+             supporting_evidence, "دليل تأسيسي", 50))
+
     db.commit()
     return jsonify({"success": True, "data": {"case_id": case_id}}), 201
 
@@ -367,6 +401,18 @@ def complete_task(task_id):
         return jsonify({"success": False, "error": "TASK_NOT_FOUND"}), 404
     if task["status"] == "منجزة":
         return jsonify({"success": False, "error": "TASK_ALREADY_COMPLETED"}), 409
+
+    # تحقق أن القرار المرتبط معتمد أو قيد التنفيذ قبل السماح بالإنجاز
+    if task["decision_id"]:
+        linked_decision = db.execute(
+            "SELECT status FROM decisions WHERE decision_id=?", (task["decision_id"],)
+        ).fetchone()
+        if linked_decision and linked_decision["status"] not in ("معتمد", "قيد التنفيذ"):
+            return jsonify({
+                "success": False,
+                "error": "DECISION_NOT_APPROVED",
+                "message": "لا يمكن إنجاز هذه المهمة قبل اعتماد القرار المرتبط بها أولاً. افتح القضية واعتمد القرار قبل التنفيذ."
+            }), 409
 
     cur = db.execute(
         "UPDATE tasks SET status='منجزة', completed_at=datetime('now') "
