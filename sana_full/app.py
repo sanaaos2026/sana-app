@@ -18,6 +18,16 @@ DB_PATH = os.path.join(BASE_DIR, "sana.db")
 app = Flask(__name__)
 
 
+@app.after_request
+def no_cache_html(response):
+    """منع أي تخزين مؤقت للصفحات — Safari على iOS يُطبّق heuristic caching إن لم يُوجَّه صراحةً"""
+    if "text/html" in response.content_type:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(DB_PATH)
