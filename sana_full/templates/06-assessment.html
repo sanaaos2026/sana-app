@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F5F6FB">
+<title>سنع — التقييم السريع</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme:light; background:#F5F6FB; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{ background:#F5F6FB; color:#333940; font-family:'IBM Plex Sans Arabic',sans-serif; line-height:1.6; }
+  a{ color:inherit; text-decoration:none; }
+
+  .concept-nav{ background:#080E1F; padding:10px 20px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
+  .concept-nav a.active{ background:rgba(242,178,51,0.15); color:#F2B233; font-weight:600; }
+
+  header{ background:#080E1F; padding:14px 28px; color:#fff; display:flex; align-items:center; gap:14px; }
+  .back{ font-size:12.5px; color:rgba(255,255,255,0.6); }
+  .page-title{ font-weight:600; font-size:15px; }
+
+  /* شريط الدرجات الحي — ثابت أعلى الصفحة */
+  .score-strip{
+    position:sticky; top:0; z-index:100;
+    background:#fff; border-bottom:1px solid #DEE1EC;
+    padding:10px 20px; display:flex; gap:10px;
+    justify-content:center; flex-wrap:wrap;
+  }
+  .score-pill{
+    display:flex; flex-direction:column; align-items:center;
+    background:#F5F6FB; border:1.5px solid #DEE1EC;
+    border-radius:10px; padding:6px 14px; min-width:90px;
+    transition:border-color .2s, background .2s;
+  }
+  .score-pill.active{ border-color:#0EA5A5; background:#E1F5F5; }
+  .score-pill .pill-name{ font-size:10px; color:#6E7580; margin-bottom:2px; }
+  .score-pill .pill-val{ font-family:'Space Grotesk'; font-size:18px; font-weight:700; color:#0B132B; }
+  .score-pill .pill-bar{ width:100%; height:4px; background:#EBEDF5; border-radius:2px; margin-top:4px; overflow:hidden; }
+  .score-pill .pill-fill{ height:100%; border-radius:2px; transition:width .3s; }
+
+  main{ max-width:680px; margin:0 auto; padding:28px 20px 60px; }
+  .eyebrow{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#0EA5A5; font-weight:600; margin-bottom:12px; display:block; }
+  h1{ font-size:clamp(20px,3vw,26px); font-weight:600; color:#0B132B; margin-bottom:8px; }
+  .sub{ color:#6E7580; font-size:13.5px; margin-bottom:28px; }
+
+  .progress-row{ display:flex; align-items:center; gap:12px; margin-bottom:24px; }
+  .progress-track{ flex:1; height:6px; background:#EBEDF5; border-radius:4px; overflow:hidden; }
+  .progress-fill{ height:100%; background:#0EA5A5; border-radius:4px; transition:width .3s; }
+  .progress-label{ font-family:'Space Grotesk'; font-size:12px; color:#6E7580; white-space:nowrap; }
+
+  .asset-group{ margin-bottom:8px; }
+  .asset-header{ display:flex; align-items:center; gap:10px; padding:12px 0 8px; }
+  .asset-badge{ font-family:'Space Grotesk'; font-size:10px; font-weight:600; letter-spacing:1.5px; text-transform:uppercase; color:#0EA5A5; background:#E1F5F5; padding:3px 10px; border-radius:20px; }
+
+  .q-card{
+    background:#fff; border:1.5px solid #DEE1EC; border-radius:12px;
+    padding:18px 20px; margin-bottom:10px; transition:border-color .2s;
+  }
+  .q-card.answered{ border-color:#A8DEDD; }
+  .q-text{ font-size:14px; font-weight:500; color:#0B132B; margin-bottom:14px; }
+  .q-num{ font-family:'Space Grotesk'; font-size:11px; color:#9AA0AB; margin-bottom:6px; }
+  .choices{ display:flex; gap:8px; }
+  .choice{
+    flex:1; padding:9px 6px; border:1.5px solid #DEE1EC; border-radius:8px;
+    text-align:center; font-size:12.5px; font-weight:600; cursor:pointer;
+    background:#F5F6FB; color:#6E7580; transition:all .15s; user-select:none;
+  }
+  .choice:hover{ border-color:#0EA5A5; color:#0B132B; }
+  .choice.sel-yes{ background:#E1F5F5; border-color:#0EA5A5; color:#0B132B; }
+  .choice.sel-partial{ background:#FFF8E6; border-color:#F2B233; color:#7A5C00; }
+  .choice.sel-no{ background:#FDECEA; border-color:#B23A2E; color:#8B0000; }
+
+  /* قسم النتيجة */
+  .result-section{ display:none; }
+  .result-section.visible{ display:block; }
+  .result-card{ background:#0B132B; color:#fff; border-radius:12px; padding:24px; margin-bottom:16px; }
+  .result-card .rc-title{ font-size:11px; color:rgba(255,255,255,0.5); text-transform:uppercase; letter-spacing:1px; font-family:'Space Grotesk'; margin-bottom:16px; }
+  .result-row{ display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.08); }
+  .result-row:last-child{ border-bottom:none; }
+  .rr-name{ font-size:13px; font-weight:600; flex:1; }
+  .rr-score{ font-family:'Space Grotesk'; font-size:18px; font-weight:700; }
+  .rr-tag{ font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; white-space:nowrap; }
+  .tag-strong{ background:rgba(14,165,165,0.2); color:#0EA5A5; }
+  .tag-mid{ background:rgba(242,178,51,0.2); color:#F2B233; }
+  .tag-weak{ background:rgba(178,58,46,0.2); color:#F47C72; }
+
+  .btn{ padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; border:none; font-family:'IBM Plex Sans Arabic'; }
+  .btn-primary{ background:#0B132B; color:#fff; width:100%; margin-bottom:10px; }
+  .btn-primary:disabled{ opacity:0.5; cursor:not-allowed; }
+  .btn-secondary{ background:#EBEDF5; color:#0B132B; width:100%; }
+
+  .show-result-wrap{ display:none; text-align:center; margin:24px 0 10px; }
+  .show-result-wrap.visible{ display:block; }
+
+  .status-bar{ display:none; align-items:center; gap:8px; background:#E1F5F5; border:1px solid #A8DEDD; border-radius:8px; padding:10px 14px; font-size:12.5px; color:#0B132B; margin-top:10px; }
+  .status-bar.visible{ display:flex; }
+  .status-bar.err{ background:#FDECEA; border-color:#F5BFBB; color:#8B0000; }
+
+  #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; z-index:999; }
+  #toast.show{ opacity:1; }
+</style>
+</head>
+<body>
+
+<div class="concept-nav">
+  <a href="/">① الدخول</a>
+  <a href="/home">② CEO Home</a>
+  <a href="/case/CS001">③ القضية</a>
+  <a href="/passport">④ جواز الشركة</a>
+  <a href="/assessment" class="active">📊 تقييم</a>
+</div>
+
+<header>
+  <a href="/home" class="back">← الرئيسية</a>
+  <div class="page-title">التقييم السريع</div>
+</header>
+
+<!-- شريط الدرجات الثابت -->
+<div class="score-strip" id="scoreStrip">
+  <div class="score-pill" id="pill-A001">
+    <div class="pill-name">المعرفة</div>
+    <div class="pill-val" id="pv-A001">0</div>
+    <div class="pill-bar"><div class="pill-fill" id="pf-A001" style="width:0%;background:#B23A2E;"></div></div>
+  </div>
+  <div class="score-pill" id="pill-A002">
+    <div class="pill-name">التشغيل</div>
+    <div class="pill-val" id="pv-A002">0</div>
+    <div class="pill-bar"><div class="pill-fill" id="pf-A002" style="width:0%;background:#B23A2E;"></div></div>
+  </div>
+  <div class="score-pill" id="pill-A003">
+    <div class="pill-name">البراند</div>
+    <div class="pill-val" id="pv-A003">0</div>
+    <div class="pill-bar"><div class="pill-fill" id="pf-A003" style="width:0%;background:#B23A2E;"></div></div>
+  </div>
+  <div class="score-pill" id="pill-A004">
+    <div class="pill-name">البيانات</div>
+    <div class="pill-val" id="pv-A004">0</div>
+    <div class="pill-bar"><div class="pill-fill" id="pf-A004" style="width:0%;background:#B23A2E;"></div></div>
+  </div>
+  <div class="score-pill" id="pill-A005">
+    <div class="pill-name">الاستقلال</div>
+    <div class="pill-val" id="pv-A005">0</div>
+    <div class="pill-bar"><div class="pill-fill" id="pf-A005" style="width:0%;background:#B23A2E;"></div></div>
+  </div>
+</div>
+
+<main>
+  <span class="eyebrow">تقييم الأصول الخمسة</span>
+  <h1>اكتشف أين تقف الشركة الآن</h1>
+  <p class="sub">أجب بصدق — كل إجابة تبني صورة حقيقية تساعد سنع على توجيهك للفرصة الأعلى أثرًا.</p>
+
+  <div class="progress-row">
+    <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    <div class="progress-label" id="progressLabel">0 / 10</div>
+  </div>
+
+  <div id="questionsWrap"></div>
+
+  <div class="show-result-wrap" id="showResultWrap">
+    <button class="btn btn-primary" onclick="showResult()">عرض النتيجة الكاملة ←</button>
+  </div>
+
+  <div class="result-section" id="resultSection">
+    <div class="result-card">
+      <div class="rc-title">تقييم سنع — ملخص الأصول</div>
+      <div id="resultRows"></div>
+    </div>
+    <button class="btn btn-secondary" id="saveBtn" onclick="saveEvidence()">احفظ كأدلة حقيقية في ملف الشركة</button>
+    <div class="status-bar" id="statusBar">
+      <span id="statusIcon"></span>
+      <span id="statusMsg"></span>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const COMPANY_ID = "C001";
+const CASE_ID    = "CS001";
+
+// تعريف الأسئلة العشرة — سؤالان لكل أصل
+const QUESTIONS = [
+  { id:"q1",  assetId:"A001", assetName:"المعرفة",    text:"هل يوجد توثيق مكتوب للعمليات الأساسية في الشركة (SOPs أو أدلة تشغيل)؟" },
+  { id:"q2",  assetId:"A001", assetName:"المعرفة",    text:"هل يستطيع موظف جديد تعلّم مهامه الأساسية بدون تدخل شخصي منك؟" },
+  { id:"q3",  assetId:"A002", assetName:"التشغيل",    text:"هل تُسلَّم الطلبات أو الخدمات في الوقت المحدد بشكل منتظم؟" },
+  { id:"q4",  assetId:"A002", assetName:"التشغيل",    text:"هل يوجد معيار موثق وواضح لقبول جودة التنفيذ؟" },
+  { id:"q5",  assetId:"A003", assetName:"البراند",    text:"هل يفهم عميل جديد ما تقدمه شركتك خلال 30 ثانية من زيارة قنواتك؟" },
+  { id:"q6",  assetId:"A003", assetName:"البراند",    text:"هل تحصل الشركة على عملاء جدد بانتظام من قنوات تسويقية محددة ومعروفة؟" },
+  { id:"q7",  assetId:"A004", assetName:"البيانات",   text:"هل تعرف إيراداتك وتكاليفك الأساسية بدقة الآن دون الحاجة لسؤال أحد؟" },
+  { id:"q8",  assetId:"A004", assetName:"البيانات",   text:"هل تستخدم مؤشرات أداء (KPIs) محددة لاتخاذ قراراتك الأسبوعية؟" },
+  { id:"q9",  assetId:"A005", assetName:"الاستقلال",  text:"هل تستطيع الشركة العمل أسبوعًا كاملاً بدون تدخل مباشر منك؟" },
+  { id:"q10", assetId:"A005", assetName:"الاستقلال",  text:"هل يوجد أكثر من شخص واحد يستطيع اتخاذ القرارات اليومية بثقة؟" },
+];
+
+// نقاط كل خيار (من 0 إلى 10، بما يجعل أقصى درجة لأصل = 20)
+const SCORE_MAP = { yes: 10, partial: 5, no: 0 };
+// ثقة الدليل بناءً على الإجابة
+const CONF_MAP  = { yes: 90, partial: 60, no: 30 };
+
+const answers = {}; // { qId: 'yes'|'partial'|'no' }
+
+// ── بناء DOM ──────────────────────────────────────────────
+function buildQuestions(){
+  const wrap = document.getElementById('questionsWrap');
+  const groups = {};
+  QUESTIONS.forEach(q => {
+    if(!groups[q.assetId]) groups[q.assetId] = { name: q.assetName, qs: [] };
+    groups[q.assetId].qs.push(q);
+  });
+  let html = '';
+  let num = 1;
+  Object.entries(groups).forEach(([assetId, g]) => {
+    html += `<div class="asset-group">
+      <div class="asset-header">
+        <div class="asset-badge">${g.name}</div>
+      </div>`;
+    g.qs.forEach(q => {
+      html += `<div class="q-card" id="card-${q.id}">
+        <div class="q-num">السؤال ${num} من 10</div>
+        <div class="q-text">${q.text}</div>
+        <div class="choices">
+          <div class="choice" id="${q.id}-yes"     onclick="answer('${q.id}','yes'    )">✓ نعم</div>
+          <div class="choice" id="${q.id}-partial" onclick="answer('${q.id}','partial')">◑ جزئيًا</div>
+          <div class="choice" id="${q.id}-no"      onclick="answer('${q.id}','no'     )">✗ لا</div>
+        </div>
+      </div>`;
+      num++;
+    });
+    html += `</div>`;
+  });
+  wrap.innerHTML = html;
+}
+
+// ── تسجيل إجابة ──────────────────────────────────────────
+function answer(qId, choice){
+  answers[qId] = choice;
+
+  // تحديث مظهر الأزرار
+  ['yes','partial','no'].forEach(c => {
+    const el = document.getElementById(`${qId}-${c}`);
+    el.classList.remove('sel-yes','sel-partial','sel-no');
+  });
+  document.getElementById(`${qId}-${choice}`).classList.add(`sel-${choice}`);
+  document.getElementById(`card-${qId}`).classList.add('answered');
+
+  updateScoreStrip();
+  updateProgress();
+}
+
+// ── تحديث شريط الدرجات ───────────────────────────────────
+function scoreForAsset(assetId){
+  return QUESTIONS
+    .filter(q => q.assetId === assetId)
+    .reduce((sum, q) => sum + (answers[q.id] ? SCORE_MAP[answers[q.id]] : 0), 0);
+}
+
+function fillColor(score){
+  if(score < 8)  return '#B23A2E';
+  if(score < 15) return '#F2B233';
+  return '#0EA5A5';
+}
+
+function updateScoreStrip(){
+  ['A001','A002','A003','A004','A005'].forEach(id => {
+    const score = scoreForAsset(id);
+    const pct   = (score / 20) * 100;
+    document.getElementById(`pv-${id}`).textContent = score;
+    const fill = document.getElementById(`pf-${id}`);
+    fill.style.width   = pct + '%';
+    fill.style.background = fillColor(score);
+    // أضئ الـ pill إن كان هذا الأصل يُجاب عليه الآن
+    const active = QUESTIONS.filter(q => q.assetId === id).some(q => answers[q.id]);
+    document.getElementById(`pill-${id}`).classList.toggle('active', active);
+  });
+}
+
+// ── شريط التقدم ──────────────────────────────────────────
+function updateProgress(){
+  const done = Object.keys(answers).length;
+  document.getElementById('progressFill').style.width = (done / 10 * 100) + '%';
+  document.getElementById('progressLabel').textContent = `${done} / 10`;
+  // إظهار زر النتيجة بعد اكتمال الإجابات
+  document.getElementById('showResultWrap').classList.toggle('visible', done === 10);
+}
+
+// ── عرض النتيجة الكاملة ──────────────────────────────────
+function levelTag(score){
+  if(score < 8)  return { label:'ضعيف',   cls:'tag-weak' };
+  if(score < 15) return { label:'متوسط',  cls:'tag-mid' };
+  return               { label:'قوي',    cls:'tag-strong' };
+}
+
+function showResult(){
+  const assets = [
+    { id:'A001', name:'المعرفة' },
+    { id:'A002', name:'التشغيل' },
+    { id:'A003', name:'البراند' },
+    { id:'A004', name:'البيانات' },
+    { id:'A005', name:'الاستقلال' },
+  ];
+  let html = '';
+  assets.forEach(a => {
+    const score = scoreForAsset(a.id);
+    const { label, cls } = levelTag(score);
+    const color = fillColor(score);
+    html += `<div class="result-row">
+      <div class="rr-name">${a.name}</div>
+      <div class="rr-score" style="color:${color};">${score}<span style="font-size:11px;color:rgba(255,255,255,0.4);">/20</span></div>
+      <div class="rr-tag ${cls}">${label}</div>
+    </div>`;
+  });
+  document.getElementById('resultRows').innerHTML = html;
+  document.getElementById('resultSection').classList.add('visible');
+  document.getElementById('showResultWrap').classList.remove('visible');
+  document.getElementById('resultSection').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+// ── حفظ كأدلة ────────────────────────────────────────────
+async function saveEvidence(){
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ الحفظ...';
+
+  const labelMap = { yes:'نعم', partial:'جزئيًا', no:'لا' };
+  let saved = 0, failed = 0;
+
+  for(const q of QUESTIONS){
+    const choice = answers[q.id];
+    if(!choice) continue;
+    const title = `${q.text} — الإجابة: ${labelMap[choice]}`;
+    try{
+      const res = await fetch(`/api/companies/${COMPANY_ID}/evidence`, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          title,
+          case_id:     CASE_ID,
+          asset_id:    q.assetId,
+          source_type: 'تقييم سريع',
+          confidence:  CONF_MAP[choice]
+        })
+      });
+      const json = await res.json();
+      if(res.ok && json.success) saved++;
+      else failed++;
+    } catch(e){ failed++; }
+  }
+
+  const bar = document.getElementById('statusBar');
+  bar.classList.remove('err');
+  if(failed === 0){
+    document.getElementById('statusIcon').textContent = '✓';
+    document.getElementById('statusMsg').textContent  = `حُفظت ${saved} أدلة في ملف الشركة بنجاح.`;
+    showToast('تم حفظ الأدلة في ملف القضية');
+  } else {
+    bar.classList.add('err');
+    document.getElementById('statusIcon').textContent = '⚠️';
+    document.getElementById('statusMsg').textContent  = `حُفظ ${saved} وفشل ${failed} — حاول مجددًا.`;
+  }
+  bar.classList.add('visible');
+  btn.disabled = false;
+  btn.textContent = 'احفظ كأدلة حقيقية في ملف الشركة';
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+buildQuestions();
+</script>
+</body>
+</html>

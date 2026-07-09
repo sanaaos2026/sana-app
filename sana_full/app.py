@@ -182,6 +182,11 @@ def sop_builder():
     return render_template("05-sop-builder.html")
 
 
+@app.route("/assessment")
+def assessment():
+    return render_template("06-assessment.html")
+
+
 @app.route("/passport")
 def business_passport():
     return render_template("03-business-passport.html")
