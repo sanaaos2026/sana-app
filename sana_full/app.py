@@ -167,6 +167,11 @@ def case_workspace(case_id):
     return render_template("02-case-workspace.html", case_id=case_id)
 
 
+@app.route("/sop-builder")
+def sop_builder():
+    return render_template("05-sop-builder.html")
+
+
 @app.route("/passport")
 def business_passport():
     return render_template("03-business-passport.html")

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F5F6FB">
+<title>سنع — بناء SOP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme:light; background:#F5F6FB; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{ background:#F5F6FB; color:#333940; font-family:'IBM Plex Sans Arabic',sans-serif; line-height:1.6; }
+  a{ color:inherit; text-decoration:none; }
+
+  .concept-nav{ background:#080E1F; padding:10px 20px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
+  .concept-nav a.active{ background:rgba(242,178,51,0.15); color:#F2B233; font-weight:600; }
+
+  header{ background:#080E1F; padding:14px 28px; color:#fff; display:flex; align-items:center; gap:14px; }
+  .back{ font-size:12.5px; color:rgba(255,255,255,0.6); }
+  .page-title{ font-weight:600; font-size:15px; }
+
+  main{ max-width:700px; margin:0 auto; padding:34px 20px 60px; }
+  .eyebrow{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#0EA5A5; font-weight:600; margin-bottom:12px; display:block; }
+  h1{ font-size:clamp(20px,3vw,26px); font-weight:600; color:#0B132B; margin-bottom:8px; }
+  .sub{ color:#6E7580; font-size:13.5px; margin-bottom:28px; }
+
+  .form-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:24px; margin-bottom:16px; }
+  .field{ margin-bottom:20px; }
+  .field:last-child{ margin-bottom:0; }
+  label{ display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; color:#0B132B; margin-bottom:8px; }
+  .step-num{ display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; background:#EBEDF5; color:#6E7580; font-size:11px; font-weight:600; font-family:'Space Grotesk'; flex-shrink:0; }
+  input[type="text"], textarea{
+    width:100%; padding:11px 14px; border:1px solid #DEE1EC; border-radius:8px;
+    font-family:'IBM Plex Sans Arabic'; font-size:13.5px; color:#333940; background:#F5F6FB;
+  }
+  input[type="text"]:focus, textarea:focus{ outline:none; border-color:#0EA5A5; background:#fff; }
+  textarea{ resize:vertical; }
+  textarea.sm{ min-height:72px; }
+  textarea.lg{ min-height:140px; }
+
+  .btn{ padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; border:none; font-family:'IBM Plex Sans Arabic'; }
+  .btn-primary{ background:#0B132B; color:#fff; }
+  .btn-primary:disabled{ opacity:0.5; cursor:not-allowed; }
+  .btn-secondary{ background:#EBEDF5; color:#0B132B; }
+  .btn-row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+
+  .output-card{ background:#0B132B; color:#fff; border-radius:12px; padding:24px; margin-bottom:16px; display:none; }
+  .output-card.visible{ display:block; }
+  .output-card .out-label{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:rgba(255,255,255,0.45); margin-bottom:14px; }
+  .output-card pre{ font-family:'IBM Plex Sans Arabic',sans-serif; font-size:13px; white-space:pre-wrap; word-break:break-word; line-height:1.9; color:#E8EAF0; }
+
+  .status-bar{ display:none; align-items:center; gap:8px; background:#E1F5F5; border:1px solid #A8DEDD; border-radius:8px; padding:10px 14px; font-size:12.5px; color:#0B132B; margin-top:12px; }
+  .status-bar.visible{ display:flex; }
+  .status-bar.err{ background:#FDECEA; border-color:#F5BFBB; color:#8B0000; }
+  .status-bar .icon{ font-size:15px; flex-shrink:0; }
+
+  #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; z-index:999; }
+  #toast.show{ opacity:1; }
+</style>
+</head>
+<body>
+
+<div class="concept-nav">
+  <a href="/">① الدخول</a>
+  <a href="/home">② CEO Home</a>
+  <a href="/case/CS001">③ القضية</a>
+  <a href="/passport">④ جواز الشركة</a>
+  <a href="/sop-builder" class="active">📄 SOP</a>
+</div>
+
+<header>
+  <a href="/home" class="back">← الرئيسية</a>
+  <div class="page-title">بناء SOP</div>
+</header>
+
+<main>
+  <span class="eyebrow">توثيق العمليات</span>
+  <h1>حوّل ما يعرفه الفريق إلى وثيقة يمكن تكرارها</h1>
+  <p class="sub">أجب على التسعة أسئلة وسيُولّد سنع وثيقة SOP جاهزة تُحفظ تلقائيًا كدليل داعم في ملف الشركة.</p>
+
+  <div class="form-card">
+    <div class="field">
+      <label><span class="step-num">١</span> اسم العملية</label>
+      <input type="text" id="q1" placeholder="مثال: عملية تسليم طلبات العملاء">
+    </div>
+    <div class="field">
+      <label><span class="step-num">٢</span> لماذا هذه العملية مهمة؟</label>
+      <textarea class="sm" id="q2" placeholder="مثال: تضمن وصول المنتج للعميل في الوقت المحدد وتقليل الشكاوى"></textarea>
+    </div>
+    <div class="field">
+      <label><span class="step-num">٣</span> من المسؤول عن تنفيذها؟</label>
+      <input type="text" id="q3" placeholder="مثال: مدير العمليات / فريق اللوجستيات">
+    </div>
+    <div class="field">
+      <label><span class="step-num">٤</span> متى ودورية التنفيذ؟</label>
+      <input type="text" id="q4" placeholder="مثال: عند كل طلب جديد — خلال 24 ساعة من الاستلام">
+    </div>
+    <div class="field">
+      <label><span class="step-num">٥</span> الخطوات بالترتيب</label>
+      <textarea class="lg" id="q5" placeholder="١. استلام الطلب من النظام&#10;٢. التحقق من المخزون&#10;٣. تجهيز الشحنة&#10;٤. إصدار فاتورة&#10;٥. تسليم لشركة الشحن وإرسال الرقم للعميل"></textarea>
+    </div>
+    <div class="field">
+      <label><span class="step-num">٦</span> الأدوات والأنظمة المطلوبة</label>
+      <textarea class="sm" id="q6" placeholder="مثال: نظام المخزون، فاتورة إلكترونية، واتساب للتواصل مع العميل"></textarea>
+    </div>
+    <div class="field">
+      <label><span class="step-num">٧</span> معيار قبول التنفيذ الصحيح</label>
+      <textarea class="sm" id="q7" placeholder="مثال: يُعتبر التنفيذ ناجحًا إذا وصلت الشحنة خلال 48 ساعة ووصل رقم التتبع للعميل قبل الشحن"></textarea>
+    </div>
+    <div class="field">
+      <label><span class="step-num">٨</span> الأخطاء الشائعة وكيف تتجنبها</label>
+      <textarea class="sm" id="q8" placeholder="مثال: نسيان إرسال رقم التتبع — الحل: خطوة تلقائية في النظام قبل الإغلاق"></textarea>
+    </div>
+    <div class="field">
+      <label><span class="step-num">٩</span> جهة الإبلاغ عند وجود مشكلة</label>
+      <input type="text" id="q9" placeholder="مثال: مدير العمليات مباشرة — واتساب أو إيميل خلال ساعة">
+    </div>
+
+    <button class="btn btn-primary" id="generateBtn" onclick="generateSOP()">توليد وثيقة SOP</button>
+  </div>
+
+  <div class="output-card" id="outputCard">
+    <div class="out-label">وثيقة SOP — جاهزة للتوزيع</div>
+    <pre id="sopOutput"></pre>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="downloadTxt()">⬇ تحميل كملف نصي (.txt)</button>
+    </div>
+    <div class="status-bar" id="statusBar">
+      <span class="icon" id="statusIcon"></span>
+      <span id="statusMsg"></span>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const COMPANY_ID = "C001";
+const SAVE_CASE_ID = "CS001";
+const SAVE_ASSET_ID = "A001";
+let generatedText = "";
+
+function val(id){ return document.getElementById(id).value.trim(); }
+
+function buildSOP(){
+  const name = val('q1') || "عملية غير مسماة";
+  const lines = [
+    `══════════════════════════════════════════`,
+    `وثيقة SOP — ${name}`,
+    `══════════════════════════════════════════`,
+    ``,
+    `❶  اسم العملية`,
+    `   ${name}`,
+    ``,
+    `❷  الأهمية`,
+    `   ${val('q2') || '—'}`,
+    ``,
+    `❸  المسؤول`,
+    `   ${val('q3') || '—'}`,
+    ``,
+    `❹  التوقيت والدورية`,
+    `   ${val('q4') || '—'}`,
+    ``,
+    `❺  الخطوات بالترتيب`,
+    ...( val('q5') || '—' ).split('\n').map(l => `   ${l}`),
+    ``,
+    `❻  الأدوات والأنظمة`,
+    `   ${val('q6') || '—'}`,
+    ``,
+    `❼  معيار القبول`,
+    `   ${val('q7') || '—'}`,
+    ``,
+    `❽  الأخطاء الشائعة`,
+    `   ${val('q8') || '—'}`,
+    ``,
+    `❾  جهة الإبلاغ عند مشكلة`,
+    `   ${val('q9') || '—'}`,
+    ``,
+    `══════════════════════════════════════════`,
+    `أُنشئت بواسطة سنع — ${new Date().toLocaleDateString('ar-SA')}`,
+    `══════════════════════════════════════════`,
+  ];
+  return lines.join('\n');
+}
+
+async function generateSOP(){
+  const name = val('q1');
+  if(!name){
+    showStatus('يرجى كتابة اسم العملية أولاً.', true);
+    return;
+  }
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ التوليد...';
+
+  generatedText = buildSOP();
+  document.getElementById('sopOutput').textContent = generatedText;
+  document.getElementById('outputCard').classList.add('visible');
+  document.getElementById('statusBar').classList.remove('visible','err');
+
+  // حفظ تلقائي كدليل داعم
+  try{
+    const res = await fetch(`/api/companies/${COMPANY_ID}/evidence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: `SOP موثّق: ${name}`,
+        case_id: SAVE_CASE_ID,
+        asset_id: SAVE_ASSET_ID,
+        source_type: 'وثيقة SOP',
+        confidence: 75
+      })
+    });
+    const json = await res.json();
+    if(res.ok && json.success){
+      showStatus('✓ حُفظت الوثيقة تلقائيًا كدليل في ملف الشركة (ثقة ٧٥٪)', false);
+      showToast('تم الحفظ في ملف الشركة');
+    } else {
+      showStatus('تُوُلِّدت الوثيقة، لكن تعذر حفظها في الملف — حاول مجددًا.', true);
+    }
+  } catch(e){
+    showStatus('تُوُلِّدت الوثيقة، لكن تعذر الاتصال بالخادم للحفظ.', true);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'توليد وثيقة SOP';
+  document.getElementById('outputCard').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function downloadTxt(){
+  if(!generatedText) return;
+  const name = val('q1') || 'SOP';
+  const blob = new Blob([generatedText], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `SOP - ${name}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function showStatus(msg, isErr){
+  const bar = document.getElementById('statusBar');
+  bar.classList.toggle('err', isErr);
+  bar.classList.add('visible');
+  document.getElementById('statusIcon').textContent = isErr ? '⚠️' : '✓';
+  document.getElementById('statusMsg').textContent = msg;
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2500);
+}
+</script>
+
+</body>
+</html>
