@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#F5F6FB">
-<title>سنع — نقطة الدخول</title>
+<title>سنع — نظام يكتشف فرص النمو في شركتك</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -25,8 +25,11 @@
   .mark{ width:40px; height:40px; margin-bottom:18px; }
   .eyebrow{ font-family:'Space Grotesk'; font-size:12px; letter-spacing:2px; text-transform:uppercase; color:#B8860B; font-weight:600; margin-bottom:16px; }
   h1{ font-size:clamp(22px,4vw,30px); font-weight:600; margin-bottom:10px; max-width:600px; color:var(--navy); }
-  .sub{ color:var(--slate); font-size:14px; margin-bottom:36px; max-width:440px; }
-  .live-tag{ position:fixed; top:14px; left:14px; background:#E1F5F5; color:#0E7C7B; font-size:10.5px; padding:3px 10px; border-radius:20px; font-family:'Space Grotesk'; }
+  .sub{ color:var(--slate); font-size:14px; margin-bottom:36px; max-width:460px; }
+  .intro{ max-width:580px; margin-bottom:34px; }
+  .intro-title{ font-size:13px; font-weight:600; color:var(--navy); margin-bottom:8px; }
+  .intro-text{ font-size:13px; color:var(--slate); line-height:1.9; }
+  .divider{ width:40px; height:2px; background:var(--gold); margin:30px auto; border-radius:2px; }
 
   .choices{ display:grid; grid-template-columns:repeat(2,1fr); gap:16px; max-width:620px; width:100%; }
   .choice-card{
@@ -74,16 +77,26 @@
 </head>
 <body>
 
-  <span class="live-tag">● متصل بقاعدة بيانات حقيقية</span>
-
   <svg class="mark" viewBox="0 0 100 100">
     <path d="M78,32 L78,17 L19,17 L19,83 L78,83 L78,68" fill="none" stroke="#0B132B" stroke-width="9" stroke-linecap="square"/>
     <rect x="44" y="41" width="19" height="19" fill="#F2B233"/>
   </svg>
 
   <span class="eyebrow">سنع · Sana</span>
-  <h1>مرحبًا بك في سنع</h1>
-  <p class="sub">اختر طريقة دخولك إلى النظام.</p>
+  <h1>نكتشف الفرص الحقيقية في شركتك، ونبني معك خطة نموّها</h1>
+  <p class="sub">سنع نظام يفحص وضع شركتك الفعلي — من التسويق حتى المبيعات — ويكشف أين تُفقد الفرص، ثم يحوّل ذلك إلى خطوات عملية تنفَّذ وتُقاس أسبوعًا بعد أسبوع.</p>
+
+  <div class="intro">
+    <div class="intro-title">كيف يعمل؟</div>
+    <div class="intro-text">
+      نبدأ بتشخيص شركتك لنفهم أين تقف اليوم، ثم نقيس قيمتها الحالية والفجوات التي تمنعها من النمو،
+      ونحوّل ذلك إلى مهام واضحة ومسؤولين محددين — بدل تقارير تُقرأ ولا تُنفَّذ.
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <p class="sub" style="margin-bottom:24px;">اختر طريقة دخولك إلى النظام</p>
 
   <div class="choices">
     <a href="/home" class="choice-card owner">
