@@ -81,10 +81,11 @@ const CASE_ID = "{{ case_id }}";
 const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
 let CASE_COMPANY_ID = null;
 
-function qs(companyId){
+function qs(companyId, extra){
   const p = new URLSearchParams();
   if(companyId && companyId !== 'C001') p.set('company_id', companyId);
   if(VIEW === 'client') p.set('view', 'client');
+  if(extra) Object.entries(extra).forEach(([k,v]) => p.set(k, v));
   const s = p.toString();
   return s ? `?${s}` : '';
 }
@@ -109,6 +110,10 @@ function render(d){
       <div class="declared">المشكلة كما وصفها المالك: "${c.declared_problem || ''}"</div>
       <div class="real">السؤال الحقيقي: ${c.real_question || ''}</div>
     </div>
+
+    <a href="/methodology/sana-acquisition-system${qs(CASE_COMPANY_ID, {from_case: CASE_ID})}" class="link-out" style="display:inline-block; margin-bottom:16px; background:#F5F6FB; border:1px solid #DEE1EC; border-radius:8px; padding:8px 14px;">
+      📘 الإطار المرجعي: نظام سنع لجلب العملاء — استخدمه لتقييم أي خطة تسويق أو مبيعات في هذه القضية ←
+    </a>
 
     <section>
       <h2>الأدلة المرتبطة (${d.evidence.length})</h2>

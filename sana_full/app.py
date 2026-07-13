@@ -78,6 +78,15 @@ def init_db(force=False):
             conn.execute("ALTER TABLE decisions ADD COLUMN phase_label TEXT")
         if "structured_data" not in decision_cols:
             conn.execute("ALTER TABLE decisions ADD COLUMN structured_data TEXT")
+        # وثائق منهجية عامة (مستقلة عن أي شركة) — قد لا يكون الجدول موجودًا في قواعد بيانات قديمة
+        conn.execute("""CREATE TABLE IF NOT EXISTS methodology_docs (
+            doc_id TEXT PRIMARY KEY,
+            slug TEXT UNIQUE NOT NULL,
+            title TEXT NOT NULL,
+            subtitle TEXT,
+            content TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        )""")
         conn.commit()
     conn.close()
     return fresh
@@ -212,6 +221,11 @@ def services_page():
     return render_template("07-services.html")
 
 
+@app.route("/methodology/<slug>")
+def methodology_page(slug):
+    return render_template("08-methodology.html", slug=slug)
+
+
 # ------------------------------------------------------------------
 # API — Companies
 # ------------------------------------------------------------------
@@ -273,6 +287,25 @@ def company_summary(company_id):
 # ------------------------------------------------------------------
 # API — Case Detail (شاشة القضية الكاملة)
 # ------------------------------------------------------------------
+
+@app.route("/api/methodology/<slug>")
+def methodology_detail(slug):
+    """وثيقة منهجية عامة — مستقلة عن أي شركة، مرجع يمكن ربطه من أي Case Workspace."""
+    db = get_db()
+    doc = db.execute("SELECT * FROM methodology_docs WHERE slug=?", (slug,)).fetchone()
+    if not doc:
+        return jsonify({"success": False, "error": "DOC_NOT_FOUND"}), 404
+    return jsonify({
+        "success": True,
+        "data": {
+            "doc_id": doc["doc_id"],
+            "slug": doc["slug"],
+            "title": doc["title"],
+            "subtitle": doc["subtitle"],
+            **json.loads(doc["content"]),
+        }
+    })
+
 
 @app.route("/api/companies/<company_id>/services")
 def company_services(company_id):

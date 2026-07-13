@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F5F6FB">
+<title>سنع — نظام سنع لجلب العملاء</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme: light; background:#F5F6FB; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{ background:#F5F6FB; color:#333940; font-family:'IBM Plex Sans Arabic', sans-serif; line-height:1.6; }
+  a{ color:inherit; text-decoration:none; }
+
+  .concept-nav{ background:#080E1F; padding:10px 20px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
+
+  header{ background:#080E1F; padding:14px 28px; color:#fff; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .back{ font-size:12.5px; color:rgba(255,255,255,0.6); }
+  header .title{ font-weight:600; font-size:15px; }
+  .badge{ background:rgba(242,178,51,0.15); color:#F2B233; font-size:11px; padding:3px 10px; border-radius:20px; font-family:'Space Grotesk'; }
+
+  main{ max-width:900px; margin:0 auto; padding:26px 20px 60px; }
+
+  .hero{ background:#0B132B; color:#fff; border-radius:14px; padding:28px; margin-bottom:22px; }
+  .hero .eyebrow{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#F2B233; font-weight:600; margin-bottom:10px; display:block; }
+  .hero h1{ font-size:clamp(20px,3vw,26px); font-weight:600; margin-bottom:8px; }
+  .hero .sub{ color:rgba(255,255,255,0.65); font-size:13.5px; max-width:620px; }
+  .scope-note{ margin-top:16px; background:rgba(255,255,255,0.06); border-radius:8px; padding:10px 14px; font-size:12px; color:rgba(255,255,255,0.75); }
+
+  .clarity-box{ background:#FFF8E6; border:1.5px solid #F2B233; border-radius:12px; padding:18px 20px; margin-bottom:26px; }
+  .clarity-box .lbl{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:1px; text-transform:uppercase; color:#7A5C00; font-weight:600; margin-bottom:6px; }
+  .clarity-box .txt{ font-size:14.5px; font-weight:600; color:#0B132B; }
+
+  .cycle-strip{ display:flex; gap:6px; margin-bottom:30px; overflow-x:auto; padding-bottom:4px; }
+  .cycle-step{ flex:1; min-width:120px; background:#fff; border:1.5px solid #DEE1EC; border-radius:10px; padding:12px 14px; text-align:center; }
+  .cycle-step .stage{ font-family:'Space Grotesk'; font-weight:700; font-size:15px; color:#0EA5A5; }
+  .cycle-step .label{ font-size:11px; color:#6E7580; margin:2px 0 6px; }
+  .cycle-step .desc{ font-size:11px; color:#9AA0AB; line-height:1.5; }
+  .cycle-arrow{ align-self:center; color:#9AA0AB; font-size:16px; }
+
+  .group-title{ font-family:'Space Grotesk'; font-size:12px; letter-spacing:1.5px; text-transform:uppercase; color:#0EA5A5; font-weight:600; margin:0 0 12px; }
+  .group{ margin-bottom:30px; }
+
+  .rule-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:16px 18px; margin-bottom:10px; }
+  .rule-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:6px; }
+  .rule-num{ font-family:'Space Grotesk'; font-weight:700; font-size:14px; color:#0B132B; background:#F5F6FB; border-radius:6px; padding:1px 9px; flex-shrink:0; }
+  .rule-title{ font-weight:600; color:#0B132B; font-size:14px; }
+  .rule-desc{ font-size:13px; color:#6E7580; }
+
+  .platform-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; margin-top:12px; }
+  .platform-item{ background:#F5F6FB; border-radius:8px; padding:10px 12px; }
+  .platform-item .p-name{ font-weight:600; font-size:12.5px; color:#0B132B; margin-bottom:2px; }
+  .platform-item .p-role{ font-size:11.5px; color:#6E7580; }
+
+  .back-to-case{ display:inline-block; margin-top:6px; font-size:12.5px; color:#0EA5A5; font-weight:600; }
+  .skeleton{ color:#9AA0AB; font-size:13px; padding:40px 0; text-align:center; }
+</style>
+</head>
+<body>
+
+<div class="concept-nav">
+  <a href="/">① الدخول</a>
+  <a href="/home" id="navHome">② CEO Home</a>
+  <a href="/passport" id="navPassport">④ جواز الشركة</a>
+</div>
+
+<header>
+  <a href="/home" class="back" id="backLink">← الرئيسية</a>
+  <div class="title">نظام سنع لجلب العملاء</div>
+  <span class="badge">مرجع عام — غير خاص بشركة واحدة</span>
+</header>
+
+<main id="app">
+  <div class="skeleton">يحمّل سنع الإطار المرجعي...</div>
+</main>
+
+<script>
+const SLUG = "{{ slug }}";
+const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "C001";
+const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
+const FROM_CASE = new URLSearchParams(window.location.search).get('from_case') || null;
+const CQS = (() => {
+  const p = new URLSearchParams();
+  if(COMPANY_ID !== 'C001') p.set('company_id', COMPANY_ID);
+  if(VIEW === 'client') p.set('view', 'client');
+  const s = p.toString();
+  return s ? `?${s}` : '';
+})();
+
+function ruleCard(r){
+  let html = `<div class="rule-card">
+    <div class="rule-head"><span class="rule-num">${r.num}</span><span class="rule-title">${r.title}</span></div>
+    <div class="rule-desc">${r.desc}</div>`;
+  if(r.platforms){
+    html += `<div class="platform-grid">`;
+    r.platforms.forEach(p => {
+      html += `<div class="platform-item"><div class="p-name">${p.platform}</div><div class="p-role">${p.role}</div></div>`;
+    });
+    html += `</div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+async function load(){
+  const backHref = FROM_CASE ? `/case/${FROM_CASE}${CQS}` : `/home${CQS}`;
+  document.getElementById('backLink').href = backHref;
+  document.getElementById('backLink').textContent = FROM_CASE ? '← رجوع للقضية' : '← الرئيسية';
+  document.getElementById('navHome').href = `/home${CQS}`;
+  document.getElementById('navPassport').href = `/passport${CQS}`;
+
+  const res = await fetch(`/api/methodology/${SLUG}`);
+  const json = await res.json();
+  if(!json.success){
+    document.getElementById('app').innerHTML = '<p style="text-align:center; color:#6E7580; padding:40px 0;">تعذر تحميل الوثيقة.</p>';
+    return;
+  }
+  render(json.data);
+}
+
+function render(d){
+  let html = `
+    <div class="hero">
+      <span class="eyebrow">Sana Acquisition System</span>
+      <h1>${d.title}</h1>
+      <div class="sub">${d.subtitle || ''}</div>
+      <div class="scope-note">📌 هذا إطار مرجعي عام يُستخدم مع أي شركة أو قضية — وليس مخصصًا لشركة واحدة. استخدمه لتقييم أي خطة تسويق أو مبيعات مطروحة، أو للتحقق من التزامها بمبادئ سنع الأساسية.</div>
+    </div>
+
+    <div class="clarity-box">
+      <div class="lbl">قاعدة الوضوح الجوهرية</div>
+      <div class="txt">${d.core_clarity_rule}</div>
+    </div>
+  `;
+
+  if(d.cycle_stages){
+    html += `<div class="group-title">دورة سنع لجلب العملاء — 5 مراحل</div><div class="cycle-strip">`;
+    d.cycle_stages.forEach((s, i) => {
+      html += `<div class="cycle-step">
+        <div class="stage">${s.stage}</div>
+        <div class="label">${s.label}</div>
+        <div class="desc">${s.desc}</div>
+      </div>`;
+      if(i < d.cycle_stages.length - 1) html += `<div class="cycle-arrow">←</div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `<div class="group"><div class="group-title">القواعد التأسيسية (1–10)</div>`;
+  (d.foundational_rules || []).forEach(r => html += ruleCard(r));
+  html += `</div>`;
+
+  html += `<div class="group"><div class="group-title">قواعد التواجد الرقمي (11–15)</div>`;
+  (d.digital_presence_rules || []).forEach(r => html += ruleCard(r));
+  html += `</div>`;
+
+  html += `<div class="group"><div class="group-title">قواعد المبيعات (16–20)</div>`;
+  (d.sales_rules || []).forEach(r => html += ruleCard(r));
+  html += `</div>`;
+
+  if(FROM_CASE){
+    html += `<a href="/case/${FROM_CASE}${CQS}" class="back-to-case">← رجوع لتقييم القضية على هذا الإطار</a>`;
+  }
+
+  document.getElementById('app').innerHTML = html;
+}
+
+load();
+</script>
+</body>
+</html>

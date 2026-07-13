@@ -98,6 +98,17 @@ CREATE TABLE tasks (
     FOREIGN KEY (decision_id) REFERENCES decisions(decision_id)
 );
 
+-- وثائق منهجية عامة (مثل "نظام سنع لجلب العملاء") — مراجع مستقلة عن أي شركة،
+-- يمكن الرجوع إليها وربطها من أي Case Workspace مستقبلي.
+CREATE TABLE methodology_docs (
+    doc_id TEXT PRIMARY KEY,
+    slug TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    subtitle TEXT,
+    content TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE decision_asset_impacts (
     impact_id TEXT PRIMARY KEY,
     decision_id TEXT NOT NULL,
