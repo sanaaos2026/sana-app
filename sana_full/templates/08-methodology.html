@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#F5F6FB">
-<title>سنع — نظام سنع لجلب العملاء</title>
+<title>سنع — نظام سنع لاكتساب العملاء</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -21,39 +21,80 @@
   .back{ font-size:12.5px; color:rgba(255,255,255,0.6); }
   header .title{ font-weight:600; font-size:15px; }
   .badge{ background:rgba(242,178,51,0.15); color:#F2B233; font-size:11px; padding:3px 10px; border-radius:20px; font-family:'Space Grotesk'; }
+  .badge.teal{ background:rgba(14,165,165,0.15); color:#0EA5A5; }
 
-  main{ max-width:900px; margin:0 auto; padding:26px 20px 60px; }
+  main{ max-width:960px; margin:0 auto; padding:26px 20px 60px; }
 
   .hero{ background:#0B132B; color:#fff; border-radius:14px; padding:28px; margin-bottom:22px; }
   .hero .eyebrow{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#F2B233; font-weight:600; margin-bottom:10px; display:block; }
   .hero h1{ font-size:clamp(20px,3vw,26px); font-weight:600; margin-bottom:8px; }
-  .hero .sub{ color:rgba(255,255,255,0.65); font-size:13.5px; max-width:620px; }
+  .hero .sub{ color:rgba(255,255,255,0.65); font-size:13.5px; max-width:640px; margin-bottom:10px; }
+  .hero .purpose{ color:rgba(255,255,255,0.85); font-size:13.5px; max-width:680px; margin-top:10px; border-right:2px solid #F2B233; padding-right:12px; }
   .scope-note{ margin-top:16px; background:rgba(255,255,255,0.06); border-radius:8px; padding:10px 14px; font-size:12px; color:rgba(255,255,255,0.75); }
 
-  .clarity-box{ background:#FFF8E6; border:1.5px solid #F2B233; border-radius:12px; padding:18px 20px; margin-bottom:26px; }
+  .clarity-box{ background:#FFF8E6; border:1.5px solid #F2B233; border-radius:12px; padding:18px 20px; margin-bottom:16px; }
   .clarity-box .lbl{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:1px; text-transform:uppercase; color:#7A5C00; font-weight:600; margin-bottom:6px; }
   .clarity-box .txt{ font-size:14.5px; font-weight:600; color:#0B132B; }
 
-  .cycle-strip{ display:flex; gap:6px; margin-bottom:30px; overflow-x:auto; padding-bottom:4px; }
-  .cycle-step{ flex:1; min-width:120px; background:#fff; border:1.5px solid #DEE1EC; border-radius:10px; padding:12px 14px; text-align:center; }
+  .principle-box{ background:#0EA5A5; color:#fff; border-radius:12px; padding:16px 20px; margin-bottom:30px; }
+  .principle-box .lbl{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:1px; text-transform:uppercase; color:rgba(255,255,255,0.75); font-weight:600; margin-bottom:6px; }
+  .principle-box .txt{ font-size:13.5px; font-weight:500; }
+
+  .section-title{ font-family:'Space Grotesk'; font-size:12px; letter-spacing:1.5px; text-transform:uppercase; color:#0EA5A5; font-weight:600; margin:0 0 12px; }
+  .section{ margin-bottom:32px; }
+
+  .cycle-strip{ display:flex; gap:6px; margin-bottom:6px; overflow-x:auto; padding-bottom:4px; }
+  .cycle-step{ flex:1; min-width:150px; background:#fff; border:1.5px solid #DEE1EC; border-radius:10px; padding:12px 14px; }
   .cycle-step .stage{ font-family:'Space Grotesk'; font-weight:700; font-size:15px; color:#0EA5A5; }
-  .cycle-step .label{ font-size:11px; color:#6E7580; margin:2px 0 6px; }
-  .cycle-step .desc{ font-size:11px; color:#9AA0AB; line-height:1.5; }
-  .cycle-arrow{ align-self:center; color:#9AA0AB; font-size:16px; }
+  .cycle-step .label{ font-size:11px; color:#6E7580; margin:2px 0 8px; }
+  .cycle-step .q{ font-size:11.5px; color:#0B132B; font-weight:600; margin-bottom:6px; }
+  .cycle-step dl{ font-size:11px; color:#6E7580; }
+  .cycle-step dt{ color:#9AA0AB; font-weight:600; margin-top:6px; }
+  .cycle-step dd{ margin:1px 0 0; }
+  .cycle-arrow{ align-self:center; color:#9AA0AB; font-size:16px; flex-shrink:0; }
 
-  .group-title{ font-family:'Space Grotesk'; font-size:12px; letter-spacing:1.5px; text-transform:uppercase; color:#0EA5A5; font-weight:600; margin:0 0 12px; }
-  .group{ margin-bottom:30px; }
+  .rule-group{ margin-bottom:18px; }
+  .rule-group-title{ font-weight:600; color:#0B132B; font-size:14px; margin-bottom:10px; }
+  .rule-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:14px 16px; margin-bottom:8px; display:flex; gap:10px; align-items:baseline; }
+  .rule-num{ font-family:'Space Grotesk'; font-weight:700; font-size:13px; color:#0B132B; background:#F5F6FB; border-radius:6px; padding:1px 9px; flex-shrink:0; }
+  .rule-text{ font-size:13.5px; color:#333940; }
 
-  .rule-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:16px 18px; margin-bottom:10px; }
-  .rule-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:6px; }
-  .rule-num{ font-family:'Space Grotesk'; font-weight:700; font-size:14px; color:#0B132B; background:#F5F6FB; border-radius:6px; padding:1px 9px; flex-shrink:0; }
-  .rule-title{ font-weight:600; color:#0B132B; font-size:14px; }
-  .rule-desc{ font-size:13px; color:#6E7580; }
-
-  .platform-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; margin-top:12px; }
+  .platform-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; margin-top:4px; margin-bottom:20px; }
   .platform-item{ background:#F5F6FB; border-radius:8px; padding:10px 12px; }
   .platform-item .p-name{ font-weight:600; font-size:12.5px; color:#0B132B; margin-bottom:2px; }
   .platform-item .p-role{ font-size:11.5px; color:#6E7580; }
+
+  .cat-table{ width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; border:1px solid #DEE1EC; }
+  .cat-table th{ background:#0B132B; color:#fff; font-size:11.5px; font-weight:600; text-align:right; padding:9px 14px; }
+  .cat-table td{ font-size:12.5px; color:#333940; padding:9px 14px; border-top:1px solid #EEF0F5; }
+  .cat-table .nums{ display:flex; gap:4px; flex-wrap:wrap; }
+  .cat-table .nums span{ background:#F5F6FB; border-radius:5px; padding:1px 7px; font-family:'Space Grotesk'; font-size:11px; color:#0EA5A5; font-weight:600; }
+
+  .engine-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+  .engine-card{ background:#fff; border:1px solid #DEE1EC; border-radius:10px; padding:12px 14px; }
+  .engine-card .e-name{ font-family:'Space Grotesk'; font-weight:600; font-size:12.5px; color:#0B132B; margin-bottom:3px; }
+  .engine-card .e-desc{ font-size:11.5px; color:#6E7580; }
+
+  .metrics-chain, .linkage-chain{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .metrics-chain span.node, .linkage-chain span.node{ background:#fff; border:1.5px solid #0EA5A5; color:#0B132B; font-family:'Space Grotesk'; font-size:11.5px; font-weight:600; padding:6px 12px; border-radius:20px; }
+  .linkage-chain span.node{ border-color:#F2B233; }
+  .metrics-chain span.arrow, .linkage-chain span.arrow{ color:#9AA0AB; font-size:13px; }
+
+  .ai-list{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:6px 0; }
+  .ai-list li{ list-style:none; font-size:13px; color:#333940; padding:10px 16px; border-top:1px solid #EEF0F5; }
+  .ai-list li:first-child{ border-top:none; }
+
+  .sop-table{ width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; border:1px solid #DEE1EC; }
+  .sop-table th{ background:#0B132B; color:#fff; font-size:11.5px; font-weight:600; text-align:right; padding:9px 14px; }
+  .sop-table td{ font-size:12.5px; color:#333940; padding:9px 14px; border-top:1px solid #EEF0F5; }
+  .sop-table td.id{ font-family:'Space Grotesk'; color:#0EA5A5; font-weight:600; }
+
+  .bos-table{ width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; border:1px solid #DEE1EC; }
+  .bos-table th{ background:#0B132B; color:#fff; font-size:11.5px; font-weight:600; text-align:right; padding:9px 14px; }
+  .bos-table td{ font-size:12.5px; color:#333940; padding:9px 14px; border-top:1px solid #EEF0F5; }
+  .bos-table tr.current{ background:#FFF8E6; }
+  .bos-table td.id{ font-family:'Space Grotesk'; color:#0B132B; font-weight:700; }
+  .bos-table td.status{ color:#0EA5A5; font-weight:600; }
 
   .back-to-case{ display:inline-block; margin-top:6px; font-size:12.5px; color:#0EA5A5; font-weight:600; }
   .skeleton{ color:#9AA0AB; font-size:13px; padding:40px 0; text-align:center; }
@@ -69,8 +110,9 @@
 
 <header>
   <a href="/home" class="back" id="backLink">← الرئيسية</a>
-  <div class="title">نظام سنع لجلب العملاء</div>
-  <span class="badge">مرجع عام — غير خاص بشركة واحدة</span>
+  <div class="title">نظام سنع لاكتساب العملاء</div>
+  <span class="badge" id="bosBadge">BOS-001</span>
+  <span class="badge teal">مرجع عام — غير خاص بشركة واحدة</span>
 </header>
 
 <main id="app">
@@ -90,21 +132,6 @@ const CQS = (() => {
   return s ? `?${s}` : '';
 })();
 
-function ruleCard(r){
-  let html = `<div class="rule-card">
-    <div class="rule-head"><span class="rule-num">${r.num}</span><span class="rule-title">${r.title}</span></div>
-    <div class="rule-desc">${r.desc}</div>`;
-  if(r.platforms){
-    html += `<div class="platform-grid">`;
-    r.platforms.forEach(p => {
-      html += `<div class="platform-item"><div class="p-name">${p.platform}</div><div class="p-role">${p.role}</div></div>`;
-    });
-    html += `</div>`;
-  }
-  html += `</div>`;
-  return html;
-}
-
 async function load(){
   const backHref = FROM_CASE ? `/case/${FROM_CASE}${CQS}` : `/home${CQS}`;
   document.getElementById('backLink').href = backHref;
@@ -122,44 +149,148 @@ async function load(){
 }
 
 function render(d){
+  document.getElementById('bosBadge').textContent = `${d.bos_id || 'BOS-001'} · ${d.version || ''}`;
+
   let html = `
     <div class="hero">
-      <span class="eyebrow">Sana Acquisition System</span>
+      <span class="eyebrow">Sana Business Operating System</span>
       <h1>${d.title}</h1>
       <div class="sub">${d.subtitle || ''}</div>
+      ${d.purpose ? `<div class="purpose">${d.purpose}</div>` : ''}
       <div class="scope-note">📌 هذا إطار مرجعي عام يُستخدم مع أي شركة أو قضية — وليس مخصصًا لشركة واحدة. استخدمه لتقييم أي خطة تسويق أو مبيعات مطروحة، أو للتحقق من التزامها بمبادئ سنع الأساسية.</div>
     </div>
 
+    ${d.principle ? `<div class="principle-box"><div class="lbl">المبدأ الحاكم</div><div class="txt">${d.principle}</div></div>` : ''}
     <div class="clarity-box">
       <div class="lbl">قاعدة الوضوح الجوهرية</div>
-      <div class="txt">${d.core_clarity_rule}</div>
+      <div class="txt">${d.clarity_rule || d.core_clarity_rule || ''}</div>
     </div>
   `;
 
-  if(d.cycle_stages){
-    html += `<div class="group-title">دورة سنع لجلب العملاء — 5 مراحل</div><div class="cycle-strip">`;
-    d.cycle_stages.forEach((s, i) => {
+  // دورة سنع بالمراحل الموسّعة
+  const stages = d.stages || d.cycle_stages;
+  if(stages && stages.length){
+    html += `<div class="section"><div class="section-title">دورة سنع لجلب العملاء — 5 مراحل</div><div class="cycle-strip">`;
+    stages.forEach((s, i) => {
+      const detailRows = [
+        ['السؤال', s.question], ['الهدف', s.goal], ['المؤشرات', s.kpis],
+        ['الأصول', s.assets], ['القرارات', s.decisions], ['المحتوى', s.content],
+        ['الدليل', s.evidence], ['أخطاء شائعة', s.mistakes],
+      ].filter(([, v]) => v);
       html += `<div class="cycle-step">
-        <div class="stage">${s.stage}</div>
-        <div class="label">${s.label}</div>
-        <div class="desc">${s.desc}</div>
+        <div class="stage">${s.name || s.stage}</div>
+        <div class="label">${s.label || ''}</div>
+        ${s.question ? `<div class="q">${s.question}</div>` : ''}
+        <dl>${detailRows.map(([k,v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+        ${s.desc ? `<div style="font-size:11px; color:#9AA0AB; margin-top:6px;">${s.desc}</div>` : ''}
       </div>`;
-      if(i < d.cycle_stages.length - 1) html += `<div class="cycle-arrow">←</div>`;
+      if(i < stages.length - 1) html += `<div class="cycle-arrow">←</div>`;
     });
-    html += `</div>`;
+    html += `</div></div>`;
   }
 
-  html += `<div class="group"><div class="group-title">القواعد التأسيسية (1–10)</div>`;
-  (d.foundational_rules || []).forEach(r => html += ruleCard(r));
-  html += `</div>`;
+  // مجموعات القواعد (تُرقَّم تسلسليًا 1..20 عبر كل المجموعات)
+  let ruleNum = 0;
+  const numberedRules = [];
+  if(d.rule_groups){
+    html += `<div class="section"><div class="section-title">قواعد النظام (20 قاعدة)</div>`;
+    d.rule_groups.forEach(group => {
+      html += `<div class="rule-group"><div class="rule-group-title">${group.title}</div>`;
+      (group.rules || []).forEach(r => {
+        ruleNum += 1;
+        numberedRules.push({num: ruleNum, text: r});
+        html += `<div class="rule-card"><span class="rule-num">${ruleNum}</span><span class="rule-text">${r}</span></div>`;
+      });
+      html += `</div>`;
+    });
+    html += `</div>`;
+  } else {
+    // توافق مع الشكل القديم (foundational_rules/digital_presence_rules/sales_rules)
+    const legacyGroups = [
+      ['القواعد التأسيسية (1–10)', d.foundational_rules],
+      ['قواعد التواجد الرقمي (11–15)', d.digital_presence_rules],
+      ['قواعد المبيعات (16–20)', d.sales_rules],
+    ];
+    legacyGroups.forEach(([title, rules]) => {
+      if(!rules) return;
+      html += `<div class="section"><div class="section-title">${title}</div>`;
+      rules.forEach(r => {
+        html += `<div class="rule-card"><span class="rule-num">${r.num}</span><span class="rule-text"><b>${r.title}</b> — ${r.desc}</span></div>`;
+        numberedRules.push({num: r.num, text: `${r.title} — ${r.desc}`});
+        if(r.platforms){
+          html += `<div class="platform-grid">`;
+          r.platforms.forEach(p => html += `<div class="platform-item"><div class="p-name">${p.platform}</div><div class="p-role">${p.role}</div></div>`);
+          html += `</div>`;
+        }
+      });
+      html += `</div>`;
+    });
+  }
 
-  html += `<div class="group"><div class="group-title">قواعد التواجد الرقمي (11–15)</div>`;
-  (d.digital_presence_rules || []).forEach(r => html += ruleCard(r));
-  html += `</div>`;
+  // القواعد الحاكمة (تصنيف القواعد إلى فئات)
+  if(d.rule_categories && d.rule_categories.length){
+    html += `<div class="section"><div class="section-title">القواعد الحاكمة</div>
+      <table class="cat-table"><thead><tr><th>القاعدة الحاكمة</th><th>أرقام القواعد المرتبطة</th></tr></thead><tbody>`;
+    d.rule_categories.forEach(cat => {
+      html += `<tr><td>${cat.name}</td><td><div class="nums">${(cat.rule_numbers||[]).map(n => `<span>${n}</span>`).join('')}</div></td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
 
-  html += `<div class="group"><div class="group-title">قواعد المبيعات (16–20)</div>`;
-  (d.sales_rules || []).forEach(r => html += ruleCard(r));
-  html += `</div>`;
+  // المحركات (Engines)
+  if(d.engines && d.engines.length){
+    html += `<div class="section"><div class="section-title">محركات النظام (Engines)</div><div class="engine-grid">`;
+    d.engines.forEach(e => {
+      html += `<div class="engine-card"><div class="e-name">${e.name}</div><div class="e-desc">${e.description}</div></div>`;
+    });
+    html += `</div></div>`;
+  }
+
+  // سلسلة المؤشرات
+  if(d.metrics_chain && d.metrics_chain.length){
+    html += `<div class="section"><div class="section-title">سلسلة المؤشرات</div><div class="metrics-chain">`;
+    d.metrics_chain.forEach((m, i) => {
+      html += `<span class="node">${m}</span>`;
+      if(i < d.metrics_chain.length - 1) html += `<span class="arrow">←</span>`;
+    });
+    html += `</div></div>`;
+  }
+
+  // أدوار الذكاء الاصطناعي
+  if(d.ai_roles && d.ai_roles.length){
+    html += `<div class="section"><div class="section-title">أدوار الذكاء الاصطناعي في النظام</div><ul class="ai-list">`;
+    d.ai_roles.forEach(role => html += `<li>${role}</li>`);
+    html += `</ul></div>`;
+  }
+
+  // الإجراءات التشغيلية الموحدة (SOPs)
+  if(d.sops && d.sops.length){
+    html += `<div class="section"><div class="section-title">الإجراءات التشغيلية الموحدة (SOPs)</div>
+      <table class="sop-table"><thead><tr><th>الرمز</th><th>العنوان</th></tr></thead><tbody>`;
+    d.sops.forEach(s => html += `<tr><td class="id">${s.id}</td><td>${s.title}</td></tr>`);
+    html += `</tbody></table></div>`;
+  }
+
+  // خريطة أنظمة سنع (BOS Map)
+  if(d.bos_map && d.bos_map.length){
+    html += `<div class="section"><div class="section-title">خريطة أنظمة سنع (BOS Map)</div>
+      <table class="bos-table"><thead><tr><th>الرمز</th><th>النظام</th><th>الحالة</th></tr></thead><tbody>`;
+    d.bos_map.forEach(b => {
+      const isCurrent = b.id === (d.bos_id || 'BOS-001');
+      html += `<tr class="${isCurrent ? 'current' : ''}"><td class="id">${b.id}${isCurrent ? ' ⭐' : ''}</td><td>${b.name}</td><td class="status">${b.status}</td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
+
+  // سلسلة الربط داخل منظومة سنع
+  if(d.linkage_chain && d.linkage_chain.length){
+    html += `<div class="section"><div class="section-title">سلسلة الربط داخل منظومة سنع</div><div class="linkage-chain">`;
+    d.linkage_chain.forEach((n, i) => {
+      html += `<span class="node">${n}</span>`;
+      if(i < d.linkage_chain.length - 1) html += `<span class="arrow">←</span>`;
+    });
+    html += `</div></div>`;
+  }
 
   if(FROM_CASE){
     html += `<a href="/case/${FROM_CASE}${CQS}" class="back-to-case">← رجوع لتقييم القضية على هذا الإطار</a>`;

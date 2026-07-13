@@ -106,6 +106,9 @@ CREATE TABLE methodology_docs (
     title TEXT NOT NULL,
     subtitle TEXT,
     content TEXT NOT NULL,
+    doc_type TEXT DEFAULT 'GENERIC',
+    version TEXT DEFAULT 'v1.0',
+    bos_id TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 

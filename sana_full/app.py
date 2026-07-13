@@ -85,8 +85,19 @@ def init_db(force=False):
             title TEXT NOT NULL,
             subtitle TEXT,
             content TEXT NOT NULL,
+            doc_type TEXT DEFAULT 'GENERIC',
+            version TEXT DEFAULT 'v1.0',
+            bos_id TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         )""")
+        # ترقية جدول الوثائق المنهجية القديم لدعم نظام BOS (doc_type/version/bos_id)
+        methodology_cols = {row[1] for row in conn.execute("PRAGMA table_info(methodology_docs)").fetchall()}
+        if "doc_type" not in methodology_cols:
+            conn.execute("ALTER TABLE methodology_docs ADD COLUMN doc_type TEXT DEFAULT 'GENERIC'")
+        if "version" not in methodology_cols:
+            conn.execute("ALTER TABLE methodology_docs ADD COLUMN version TEXT DEFAULT 'v1.0'")
+        if "bos_id" not in methodology_cols:
+            conn.execute("ALTER TABLE methodology_docs ADD COLUMN bos_id TEXT")
         conn.commit()
     conn.close()
     return fresh
@@ -295,6 +306,7 @@ def methodology_detail(slug):
     doc = db.execute("SELECT * FROM methodology_docs WHERE slug=?", (slug,)).fetchone()
     if not doc:
         return jsonify({"success": False, "error": "DOC_NOT_FOUND"}), 404
+    doc_dict = dict(doc)
     return jsonify({
         "success": True,
         "data": {
@@ -302,6 +314,9 @@ def methodology_detail(slug):
             "slug": doc["slug"],
             "title": doc["title"],
             "subtitle": doc["subtitle"],
+            "doc_type": doc_dict.get("doc_type"),
+            "version": doc_dict.get("version"),
+            "bos_id": doc_dict.get("bos_id"),
             **json.loads(doc["content"]),
         }
     })
