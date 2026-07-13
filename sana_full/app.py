@@ -9,6 +9,7 @@ Sana Core Backend — Flask + SQLite
 """
 import sqlite3
 import os
+import json
 from datetime import datetime
 from flask import Flask, jsonify, request, render_template, g
 
@@ -70,6 +71,13 @@ def init_db(force=False):
             conn.execute("ALTER TABLE tasks ADD COLUMN phase_label TEXT")
         if "value_note" not in existing_cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN value_note TEXT")
+        # نفس فكرة التصنيف تحت مرحلة، بالإضافة إلى حقل JSON لتفاصيل قرارات موضوعية
+        # غنية (مثل ترتيب الخدمات) يحتاجها عرض متخصص (صفحة الخدمات) دون تفكيك نصوص.
+        decision_cols = {row[1] for row in conn.execute("PRAGMA table_info(decisions)").fetchall()}
+        if "phase_label" not in decision_cols:
+            conn.execute("ALTER TABLE decisions ADD COLUMN phase_label TEXT")
+        if "structured_data" not in decision_cols:
+            conn.execute("ALTER TABLE decisions ADD COLUMN structured_data TEXT")
         conn.commit()
     conn.close()
     return fresh
@@ -199,6 +207,11 @@ def business_passport():
     return render_template("03-business-passport.html")
 
 
+@app.route("/services")
+def services_page():
+    return render_template("07-services.html")
+
+
 # ------------------------------------------------------------------
 # API — Companies
 # ------------------------------------------------------------------
@@ -260,6 +273,37 @@ def company_summary(company_id):
 # ------------------------------------------------------------------
 # API — Case Detail (شاشة القضية الكاملة)
 # ------------------------------------------------------------------
+
+@app.route("/api/companies/<company_id>/services")
+def company_services(company_id):
+    """أحدث قرار تموضع/ترتيب خدمات معتمد للشركة — يغذّي صفحة الخدمات."""
+    db = get_db()
+    company = db.execute("SELECT * FROM companies WHERE company_id=?", (company_id,)).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+
+    decision = db.execute(
+        "SELECT * FROM decisions WHERE company_id=? AND structured_data IS NOT NULL "
+        "ORDER BY created_at DESC LIMIT 1",
+        (company_id,)
+    ).fetchone()
+
+    if not decision:
+        return jsonify({"success": True, "data": None})
+
+    structured = json.loads(decision["structured_data"])
+    return jsonify({
+        "success": True,
+        "data": {
+            "company": dict(company),
+            "decision_id": decision["decision_id"],
+            "decision_title": decision["title"],
+            "decision_status": decision["status"],
+            "case_id": decision["case_id"],
+            **structured,
+        }
+    })
+
 
 @app.route("/api/cases/<case_id>")
 def case_detail(case_id):
@@ -534,6 +578,35 @@ def passport_report_text(company_id):
             lines.append("")
     else:
         lines.append("   لا توجد قرارات مسجَّلة بعد.")
+        lines.append("")
+
+    # ❺ التموضع النهائي وترتيب الخدمات — من أحدث قرار معتمد يحمل structured_data
+    positioning = next((d for d in decisions if d["structured_data"]), None)
+    if positioning:
+        sd = json.loads(positioning["structured_data"])
+        lines.append("❺  التموضع النهائي وترتيب الخدمات")
+        lines.append(f"   [{positioning['status']}] {positioning['title']}")
+        lines.append("")
+        lines.append("   الخدمات الرئيسية (Core):")
+        for s in sd.get("core_services", []):
+            flag = f" {s['flag']} ⭐" if s.get("flag") else ""
+            lines.append(f"      • {s['title']}{flag}")
+        lines.append("")
+        lines.append("   الخدمات الداعمة (Supporting):")
+        for s in sd.get("supporting_services", []):
+            lines.append(f"      • {s['title']}")
+        lines.append("")
+        lines.append("   الخدمات المتخصصة (Specialized — بالطلب فقط):")
+        for s in sd.get("specialized_services", []):
+            lines.append(f"      • {s['title']}")
+        if sd.get("excluded_note"):
+            lines.append("")
+            lines.append(f"   ملاحظة: {sd['excluded_note']}")
+        if sd.get("marketing_message"):
+            lines.append("")
+            lines.append(f"   الرسالة التسويقية: {sd['marketing_message']}")
+            for b in sd.get("marketing_bullets", []):
+                lines.append(f"      {b}")
         lines.append("")
 
     lines.append("══════════════════════════════════════════")

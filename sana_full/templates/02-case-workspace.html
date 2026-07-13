@@ -126,15 +126,26 @@ function render(d){
 
   html += `<section><h2>القرارات الناتجة</h2>`;
   if(d.decisions.length === 0){ html += `<p style="color:#6E7580; font-size:13px;">لا توجد قرارات بعد لهذه القضية.</p>`; }
+  const decisionsByPhase = {};
   d.decisions.forEach(dec => {
-    html += `
-      <div class="decision-box" style="margin-bottom:10px;">
-        <div class="t">${dec.title}</div>
-        <div class="r">${dec.reason || ''} — ثقة ${dec.confidence_score}٪</div>
-        <button class="btn btn-primary" onclick="approveDecision('${dec.decision_id}')" ${dec.status==='معتمد'?'disabled':''}>
-          ${dec.status==='معتمد' ? 'تم الاعتماد ✓' : 'اعتماد القرار'}
-        </button>
-      </div>`;
+    const key = dec.phase_label || null;
+    (decisionsByPhase[key] = decisionsByPhase[key] || []).push(dec);
+  });
+  Object.keys(decisionsByPhase).forEach(phaseKey => {
+    if(phaseKey !== 'null'){
+      html += `<div style="font-size:12.5px; font-weight:600; color:#0EA5A5; margin:4px 0 8px;">تحت مرحلة: ${phaseKey}</div>`;
+    }
+    decisionsByPhase[phaseKey].forEach(dec => {
+      html += `
+        <div class="decision-box" style="margin-bottom:10px;">
+          <div class="t">${dec.title}</div>
+          <div class="r">${dec.reason || ''} — ثقة ${dec.confidence_score}٪</div>
+          ${dec.structured_data ? `<a href="/services${qs(CASE_COMPANY_ID)}" class="link-out" style="margin:0 0 10px; display:inline-block;">عرض تفصيل ترتيب الخدمات ←</a><br>` : ''}
+          <button class="btn btn-primary" onclick="approveDecision('${dec.decision_id}')" ${dec.status==='معتمد'?'disabled':''}>
+            ${dec.status==='معتمد' ? 'تم الاعتماد ✓' : 'اعتماد القرار'}
+          </button>
+        </div>`;
+    });
   });
   html += `<a href="/passport${qs(CASE_COMPANY_ID)}" class="link-out">← بعد تنفيذ القرارات، شاهد أثرها على قيمة الشركة الكاملة</a></section>`;
 

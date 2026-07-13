@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F5F6FB">
+<title>سنع — الخدمات المعتمدة</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme: light; background:#F5F6FB; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{ background:#F5F6FB; color:#333940; font-family:'IBM Plex Sans Arabic', sans-serif; line-height:1.6; }
+  a{ color:inherit; text-decoration:none; }
+
+  .concept-nav{ background:#080E1F; padding:10px 20px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
+
+  header{ background:#080E1F; padding:14px 28px; color:#fff; display:flex; align-items:center; gap:14px; }
+  .back{ font-size:12.5px; color:rgba(255,255,255,0.6); }
+  header .title{ font-weight:600; font-size:15px; }
+  .tag{ background:rgba(242,178,51,0.15); color:#F2B233; font-size:11px; padding:3px 10px; border-radius:20px; }
+
+  main{ max-width:900px; margin:0 auto; padding:26px 20px 60px; }
+
+  .hero{ background:#0B132B; color:#fff; border-radius:12px; padding:26px; margin-bottom:20px; text-align:center; }
+  .hero .msg{ font-size:18px; font-weight:600; color:#F2B233; margin-bottom:18px; line-height:1.7; }
+  .hero .bullets{ display:flex; flex-wrap:wrap; justify-content:center; gap:10px 18px; }
+  .hero .bullets span{ font-size:13px; color:rgba(255,255,255,0.85); }
+
+  section{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:20px; margin-bottom:16px; }
+  section h2{ font-size:14.5px; font-weight:600; color:#0B132B; margin-bottom:6px; }
+  section .tier-sub{ font-size:12px; color:#6E7580; margin-bottom:14px; }
+
+  .svc-row{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #DEE1EC; font-size:13.5px; }
+  .svc-row:last-child{ border-bottom:none; }
+  .svc-row .dot{ width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+  .core .dot{ background:#0EA5A5; }
+  .support .dot{ background:#F2B233; }
+  .special .dot{ background:#9AA0AB; }
+  .flag{ background:rgba(242,178,51,0.15); color:#F2B233; font-size:11px; padding:2px 9px; border-radius:20px; font-weight:600; margin-right:6px; }
+
+  .note{ background:#F5F6FB; border-radius:10px; padding:14px 16px; font-size:12.5px; color:#6E7580; margin-top:6px; }
+  .skeleton{ color:#9AA0AB; font-size:13px; padding:40px 0; text-align:center; }
+</style>
+</head>
+<body>
+
+<div class="concept-nav">
+  <a href="/">① الدخول</a>
+  <a href="/home">② CEO Home</a>
+  <a href="/case/CS002">③ القضية</a>
+  <a href="/passport">④ جواز الشركة</a>
+</div>
+
+<header>
+  <a href="/home" class="back" id="backLink">← الرئيسية</a>
+  <div class="title" id="pageTitle">الخدمات المعتمدة</div>
+  <span class="tag" id="statusTag"></span>
+</header>
+
+<main id="app">
+  <div class="skeleton">يجمع سنع ترتيب الخدمات المعتمد...</div>
+</main>
+
+<script>
+const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "C001";
+const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
+const CQS = (() => {
+  const p = new URLSearchParams();
+  if(COMPANY_ID !== 'C001') p.set('company_id', COMPANY_ID);
+  if(VIEW === 'client') p.set('view', 'client');
+  const s = p.toString();
+  return s ? `?${s}` : '';
+})();
+
+function renderTier(className, label, subLabel, services){
+  if(!services || !services.length) return '';
+  let html = `<section class="${className}"><h2>${label}</h2><div class="tier-sub">${subLabel}</div>`;
+  services.forEach(s => {
+    html += `<div class="svc-row"><span class="dot"></span><div>${s.flag ? `<span class="flag">${s.flag}</span>` : ''}${s.title}</div></div>`;
+  });
+  html += `</section>`;
+  return html;
+}
+
+async function loadServices(){
+  document.getElementById('backLink').href = `/home${CQS}`;
+  const res = await fetch(`/api/companies/${COMPANY_ID}/services`);
+  const json = await res.json();
+  if(!json.success || !json.data){
+    document.getElementById('app').innerHTML = '<p style="text-align:center; color:#6E7580; padding:40px 0;">لا يوجد بعد قرار تموضع/ترتيب خدمات معتمد لهذه الشركة.</p>';
+    return;
+  }
+  render(json.data);
+}
+
+function render(d){
+  document.getElementById('pageTitle').textContent = `${d.company.name} — الخدمات المعتمدة`;
+  document.getElementById('statusTag').textContent = d.decision_status || '';
+
+  let html = '';
+
+  if(d.marketing_message){
+    html += `<div class="hero">
+      <div class="msg">"${d.marketing_message}"</div>
+      <div class="bullets">${(d.marketing_bullets||[]).map(b => `<span>${b}</span>`).join('')}</div>
+    </div>`;
+  }
+
+  html += renderTier('core', 'الخدمات الرئيسية', 'تظهر في الصفحة الرئيسية والبروفايل والمحتوى', d.core_services);
+  html += renderTier('support', 'الخدمات الداعمة', 'تُعرض لتوسيع العلاقة مع العملاء الحاليين أو عبر الإحالات — وليست في الواجهة الأساسية', d.supporting_services);
+  html += renderTier('special', 'الخدمات المتخصصة', 'تُقدَّم عند الطلب فقط، بدون إبراز تسويقي', d.specialized_services);
+
+  if(d.excluded_note){
+    html += `<section><h2>قرار الاستبعاد من الواجهة التسويقية</h2><div class="note">${d.excluded_note}</div></section>`;
+  }
+
+  html += `<a href="/case/${d.case_id}${CQS}" style="display:inline-block; margin-top:6px; font-size:12.5px; color:#0EA5A5; font-weight:600;">← الرجوع إلى القضية (${d.decision_title})</a>`;
+
+  document.getElementById('app').innerHTML = html;
+}
+
+loadServices();
+</script>
+</body>
+</html>
