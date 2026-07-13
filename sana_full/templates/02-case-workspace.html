@@ -65,7 +65,7 @@
 </div>
 
 <header>
-  <a href="/home" class="back">← الرئيسية</a>
+  <a href="/home" class="back" id="backLink">← الرئيسية</a>
   <div class="case-title" id="caseTitle">...</div>
   <span class="tag" id="caseType"></span>
 </header>
@@ -78,6 +78,16 @@
 
 <script>
 const CASE_ID = "{{ case_id }}";
+const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
+let CASE_COMPANY_ID = null;
+
+function qs(companyId){
+  const p = new URLSearchParams();
+  if(companyId && companyId !== 'C001') p.set('company_id', companyId);
+  if(VIEW === 'client') p.set('view', 'client');
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
 
 async function loadCase(){
   const res = await fetch(`/api/cases/${CASE_ID}`);
@@ -88,6 +98,8 @@ async function loadCase(){
 
 function render(d){
   const c = d.case;
+  CASE_COMPANY_ID = c.company_id;
+  document.getElementById('backLink').href = `/home${qs(CASE_COMPANY_ID)}`;
   document.getElementById('caseTitle').textContent = c.case_title;
   document.getElementById('caseType').textContent = c.case_type || '';
 
@@ -124,7 +136,7 @@ function render(d){
         </button>
       </div>`;
   });
-  html += `<a href="/passport" class="link-out">← بعد تنفيذ القرارات، شاهد أثرها على قيمة الشركة الكاملة</a></section>`;
+  html += `<a href="/passport${qs(CASE_COMPANY_ID)}" class="link-out">← بعد تنفيذ القرارات، شاهد أثرها على قيمة الشركة الكاملة</a></section>`;
 
   document.getElementById('app').innerHTML = html;
 }
@@ -133,7 +145,7 @@ async function addEvidence(){
   const input = document.getElementById('newEvidence');
   const title = input.value.trim();
   if(!title) return;
-  const res = await fetch(`/api/companies/C001/evidence`, {
+  const res = await fetch(`/api/companies/${CASE_COMPANY_ID || 'C001'}/evidence`, {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({title, case_id: CASE_ID, source_type:'ملاحظة مباشرة', confidence:50})
   });

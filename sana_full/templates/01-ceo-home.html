@@ -90,12 +90,16 @@
     <svg class="mark" viewBox="0 0 100 100"><path d="M78,32 L78,17 L19,17 L19,83 L78,83 L78,68" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="square"/><rect x="44" y="41" width="19" height="19" fill="#F2B233"/></svg>
     سنع
   </div>
-  <div class="company-chip"><span class="dot"></span> <span id="companyName">...</span></div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <span class="state-badge" id="viewModeBadge" style="display:none; background:rgba(242,178,51,0.15); color:#F2B233;">بوابة العميل</span>
+    <div class="company-chip"><span class="dot"></span> <span id="companyName">...</span></div>
+    <select id="companySwitcher" onchange="switchCompany(this.value)" style="display:none; font-family:'IBM Plex Sans Arabic'; font-size:12px; border-radius:20px; border:none; background:rgba(255,255,255,0.1); color:#fff; padding:5px 10px;"></select>
+  </div>
 </header>
 
 <div class="context-bar">
   <div>الرئيسية</div>
-  <div style="display:flex; gap:10px; align-items:center;">
+  <div id="adminTools" style="display:flex; gap:10px; align-items:center;">
     <span class="state-badge">قيد التنفيذ</span>
     <span class="state-badge">النضج: Level 2</span>
     <a href="/case/new" onclick="this.href='/case/new'+CQS" style="color:#0EA5A5; font-weight:600;">+ تشخيص جديد</a>
@@ -112,11 +116,44 @@
 
 <script>
 const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "C001";
+const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
 
 function barClass(score){ if(score<40) return 'weak'; if(score<65) return 'mid'; return 'strong'; }
 
-// يحافظ على اختيار الشركة الحالية عند التنقّل بين الصفحات (افتراضيًا C001 بلا معامل في الرابط)
-const CQS = COMPANY_ID !== 'C001' ? `?company_id=${encodeURIComponent(COMPANY_ID)}` : '';
+// يحافظ على اختيار الشركة (والوضع الحالي) عند التنقّل بين الصفحات
+const CQS = (() => {
+  const p = new URLSearchParams();
+  if(COMPANY_ID !== 'C001') p.set('company_id', COMPANY_ID);
+  if(VIEW === 'client') p.set('view', 'client');
+  const s = p.toString();
+  return s ? `?${s}` : '';
+})();
+
+if(VIEW === 'client'){
+  // وضع العميل: بيانات شركته فقط، بدون أدوات الإدارة العامة أو التبديل بين الشركات
+  document.getElementById('adminTools').style.display = 'none';
+  document.getElementById('viewModeBadge').style.display = 'inline-block';
+} else {
+  // وضع صاحب سنع: يمكنه التبديل بين كل الشركات المسجلة
+  loadCompanySwitcher();
+}
+
+async function loadCompanySwitcher(){
+  try{
+    const res = await fetch('/api/companies');
+    const json = await res.json();
+    if(!json.success || !json.data.length) return;
+    const sel = document.getElementById('companySwitcher');
+    sel.innerHTML = json.data.map(c =>
+      `<option value="${c.company_id}" ${c.company_id === COMPANY_ID ? 'selected' : ''}>${c.name}</option>`
+    ).join('');
+    sel.style.display = 'inline-block';
+  }catch(e){ /* تجاهل بصمت — التبديل ميزة إضافية وليست جوهرية للعرض */ }
+}
+
+function switchCompany(companyId){
+  window.location.href = companyId === 'C001' ? '/home' : `/home?company_id=${encodeURIComponent(companyId)}`;
+}
 
 async function loadData(){
   const res = await fetch(`/api/companies/${COMPANY_ID}/summary`);

@@ -159,7 +159,7 @@ def seed_decision_impacts():
 
 @app.route("/")
 def entry():
-    return render_template("00-entry.html")
+    return render_template("00-landing.html")
 
 
 @app.route("/home")
@@ -195,6 +195,19 @@ def business_passport():
 # ------------------------------------------------------------------
 # API — Companies
 # ------------------------------------------------------------------
+
+@app.route("/api/companies")
+def companies_list():
+    """قائمة كل الشركات المسجلة — تُستخدم في صفحة الدخول (بوابة صاحب سنع/العميل)."""
+    db = get_db()
+    companies = db.execute(
+        "SELECT company_id, name, sector, city FROM companies ORDER BY company_id ASC"
+    ).fetchall()
+    return jsonify({
+        "success": True,
+        "data": [dict(c) for c in companies],
+    })
+
 
 @app.route("/api/companies/<company_id>/summary")
 def company_summary(company_id):

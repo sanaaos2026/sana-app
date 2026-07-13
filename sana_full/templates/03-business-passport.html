@@ -58,6 +58,14 @@
 
 <script>
 const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "C001";
+const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
+const CQS = (() => {
+  const p = new URLSearchParams();
+  if(COMPANY_ID !== 'C001') p.set('company_id', COMPANY_ID);
+  if(VIEW === 'client') p.set('view', 'client');
+  const s = p.toString();
+  return s ? `?${s}` : '';
+})();
 
 async function loadPassport(){
   const res = await fetch(`/api/companies/${COMPANY_ID}/passport`);
@@ -97,7 +105,7 @@ function render(d, meta){
   html += `</section>
       ${d.weakest_asset_case_id ? `
       <section style="text-align:center;">
-        <a href="/case/${d.weakest_asset_case_id}" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح القضية المرتبطة به</a>
+        <a href="/case/${d.weakest_asset_case_id}${CQS}" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح القضية المرتبطة به</a>
       </section>` : ''}
       <section style="text-align:center;">
         <button class="btn" id="downloadReportBtn" onclick="downloadReport()"
