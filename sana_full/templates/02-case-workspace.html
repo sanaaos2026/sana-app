@@ -154,6 +154,35 @@ function render(d){
   });
   html += `<a href="/passport${qs(CASE_COMPANY_ID)}" class="link-out">← بعد تنفيذ القرارات، شاهد أثرها على قيمة الشركة الكاملة</a></section>`;
 
+  const requiredTasks = (d.tasks || []).filter(t => t.status !== 'منجزة');
+  if(requiredTasks.length){
+    const byPhaseReq = {};
+    requiredTasks.forEach(t => {
+      const key = t.phase_label || 'مهام أخرى';
+      (byPhaseReq[key] = byPhaseReq[key] || []).push(t);
+    });
+    html += `<section><h2>المهام المطلوبة (${requiredTasks.length})</h2>`;
+    Object.keys(byPhaseReq).forEach(phase => {
+      html += `<div style="margin-bottom:14px;">
+        <div style="font-size:12.5px; font-weight:600; color:#F2B233; margin-bottom:8px;">تحت مرحلة: ${phase}</div>`;
+      byPhaseReq[phase].forEach(t => {
+        const statusColor = t.status === 'قيد التنفيذ' ? '#0EA5A5' : '#9AA0AB';
+        html += `
+          <div class="evidence-item">
+            <span class="dot" style="background:${statusColor};"></span>
+            <div>
+              <div style="font-weight:600; color:#0B132B;">${t.title}
+                <span class="conf-tag" style="margin-right:6px;">— ${t.status}${t.priority ? `، أولوية ${t.priority}` : ''}${t.due_date ? `، موعده ${t.due_date}` : ''}</span>
+              </div>
+              ${t.value_note ? `<div style="font-size:12px; color:#6E7580; margin-top:2px;">${t.value_note}</div>` : ''}
+            </div>
+          </div>`;
+      });
+      html += `</div>`;
+    });
+    html += `</section>`;
+  }
+
   const completedTasks = (d.tasks || []).filter(t => t.status === 'منجزة');
   if(completedTasks.length){
     const byPhase = {};
