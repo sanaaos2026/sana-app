@@ -63,6 +63,13 @@ def init_db(force=False):
             FOREIGN KEY (decision_id) REFERENCES decisions(decision_id),
             FOREIGN KEY (asset_id) REFERENCES assets(asset_id)
         )""")
+        # إضافة أعمدة اختيارية لجدول tasks لدعم تجميع المهام تحت مراحل فرعية
+        # مع بيان القيمة المتحققة من كل إنجاز — دون كسر أي بيانات موجودة.
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        if "phase_label" not in existing_cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN phase_label TEXT")
+        if "value_note" not in existing_cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN value_note TEXT")
         conn.commit()
     conn.close()
     return fresh
@@ -264,12 +271,23 @@ def case_detail(case_id):
     evidence = db.execute("SELECT * FROM evidence WHERE case_id=?", (case_id,)).fetchall()
     decisions = db.execute("SELECT * FROM decisions WHERE case_id=?", (case_id,)).fetchall()
 
+    # مهام هذه القضية — عبر القرارات المرتبطة بها (tasks.decision_id -> decisions.case_id)
+    decision_ids = [d["decision_id"] for d in decisions]
+    tasks = []
+    if decision_ids:
+        placeholders = ",".join("?" * len(decision_ids))
+        tasks = db.execute(
+            f"SELECT * FROM tasks WHERE decision_id IN ({placeholders}) ORDER BY created_at ASC",
+            decision_ids
+        ).fetchall()
+
     return jsonify({
         "success": True,
         "data": {
             "case": dict(case),
             "evidence": [dict(e) for e in evidence],
             "decisions": [dict(d) for d in decisions],
+            "tasks": [dict(t) for t in tasks],
         }
     })
 
@@ -455,6 +473,10 @@ def passport_report_text(company_id):
     decisions = db.execute(
         "SELECT * FROM decisions WHERE company_id=? ORDER BY created_at DESC", (company_id,)
     ).fetchall()
+    completed_tasks = db.execute(
+        "SELECT * FROM tasks WHERE company_id=? AND status='منجزة' ORDER BY completed_at ASC",
+        (company_id,)
+    ).fetchall()
 
     avg_score = round(sum(a["current_score"] for a in assets) / len(assets)) if assets else 0
     base = (company["annual_revenue"] or 0) * 2.5
@@ -482,7 +504,24 @@ def passport_report_text(company_id):
         lines.append(f"   {a['asset_name']}: {a['current_score']}/100")
 
     lines.append("")
-    lines.append("❸  القرارات")
+    lines.append("❸  الإنجازات المنجزة")
+    if completed_tasks:
+        by_phase = {}
+        for t in completed_tasks:
+            key = t["phase_label"] or "مهام منجزة أخرى"
+            by_phase.setdefault(key, []).append(t)
+        for phase, phase_tasks in by_phase.items():
+            lines.append(f"   ▸ {phase}")
+            for t in phase_tasks:
+                lines.append(f"      ✓ {t['title']}")
+                if t["value_note"]:
+                    lines.append(f"        القيمة: {t['value_note']}")
+        lines.append("")
+    else:
+        lines.append("   لا توجد إنجازات مسجَّلة بعد.")
+        lines.append("")
+
+    lines.append("❹  القرارات")
     if decisions:
         for d in decisions:
             lines.append(f"   [{d['status']}] {d['title']}")

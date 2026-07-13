@@ -138,6 +138,32 @@ function render(d){
   });
   html += `<a href="/passport${qs(CASE_COMPANY_ID)}" class="link-out">← بعد تنفيذ القرارات، شاهد أثرها على قيمة الشركة الكاملة</a></section>`;
 
+  const completedTasks = (d.tasks || []).filter(t => t.status === 'منجزة');
+  if(completedTasks.length){
+    const byPhase = {};
+    completedTasks.forEach(t => {
+      const key = t.phase_label || 'مهام منجزة أخرى';
+      (byPhase[key] = byPhase[key] || []).push(t);
+    });
+    html += `<section><h2>المهام المنجزة (${completedTasks.length})</h2>`;
+    Object.keys(byPhase).forEach(phase => {
+      html += `<div style="margin-bottom:14px;">
+        <div style="font-size:12.5px; font-weight:600; color:#0EA5A5; margin-bottom:8px;">تحت مرحلة: ${phase}</div>`;
+      byPhase[phase].forEach(t => {
+        html += `
+          <div class="evidence-item">
+            <span class="dot" style="background:#0B132B;"></span>
+            <div>
+              <div style="font-weight:600; color:#0B132B;">✓ ${t.title}</div>
+              ${t.value_note ? `<div style="font-size:12px; color:#6E7580; margin-top:2px;">القيمة: ${t.value_note}</div>` : ''}
+            </div>
+          </div>`;
+      });
+      html += `</div>`;
+    });
+    html += `</section>`;
+  }
+
   document.getElementById('app').innerHTML = html;
 }
 
