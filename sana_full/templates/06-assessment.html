@@ -107,45 +107,18 @@
 
 <div class="concept-nav">
   <a href="/">① الدخول</a>
-  <a href="/home">② CEO Home</a>
-  <a href="/case/CS001">③ القضية</a>
-  <a href="/passport">④ جواز الشركة</a>
+  <a href="/home" id="navHome">② CEO Home</a>
+  <a href="/passport" id="navPassport">④ جواز الشركة</a>
   <a href="/assessment" class="active">📊 تقييم</a>
 </div>
 
 <header>
-  <a href="/home" class="back">← الرئيسية</a>
-  <div class="page-title">التقييم السريع</div>
+  <a href="/home" class="back" id="backLink">← الرئيسية</a>
+  <div class="page-title" id="pageTitle">التقييم السريع</div>
 </header>
 
-<!-- شريط الدرجات الثابت -->
-<div class="score-strip" id="scoreStrip">
-  <div class="score-pill" id="pill-A001">
-    <div class="pill-name">المعرفة</div>
-    <div class="pill-val" id="pv-A001">0</div>
-    <div class="pill-bar"><div class="pill-fill" id="pf-A001" style="width:0%;background:#B23A2E;"></div></div>
-  </div>
-  <div class="score-pill" id="pill-A002">
-    <div class="pill-name">التشغيل</div>
-    <div class="pill-val" id="pv-A002">0</div>
-    <div class="pill-bar"><div class="pill-fill" id="pf-A002" style="width:0%;background:#B23A2E;"></div></div>
-  </div>
-  <div class="score-pill" id="pill-A003">
-    <div class="pill-name">البراند</div>
-    <div class="pill-val" id="pv-A003">0</div>
-    <div class="pill-bar"><div class="pill-fill" id="pf-A003" style="width:0%;background:#B23A2E;"></div></div>
-  </div>
-  <div class="score-pill" id="pill-A004">
-    <div class="pill-name">البيانات</div>
-    <div class="pill-val" id="pv-A004">0</div>
-    <div class="pill-bar"><div class="pill-fill" id="pf-A004" style="width:0%;background:#B23A2E;"></div></div>
-  </div>
-  <div class="score-pill" id="pill-A005">
-    <div class="pill-name">الاستقلال</div>
-    <div class="pill-val" id="pv-A005">0</div>
-    <div class="pill-bar"><div class="pill-fill" id="pf-A005" style="width:0%;background:#B23A2E;"></div></div>
-  </div>
-</div>
+<!-- شريط الدرجات الثابت — يُبنى ديناميكيًا حسب أصول الشركة الفعلية -->
+<div class="score-strip" id="scoreStrip"></div>
 
 <main>
   <span class="eyebrow">تقييم الأصول الخمسة</span>
@@ -180,20 +153,29 @@
 
 <script>
 const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "C001";
-const CASE_ID    = "CS001";
+const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
+const CQS = (() => {
+  const p = new URLSearchParams();
+  if(COMPANY_ID !== 'C001') p.set('company_id', COMPANY_ID);
+  if(VIEW === 'client') p.set('view', 'client');
+  const s = p.toString();
+  return s ? `?${s}` : '';
+})();
+let CASE_ID = null;          // يُحدَّد ديناميكيًا من قضايا الشركة الفعلية بعد التحميل
+let ASSET_ID_BY_TYPE = {};   // asset_type -> asset_id الحقيقي لهذه الشركة (مثل A006 لـ C002 بدل A001 لـ C001)
 
-// تعريف الأسئلة العشرة — سؤالان لكل أصل
+// تعريف الأسئلة العشرة — سؤالان لكل أصل، مرتبطة بـ asset_type (ثابت) لا بمعرف أصل شركة محددة
 const QUESTIONS = [
-  { id:"q1",  assetId:"A001", assetName:"المعرفة",    text:"هل يوجد توثيق مكتوب للعمليات الأساسية في الشركة (SOPs أو أدلة تشغيل)؟" },
-  { id:"q2",  assetId:"A001", assetName:"المعرفة",    text:"هل يستطيع موظف جديد تعلّم مهامه الأساسية بدون تدخل شخصي منك؟" },
-  { id:"q3",  assetId:"A002", assetName:"التشغيل",    text:"هل تُسلَّم الطلبات أو الخدمات في الوقت المحدد بشكل منتظم؟" },
-  { id:"q4",  assetId:"A002", assetName:"التشغيل",    text:"هل يوجد معيار موثق وواضح لقبول جودة التنفيذ؟" },
-  { id:"q5",  assetId:"A003", assetName:"البراند",    text:"هل يفهم عميل جديد ما تقدمه شركتك خلال 30 ثانية من زيارة قنواتك؟" },
-  { id:"q6",  assetId:"A003", assetName:"البراند",    text:"هل تحصل الشركة على عملاء جدد بانتظام من قنوات تسويقية محددة ومعروفة؟" },
-  { id:"q7",  assetId:"A004", assetName:"البيانات",   text:"هل تعرف إيراداتك وتكاليفك الأساسية بدقة الآن دون الحاجة لسؤال أحد؟" },
-  { id:"q8",  assetId:"A004", assetName:"البيانات",   text:"هل تستخدم مؤشرات أداء (KPIs) محددة لاتخاذ قراراتك الأسبوعية؟" },
-  { id:"q9",  assetId:"A005", assetName:"الاستقلال",  text:"هل تستطيع الشركة العمل أسبوعًا كاملاً بدون تدخل مباشر منك؟" },
-  { id:"q10", assetId:"A005", assetName:"الاستقلال",  text:"هل يوجد أكثر من شخص واحد يستطيع اتخاذ القرارات اليومية بثقة؟" },
+  { id:"q1",  assetType:"Knowledge",    assetName:"المعرفة",    text:"هل يوجد توثيق مكتوب للعمليات الأساسية في الشركة (SOPs أو أدلة تشغيل)؟" },
+  { id:"q2",  assetType:"Knowledge",    assetName:"المعرفة",    text:"هل يستطيع موظف جديد تعلّم مهامه الأساسية بدون تدخل شخصي منك؟" },
+  { id:"q3",  assetType:"Operations",   assetName:"التشغيل",    text:"هل تُسلَّم الطلبات أو الخدمات في الوقت المحدد بشكل منتظم؟" },
+  { id:"q4",  assetType:"Operations",   assetName:"التشغيل",    text:"هل يوجد معيار موثق وواضح لقبول جودة التنفيذ؟" },
+  { id:"q5",  assetType:"Brand",        assetName:"البراند",    text:"هل يفهم عميل جديد ما تقدمه شركتك خلال 30 ثانية من زيارة قنواتك؟" },
+  { id:"q6",  assetType:"Brand",        assetName:"البراند",    text:"هل تحصل الشركة على عملاء جدد بانتظام من قنوات تسويقية محددة ومعروفة؟" },
+  { id:"q7",  assetType:"Data",         assetName:"البيانات",   text:"هل تعرف إيراداتك وتكاليفك الأساسية بدقة الآن دون الحاجة لسؤال أحد؟" },
+  { id:"q8",  assetType:"Data",         assetName:"البيانات",   text:"هل تستخدم مؤشرات أداء (KPIs) محددة لاتخاذ قراراتك الأسبوعية؟" },
+  { id:"q9",  assetType:"Independence", assetName:"الاستقلال",  text:"هل تستطيع الشركة العمل أسبوعًا كاملاً بدون تدخل مباشر منك؟" },
+  { id:"q10", assetType:"Independence", assetName:"الاستقلال",  text:"هل يوجد أكثر من شخص واحد يستطيع اتخاذ القرارات اليومية بثقة؟" },
 ];
 
 // نقاط كل خيار (من 0 إلى 10، بما يجعل أقصى درجة لأصل = 20)
@@ -202,18 +184,34 @@ const SCORE_MAP = { yes: 10, partial: 5, no: 0 };
 const CONF_MAP  = { yes: 90, partial: 60, no: 30 };
 
 const answers = {}; // { qId: 'yes'|'partial'|'no' }
+const ASSET_TYPES = ["Knowledge","Operations","Brand","Data","Independence"];
+
+// ── بناء شريط الدرجات ديناميكيًا حسب أصول الشركة الفعلية ─────
+function buildScoreStrip(){
+  const strip = document.getElementById('scoreStrip');
+  let html = '';
+  ASSET_TYPES.forEach(t => {
+    const name = QUESTIONS.find(q => q.assetType === t).assetName;
+    html += `<div class="score-pill" id="pill-${t}">
+      <div class="pill-name">${name}</div>
+      <div class="pill-val" id="pv-${t}">0</div>
+      <div class="pill-bar"><div class="pill-fill" id="pf-${t}" style="width:0%;background:#B23A2E;"></div></div>
+    </div>`;
+  });
+  strip.innerHTML = html;
+}
 
 // ── بناء DOM ──────────────────────────────────────────────
 function buildQuestions(){
   const wrap = document.getElementById('questionsWrap');
   const groups = {};
   QUESTIONS.forEach(q => {
-    if(!groups[q.assetId]) groups[q.assetId] = { name: q.assetName, qs: [] };
-    groups[q.assetId].qs.push(q);
+    if(!groups[q.assetType]) groups[q.assetType] = { name: q.assetName, qs: [] };
+    groups[q.assetType].qs.push(q);
   });
   let html = '';
   let num = 1;
-  Object.entries(groups).forEach(([assetId, g]) => {
+  Object.entries(groups).forEach(([assetType, g]) => {
     html += `<div class="asset-group">
       <div class="asset-header">
         <div class="asset-badge">${g.name}</div>
@@ -252,9 +250,9 @@ function answer(qId, choice){
 }
 
 // ── تحديث شريط الدرجات ───────────────────────────────────
-function scoreForAsset(assetId){
+function scoreForAsset(assetType){
   return QUESTIONS
-    .filter(q => q.assetId === assetId)
+    .filter(q => q.assetType === assetType)
     .reduce((sum, q) => sum + (answers[q.id] ? SCORE_MAP[answers[q.id]] : 0), 0);
 }
 
@@ -265,16 +263,16 @@ function fillColor(score){
 }
 
 function updateScoreStrip(){
-  ['A001','A002','A003','A004','A005'].forEach(id => {
-    const score = scoreForAsset(id);
+  ASSET_TYPES.forEach(t => {
+    const score = scoreForAsset(t);
     const pct   = (score / 20) * 100;
-    document.getElementById(`pv-${id}`).textContent = score;
-    const fill = document.getElementById(`pf-${id}`);
+    document.getElementById(`pv-${t}`).textContent = score;
+    const fill = document.getElementById(`pf-${t}`);
     fill.style.width   = pct + '%';
     fill.style.background = fillColor(score);
     // أضئ الـ pill إن كان هذا الأصل يُجاب عليه الآن
-    const active = QUESTIONS.filter(q => q.assetId === id).some(q => answers[q.id]);
-    document.getElementById(`pill-${id}`).classList.toggle('active', active);
+    const active = QUESTIONS.filter(q => q.assetType === t).some(q => answers[q.id]);
+    document.getElementById(`pill-${t}`).classList.toggle('active', active);
   });
 }
 
@@ -295,20 +293,14 @@ function levelTag(score){
 }
 
 function showResult(){
-  const assets = [
-    { id:'A001', name:'المعرفة' },
-    { id:'A002', name:'التشغيل' },
-    { id:'A003', name:'البراند' },
-    { id:'A004', name:'البيانات' },
-    { id:'A005', name:'الاستقلال' },
-  ];
   let html = '';
-  assets.forEach(a => {
-    const score = scoreForAsset(a.id);
+  ASSET_TYPES.forEach(t => {
+    const name = QUESTIONS.find(q => q.assetType === t).assetName;
+    const score = scoreForAsset(t);
     const { label, cls } = levelTag(score);
     const color = fillColor(score);
     html += `<div class="result-row">
-      <div class="rr-name">${a.name}</div>
+      <div class="rr-name">${name}</div>
       <div class="rr-score" style="color:${color};">${score}<span style="font-size:11px;color:rgba(255,255,255,0.4);">/20</span></div>
       <div class="rr-tag ${cls}">${label}</div>
     </div>`;
@@ -331,6 +323,7 @@ async function saveEvidence(){
   for(const q of QUESTIONS){
     const choice = answers[q.id];
     if(!choice) continue;
+    const realAssetId = ASSET_ID_BY_TYPE[q.assetType] || null;
     const title = `${q.text} — الإجابة: ${labelMap[choice]}`;
     try{
       const res = await fetch(`/api/companies/${COMPANY_ID}/evidence`, {
@@ -339,7 +332,7 @@ async function saveEvidence(){
         body: JSON.stringify({
           title,
           case_id:     CASE_ID,
-          asset_id:    q.assetId,
+          asset_id:    realAssetId,
           source_type: 'تقييم سريع',
           confidence:  CONF_MAP[choice]
         })
@@ -372,7 +365,28 @@ function showToast(msg){
   setTimeout(()=>t.classList.remove('show'), 2500);
 }
 
-buildQuestions();
+// ── تهيئة الصفحة: تحميل بيانات الشركة الفعلية قبل بناء الأسئلة ──
+async function init(){
+  document.getElementById('backLink').href = `/home${CQS}`;
+  document.getElementById('navHome').href = `/home${CQS}`;
+  document.getElementById('navPassport').href = `/passport${CQS}`;
+
+  try{
+    const res = await fetch(`/api/companies/${COMPANY_ID}/summary`);
+    const json = await res.json();
+    if(json.success){
+      const d = json.data;
+      document.getElementById('pageTitle').textContent = `التقييم السريع — ${d.company.name}`;
+      (d.assets || []).forEach(a => { ASSET_ID_BY_TYPE[a.asset_type] = a.asset_id; });
+      if(d.cases && d.cases.length) CASE_ID = d.cases[0].case_id;
+    }
+  } catch(e){ /* نستمر بدون asset_id حقيقي إن تعذّر التحميل — الحفظ سيُرسل asset_id=null */ }
+
+  buildScoreStrip();
+  buildQuestions();
+}
+
+init();
 </script>
 </body>
 </html>
