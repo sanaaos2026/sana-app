@@ -308,6 +308,181 @@ def passport_summary(company_id):
 # API — Decisions
 # ------------------------------------------------------------------
 
+DECISION_TEMPLATES = {
+    "Knowledge": {
+        "title": "توثيق أول SOP لعملية أساسية",
+        "recommended_action": "اختر عملية واحدة متكررة يعتمد إنجازها على شخص محدد، وابدأ بتوثيقها في ملف SOP خلال 7 أيام.",
+        "reason_tpl": "أصل المعرفة هو من أضعف الأصول حاليًا ({score}/100) — غياب التوثيق يجعل الشركة عالية الاعتماد على أفراد بعينهم.",
+    },
+    "Operations": {
+        "title": "ضبط معيار قبول واحد للتنفيذ",
+        "recommended_action": "حدّد معيارًا مكتوبًا واضحًا لقبول جودة تنفيذ أهم عملية تشغيلية، وشاركه مع من ينفذها.",
+        "reason_tpl": "أصل التشغيل ({score}/100) يحتاج معيارًا موثقًا لتقليل التفاوت في جودة التنفيذ.",
+    },
+    "Brand": {
+        "title": "توضيح رسالة البراند في أول نقطة تواصل",
+        "recommended_action": "راجع أول رسالة يراها عميل جديد (الموقع/الحساب) وأعد صياغتها في جملة واحدة واضحة عن القيمة المقدَّمة.",
+        "reason_tpl": "أصل البراند ({score}/100) يحتاج وضوحًا أكبر ليفهم العميل الجديد العرض بسرعة.",
+    },
+    "Data": {
+        "title": "تحديد 3 مؤشرات أداء أسبوعية",
+        "recommended_action": "اختر 3 مؤشرات أداء (KPIs) أساسية وابدأ بمتابعتها ومراجعتها أسبوعيًا في قرار واحد ثابت.",
+        "reason_tpl": "أصل البيانات ({score}/100) يحتاج مؤشرات محددة تُستخدم فعليًا في القرارات، لا بيانات مبعثرة.",
+    },
+    "Independence": {
+        "title": "تفويض قرار يومي واحد لشخص آخر",
+        "recommended_action": "حدّد قرارًا يوميًا واحدًا تتخذه بنفسك الآن، وفوّضه لشخص آخر مع معيار واضح لاتخاذه.",
+        "reason_tpl": "أصل الاستقلال ({score}/100) يشير إلى اعتماد مباشر على شخص واحد في القرارات اليومية.",
+    },
+}
+
+
+@app.route("/api/companies/<company_id>/decisions/suggest", methods=["POST"])
+def suggest_decisions(company_id):
+    db = get_db()
+    import uuid
+
+    company = db.execute("SELECT * FROM companies WHERE company_id=?", (company_id,)).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+
+    weakest_assets = db.execute(
+        "SELECT * FROM assets WHERE company_id=? ORDER BY current_score ASC LIMIT 3",
+        (company_id,)
+    ).fetchall()
+
+    suggestions = []
+    for asset in weakest_assets:
+        template = DECISION_TEMPLATES.get(asset["asset_type"])
+        if not template:
+            continue
+
+        # لا تُكرَّر مقترحات لأصل له قرار "مقترح" موجود مسبقًا (سواء كان أصل رئيسي في decisions.asset_id
+        # أو مرتبط عبر decision_asset_impacts)
+        existing = db.execute(
+            """SELECT d.* FROM decisions d WHERE d.company_id=? AND d.status='مقترح' AND (
+                   d.asset_id=?
+                   OR d.decision_id IN (
+                       SELECT decision_id FROM decision_asset_impacts WHERE asset_id=?
+                   )
+               ) LIMIT 1""",
+            (company_id, asset["asset_id"], asset["asset_id"])
+        ).fetchone()
+
+        if existing:
+            suggestions.append({
+                "asset_id": asset["asset_id"],
+                "asset_name": asset["asset_name"],
+                "current_score": asset["current_score"],
+                "decision_id": existing["decision_id"],
+                "title": existing["title"],
+                "recommended_action": existing["recommended_action"],
+                "reason": existing["reason"],
+                "confidence_score": existing["confidence_score"],
+                "status": existing["status"],
+                "created": False
+            })
+            continue
+
+        related_case = db.execute(
+            "SELECT case_id FROM cases WHERE company_id=? AND related_asset_id=? ORDER BY opened_at DESC LIMIT 1",
+            (company_id, asset["asset_id"])
+        ).fetchone()
+
+        decision_id = "D" + uuid.uuid4().hex[:6].upper()
+        reason = template["reason_tpl"].format(score=asset["current_score"])
+        db.execute("""INSERT INTO decisions
+            (decision_id, company_id, case_id, asset_id, title, recommended_action, reason,
+             confidence_score, expected_impact, status)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (decision_id, company_id, related_case["case_id"] if related_case else None,
+             asset["asset_id"], template["title"], template["recommended_action"], reason,
+             50, f'رفع {asset["asset_name"]} تدريجيًا خلال أسابيع قادمة', "مقترح"))
+
+        impact_id = "IMP" + uuid.uuid4().hex[:6].upper()
+        db.execute("""INSERT INTO decision_asset_impacts
+            (impact_id, decision_id, asset_id, score_impact, is_primary)
+            VALUES (?,?,?,?,?)""",
+            (impact_id, decision_id, asset["asset_id"], 5, 1))
+
+        suggestions.append({
+            "asset_id": asset["asset_id"],
+            "asset_name": asset["asset_name"],
+            "current_score": asset["current_score"],
+            "decision_id": decision_id,
+            "title": template["title"],
+            "recommended_action": template["recommended_action"],
+            "reason": reason,
+            "confidence_score": 50,
+            "status": "مقترح",
+            "created": True
+        })
+
+    db.commit()
+    return jsonify({"success": True, "data": {"suggestions": suggestions}})
+
+
+@app.route("/api/companies/<company_id>/passport/report-text")
+def passport_report_text(company_id):
+    db = get_db()
+    company = db.execute("SELECT * FROM companies WHERE company_id=?", (company_id,)).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+
+    assets = db.execute("SELECT * FROM assets WHERE company_id=? ORDER BY current_score ASC",
+                         (company_id,)).fetchall()
+    decisions = db.execute(
+        "SELECT * FROM decisions WHERE company_id=? ORDER BY created_at DESC", (company_id,)
+    ).fetchall()
+
+    avg_score = round(sum(a["current_score"] for a in assets) / len(assets)) if assets else 0
+    base = (company["annual_revenue"] or 0) * 2.5
+    quality_multiplier = avg_score / 100
+    current_value = round(base * quality_multiplier)
+    potential_value = round(base * min((avg_score + 35) / 100, 1.1))
+    gap = potential_value - current_value
+
+    lines = [
+        "══════════════════════════════════════════",
+        f"جواز سفر الشركة — {company['name']}",
+        "══════════════════════════════════════════",
+        "",
+        f"تاريخ التصدير: {datetime.utcnow().strftime('%Y-%m-%d')}",
+        "",
+        "❶  القيمة",
+        f"   القيمة الحالية: {current_value:,.0f}",
+        f"   القيمة الممكنة: {potential_value:,.0f}",
+        f"   الفجوة: {gap:,.0f}",
+        f"   درجة الجودة: {avg_score}/100",
+        "",
+        "❷  خريطة الأصول (من الأضعف للأقوى)",
+    ]
+    for a in assets:
+        lines.append(f"   {a['asset_name']}: {a['current_score']}/100")
+
+    lines.append("")
+    lines.append("❸  القرارات")
+    if decisions:
+        for d in decisions:
+            lines.append(f"   [{d['status']}] {d['title']}")
+            if d["recommended_action"]:
+                lines.append(f"      الإجراء الموصى به: {d['recommended_action']}")
+            if d["reason"]:
+                lines.append(f"      السبب: {d['reason']}")
+            if d["confidence_score"] is not None:
+                lines.append(f"      الثقة: {d['confidence_score']}٪")
+            lines.append("")
+    else:
+        lines.append("   لا توجد قرارات مسجَّلة بعد.")
+        lines.append("")
+
+    lines.append("══════════════════════════════════════════")
+    lines.append("أُنشئت بواسطة سنع — ليست معادلة SVS الرسمية، تقدير مبسّط للعرض فقط")
+    lines.append("══════════════════════════════════════════")
+
+    return jsonify({"success": True, "data": {"report_text": "\n".join(lines)}})
+
+
 @app.route("/api/decisions/<decision_id>/approve", methods=["POST"])
 def approve_decision(decision_id):
     db = get_db()
@@ -400,13 +575,43 @@ def add_evidence(company_id):
     body = request.get_json(force=True)
     db = get_db()
     import uuid
+
+    case_id = body.get("case_id")
+    asset_id = body.get("asset_id")
+    title = (body.get("title") or "").strip()
+    source_type = body.get("source_type", "ملاحظة مباشرة")
+    confidence = body.get("confidence", 50)
+
+    # حماية من الحفظ المزدوج والتكرار: إن وُجد دليل مطابق تمامًا في المحتوى
+    # (نفس الشركة + القضية + الأصل + العنوان + نوع المصدر) لا يُنشأ سجل جديد،
+    # بل يُعاد نفس السجل الموجود مع علامة duplicate=true.
+    existing = db.execute(
+        """SELECT evidence_id FROM evidence
+           WHERE company_id=? AND IFNULL(case_id,'')=IFNULL(?,'')
+             AND IFNULL(asset_id,'')=IFNULL(?,'') AND title=?
+             AND IFNULL(source_type,'')=IFNULL(?,'')""",
+        (company_id, case_id, asset_id, title, source_type)
+    ).fetchone()
+    if existing:
+        return jsonify({
+            "success": True,
+            "data": {"evidence_id": existing["evidence_id"]},
+            "meta": {
+                "duplicate": True,
+                "message": "هذا الدليل محفوظ مسبقًا بنفس المحتوى — لم يُنشأ سجل مكرر."
+            }
+        }), 200
+
     evidence_id = "E" + uuid.uuid4().hex[:6].upper()
     db.execute("""INSERT INTO evidence (evidence_id, company_id, case_id, asset_id, title, source_type, confidence)
         VALUES (?,?,?,?,?,?,?)""",
-        (evidence_id, company_id, body.get("case_id"), body.get("asset_id"),
-         body.get("title", ""), body.get("source_type", "ملاحظة مباشرة"), body.get("confidence", 50)))
+        (evidence_id, company_id, case_id, asset_id, title, source_type, confidence))
     db.commit()
-    return jsonify({"success": True, "data": {"evidence_id": evidence_id}}), 201
+    return jsonify({
+        "success": True,
+        "data": {"evidence_id": evidence_id},
+        "meta": {"duplicate": False}
+    }), 201
 
 
 # ------------------------------------------------------------------

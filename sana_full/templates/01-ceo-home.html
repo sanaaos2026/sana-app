@@ -64,6 +64,13 @@
   .diff-neg{ background:#FDECEA; color:#B23A2E; }
   .diff-zero{ background:#EBEDF5; color:#6E7580; }
   .link-out{ display:inline-block; margin-top:10px; font-size:12.5px; color:#0EA5A5; font-weight:600; }
+  .suggest-card{ background:#F5F6FB; border:1px solid #DEE1EC; border-radius:10px; padding:14px 16px; margin-top:12px; }
+  .suggest-card:not(:last-child){ margin-bottom:10px; }
+  .suggest-card .sc-asset{ font-family:'Space Grotesk'; font-size:10.5px; font-weight:600; letter-spacing:1px; text-transform:uppercase; color:#0EA5A5; margin-bottom:6px; }
+  .suggest-card .sc-title{ font-size:13.5px; font-weight:600; color:#0B132B; margin-bottom:4px; }
+  .suggest-card .sc-action{ font-size:12.5px; color:#333940; margin-bottom:4px; }
+  .suggest-card .sc-reason{ font-size:12px; color:#6E7580; }
+  .suggest-card .sc-existing{ font-size:11px; color:#F2B233; font-weight:600; margin-top:6px; }
   #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; }
   #toast.show{ opacity:1; }
   .skeleton{ color:#9AA0AB; font-size:13px; padding:20px 0; text-align:center; }
@@ -115,6 +122,8 @@ async function loadData(){
   render(json.data);
 }
 
+let lastSuggestions = null;
+
 function render(d){
   const c = d.company;
   document.getElementById('companyName').textContent = `${c.name} — ${c.sector}`;
@@ -159,7 +168,10 @@ function render(d){
     }
     html += `<div class="asset-row"><div>${a.asset_name}</div><div class="bar"><span class="${barClass(a.current_score)}" style="width:${a.current_score}%"></span></div><div class="num" style="text-align:left;">${a.current_score}</div>${diffTag}</div>`;
   });
-  html += `<a href="/passport" class="link-out">← شاهد كيف تتحول هذه الأصول إلى قيمة الشركة الكاملة (Business Passport)</a></section>`;
+  html += `<a href="/passport" class="link-out">← شاهد كيف تتحول هذه الأصول إلى قيمة الشركة الكاملة (Business Passport)</a>
+    <button class="btn btn-primary" id="suggestBtn" onclick="suggestDecisions()" style="margin-top:16px;">💡 اقترح 3 قرارات لأضعف الأصول</button>
+    <div id="suggestPanel"></div>
+  </section>`;
 
   html += `<section><h2>المهام الحالية</h2>`;
   if(d.tasks && d.tasks.length){
@@ -176,6 +188,25 @@ function render(d){
   html += `</section>`;
 
   document.getElementById('app').innerHTML = html;
+  renderSuggestPanel();
+}
+
+function renderSuggestPanel(){
+  const panel = document.getElementById('suggestPanel');
+  if(!panel || !lastSuggestions) return;
+  if(!lastSuggestions.length){
+    panel.innerHTML = `<div class="decision-reason" style="margin-top:12px;">لا توجد أصول لاقتراح قرارات لها.</div>`;
+    return;
+  }
+  panel.innerHTML = lastSuggestions.map(s => `
+    <div class="suggest-card">
+      <div class="sc-asset">${s.asset_name} — ${s.current_score}/100</div>
+      <div class="sc-title">${s.title}</div>
+      <div class="sc-action">${s.recommended_action}</div>
+      <div class="sc-reason">${s.reason}</div>
+      ${s.created ? '' : '<div class="sc-existing">⚠ يوجد مسبقًا قرار مقترح لهذا الأصل — لم يُنشأ قرار مكرر.</div>'}
+    </div>
+  `).join('');
 }
 
 async function approveDecision(id){
@@ -201,6 +232,30 @@ async function completeTask(id){
     showToast(msg, true);
   }
 }
+async function suggestDecisions(){
+  const btn = document.getElementById('suggestBtn');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ التحليل...';
+  try{
+    const res = await fetch(`/api/companies/${COMPANY_ID}/decisions/suggest`, { method:'POST' });
+    const json = await res.json();
+    if(json.success){
+      lastSuggestions = json.data.suggestions || [];
+      showToast('تم توليد اقتراحات القرارات لأضعف الأصول');
+      await loadData(); // يعيد بناء الصفحة كاملة، ثم يعيد عرض لوحة الاقتراحات المحفوظة في lastSuggestions
+    } else {
+      showToast('تعذر توليد الاقتراحات', true);
+    }
+  } catch(e){
+    showToast('تعذر الاتصال بالخادم', true);
+  }
+  const freshBtn = document.getElementById('suggestBtn');
+  if(freshBtn){
+    freshBtn.disabled = false;
+    freshBtn.textContent = '💡 اقترح 3 قرارات لأضعف الأصول';
+  }
+}
+
 function showToast(msg, isError){
   const t = document.getElementById('toast');
   t.textContent = msg;

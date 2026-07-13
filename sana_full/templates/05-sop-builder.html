@@ -57,6 +57,21 @@
   .status-bar.err{ background:#FDECEA; border-color:#F5BFBB; color:#8B0000; }
   .status-bar .icon{ font-size:15px; flex-shrink:0; }
 
+  .quality-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:20px 22px; margin-bottom:16px; display:none; }
+  .quality-card.visible{ display:block; }
+  .quality-card .qc-label{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#6E7580; margin-bottom:12px; }
+  .qc-item{ display:flex; align-items:flex-start; gap:10px; padding:8px 0; border-bottom:1px solid #EBEDF5; font-size:13px; }
+  .qc-item:last-child{ border-bottom:none; }
+  .qc-item .qc-icon{ font-size:15px; flex-shrink:0; width:18px; text-align:center; }
+  .qc-item.pass .qc-icon{ color:#0EA5A5; }
+  .qc-item.fail .qc-icon{ color:#B23A2E; }
+  .qc-item .qc-text .qc-title{ font-weight:600; color:#0B132B; margin-bottom:2px; }
+  .qc-item .qc-text .qc-detail{ color:#6E7580; font-size:12px; }
+
+  .btn-save{ background:#0EA5A5; color:#fff; width:100%; display:none; margin-top:6px; }
+  .btn-save.visible{ display:block; }
+  .btn-save:disabled{ opacity:0.6; cursor:not-allowed; }
+
   #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; z-index:999; }
   #toast.show{ opacity:1; }
 </style>
@@ -119,15 +134,21 @@
       <input type="text" id="q9" placeholder="مثال: مدير العمليات مباشرة — واتساب أو إيميل خلال ساعة">
     </div>
 
-    <button class="btn btn-primary" id="generateBtn" onclick="generateSOP()">توليد وثيقة SOP</button>
+    <button class="btn btn-primary" id="previewBtn" onclick="previewSOP()">👁 معاينة الوثيقة</button>
+  </div>
+
+  <div class="quality-card" id="qualityCard">
+    <div class="qc-label">فحص جودة الوثيقة</div>
+    <div id="qualityList"></div>
   </div>
 
   <div class="output-card" id="outputCard">
-    <div class="out-label">وثيقة SOP — جاهزة للتوزيع</div>
+    <div class="out-label">وثيقة SOP — معاينة</div>
     <pre id="sopOutput"></pre>
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="downloadTxt()">⬇ تحميل كملف نصي (.txt)</button>
     </div>
+    <button class="btn btn-save" id="saveBtn" onclick="saveFinal()">💾 حفظ هذه النسخة في القضية (نهائي)</button>
     <div class="status-bar" id="statusBar">
       <span class="icon" id="statusIcon"></span>
       <span id="statusMsg"></span>
@@ -186,28 +207,101 @@ function buildSOP(){
   return lines.join('\n');
 }
 
-async function generateSOP(){
+// ── فحص جودة مبني على قواعد بسيطة (لا ذكاء اصطناعي) ──────
+const VAGUE_WORDS = ['جيد', 'مناسب', 'تمام'];
+
+function runQualityCheck(){
+  const stepsLines = (val('q5') || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const stepsOk = stepsLines.length >= 2;
+
+  const acceptanceText = val('q7') || '';
+  const foundVague = VAGUE_WORDS.filter(w => acceptanceText.includes(w));
+  const acceptanceOk = acceptanceText.length > 0 && foundVague.length === 0;
+
+  const reportOk = !!val('q9');
+  const timingOk = !!val('q4');
+
+  return [
+    {
+      pass: stepsOk,
+      title: 'الخطوات بالترتيب',
+      detail: stepsOk ? `يوجد ${stepsLines.length} خطوات محدَّدة.` : 'يلزم كتابة خطوتين على الأقل بالترتيب.'
+    },
+    {
+      pass: acceptanceOk,
+      title: 'معيار قبول واضح',
+      detail: !acceptanceText.length ? 'لم يُكتب معيار قبول.' :
+              foundVague.length ? `يحتوي كلمات غامضة: ${foundVague.join('، ')} — استخدم وصفًا قابلًا للقياس.` :
+              'معيار القبول محدَّد وخالٍ من الكلمات الغامضة.'
+    },
+    {
+      pass: reportOk,
+      title: 'جهة إبلاغ محدَّدة',
+      detail: reportOk ? 'جهة الإبلاغ عند وجود مشكلة محدَّدة.' : 'يلزم تحديد جهة إبلاغ واضحة عند وجود مشكلة.'
+    },
+    {
+      pass: timingOk,
+      title: 'توقيت ودورية محدَّدة',
+      detail: timingOk ? 'التوقيت والدورية محدَّدان.' : 'يلزم تحديد متى وبأي دورية تُنفَّذ العملية.'
+    },
+  ];
+}
+
+function renderQualityCheck(checks){
+  const list = document.getElementById('qualityList');
+  list.innerHTML = checks.map(c => `
+    <div class="qc-item ${c.pass ? 'pass' : 'fail'}">
+      <span class="qc-icon">${c.pass ? '✓' : '!'}</span>
+      <div class="qc-text">
+        <div class="qc-title">${c.title}</div>
+        <div class="qc-detail">${c.detail}</div>
+      </div>
+    </div>
+  `).join('');
+  document.getElementById('qualityCard').classList.add('visible');
+}
+
+// ── معاينة فقط — لا تحفظ أي دليل، يمكن تكرارها بلا قيود ──
+function previewSOP(){
   const name = val('q1');
   if(!name){
     showStatus('يرجى كتابة اسم العملية أولاً.', true);
     return;
   }
-  const btn = document.getElementById('generateBtn');
-  btn.disabled = true;
-  btn.textContent = 'جارٍ التوليد...';
 
   generatedText = buildSOP();
   document.getElementById('sopOutput').textContent = generatedText;
   document.getElementById('outputCard').classList.add('visible');
   document.getElementById('statusBar').classList.remove('visible','err');
 
-  // حفظ تلقائي كدليل داعم
+  renderQualityCheck(runQualityCheck());
+
+  // زر الحفظ النهائي يظهر فقط بعد أول معاينة
+  document.getElementById('saveBtn').classList.add('visible');
+
+  document.getElementById('qualityCard').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+// ── حفظ نهائي — الوحيد الذي يستدعي API، محمي من التكرار من الخادم ──
+function simpleHash(str){
+  let h = 0;
+  for(let i = 0; i < str.length; i++){ h = (h * 31 + str.charCodeAt(i)) >>> 0; }
+  return h.toString(36);
+}
+
+async function saveFinal(){
+  if(!generatedText){ return; }
+  const name = val('q1') || 'عملية غير مسماة';
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ الحفظ...';
+
   try{
     const res = await fetch(`/api/companies/${COMPANY_ID}/evidence`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: `SOP موثّق: ${name}`,
+        title: `SOP موثّق: ${name} — نسخة #${simpleHash(generatedText)}`,
         case_id: SAVE_CASE_ID,
         asset_id: SAVE_ASSET_ID,
         source_type: 'وثيقة SOP',
@@ -216,18 +310,22 @@ async function generateSOP(){
     });
     const json = await res.json();
     if(res.ok && json.success){
-      showStatus('✓ حُفظت الوثيقة تلقائيًا كدليل في ملف الشركة (ثقة ٧٥٪)', false);
-      showToast('تم الحفظ في ملف الشركة');
+      if(json.meta && json.meta.duplicate){
+        showStatus('هذه النسخة محفوظة مسبقًا في ملف الشركة — لم يُنشأ سجل مكرر.', false);
+        showToast('هذه النسخة محفوظة مسبقًا');
+      } else {
+        showStatus('✓ حُفظت هذه النسخة كدليل نهائي في ملف الشركة (ثقة ٧٥٪)', false);
+        showToast('تم الحفظ في ملف الشركة');
+      }
     } else {
-      showStatus('تُوُلِّدت الوثيقة، لكن تعذر حفظها في الملف — حاول مجددًا.', true);
+      showStatus('تعذر حفظ الوثيقة — حاول مجددًا.', true);
     }
   } catch(e){
-    showStatus('تُوُلِّدت الوثيقة، لكن تعذر الاتصال بالخادم للحفظ.', true);
+    showStatus('تعذر الاتصال بالخادم للحفظ.', true);
   }
 
   btn.disabled = false;
-  btn.textContent = 'توليد وثيقة SOP';
-  document.getElementById('outputCard').scrollIntoView({ behavior:'smooth', block:'start' });
+  btn.textContent = '💾 حفظ هذه النسخة في القضية (نهائي)';
 }
 
 function downloadTxt(){
