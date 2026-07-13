@@ -98,9 +98,9 @@
   <div style="display:flex; gap:10px; align-items:center;">
     <span class="state-badge">قيد التنفيذ</span>
     <span class="state-badge">النضج: Level 2</span>
-    <a href="/case/new" style="color:#0EA5A5; font-weight:600;">+ تشخيص جديد</a>
-    <a href="/sop-builder" style="color:#6E7580; font-weight:600;">📄 بناء SOP</a>
-    <a href="/assessment" style="color:#6E7580; font-weight:600;">📊 تقييم سريع</a>
+    <a href="/case/new" onclick="this.href='/case/new'+CQS" style="color:#0EA5A5; font-weight:600;">+ تشخيص جديد</a>
+    <a href="/sop-builder" onclick="this.href='/sop-builder'+CQS" style="color:#6E7580; font-weight:600;">📄 بناء SOP</a>
+    <a href="/assessment" onclick="this.href='/assessment'+CQS" style="color:#6E7580; font-weight:600;">📊 تقييم سريع</a>
   </div>
 </div>
 
@@ -111,9 +111,12 @@
 <div id="toast"></div>
 
 <script>
-const COMPANY_ID = "C001";
+const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "C001";
 
 function barClass(score){ if(score<40) return 'weak'; if(score<65) return 'mid'; return 'strong'; }
+
+// يحافظ على اختيار الشركة الحالية عند التنقّل بين الصفحات (افتراضيًا C001 بلا معامل في الرابط)
+const CQS = COMPANY_ID !== 'C001' ? `?company_id=${encodeURIComponent(COMPANY_ID)}` : '';
 
 async function loadData(){
   const res = await fetch(`/api/companies/${COMPANY_ID}/summary`);
@@ -151,7 +154,7 @@ function render(d){
       <button class="btn btn-primary" onclick="approveDecision('${topDecision.decision_id}')" ${topDecision.status==='معتمد'?'disabled':''}>
         ${topDecision.status==='معتمد' ? 'تم الاعتماد ✓' : 'اعتماد القرار'}
       </button>
-      <a href="/case/${topDecision.case_id}" class="link-out" style="display:block; margin-top:12px;">← افتح القضية الكاملة لرؤية التفاصيل والأدلة</a>
+      <a href="/case/${topDecision.case_id}${CQS}" class="link-out" style="display:block; margin-top:12px;">← افتح القضية الكاملة لرؤية التفاصيل والأدلة</a>
     </section>`;
   }
 
@@ -168,7 +171,7 @@ function render(d){
     }
     html += `<div class="asset-row"><div>${a.asset_name}</div><div class="bar"><span class="${barClass(a.current_score)}" style="width:${a.current_score}%"></span></div><div class="num" style="text-align:left;">${a.current_score}</div>${diffTag}</div>`;
   });
-  html += `<a href="/passport" class="link-out">← شاهد كيف تتحول هذه الأصول إلى قيمة الشركة الكاملة (Business Passport)</a>
+  html += `<a href="/passport${CQS}" class="link-out">← شاهد كيف تتحول هذه الأصول إلى قيمة الشركة الكاملة (Business Passport)</a>
     <button class="btn btn-primary" id="suggestBtn" onclick="suggestDecisions()" style="margin-top:16px;">💡 اقترح 3 قرارات لأضعف الأصول</button>
     <div id="suggestPanel"></div>
   </section>`;

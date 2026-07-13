@@ -159,7 +159,7 @@
 <div id="toast"></div>
 
 <script>
-const COMPANY_ID = "C001";
+const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "C001";
 const SAVE_CASE_ID = "CS001";
 const SAVE_ASSET_ID = "A001";
 let generatedText = "";

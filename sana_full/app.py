@@ -286,6 +286,13 @@ def passport_summary(company_id):
     weakest = min(assets, key=lambda a: a["current_score"]) if assets else None
     strongest = max(assets, key=lambda a: a["current_score"]) if assets else None
 
+    weakest_case = None
+    if weakest:
+        weakest_case = db.execute(
+            "SELECT case_id FROM cases WHERE company_id=? AND related_asset_id=? ORDER BY opened_at DESC LIMIT 1",
+            (company_id, weakest["asset_id"])
+        ).fetchone()
+
     return jsonify({
         "success": True,
         "data": {
@@ -297,6 +304,7 @@ def passport_summary(company_id):
             "assets": [dict(a) for a in assets],
             "weakest_asset": dict(weakest) if weakest else None,
             "strongest_asset": dict(strongest) if strongest else None,
+            "weakest_asset_case_id": weakest_case["case_id"] if weakest_case else None,
         },
         "meta": {
             "disclaimer": "تقدير مبسّط للعرض فقط — ليس محرك SVS الرسمي المُوثَّق في المعمارية"

@@ -57,7 +57,7 @@
 </div>
 
 <script>
-const COMPANY_ID = "C001";
+const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "C001";
 
 async function loadPassport(){
   const res = await fetch(`/api/companies/${COMPANY_ID}/passport`);
@@ -95,9 +95,10 @@ function render(d, meta){
     html += `<div class="asset-row"><span>${a.asset_name}</span><span class="num" style="font-weight:600;">${a.current_score}</span></div>`;
   });
   html += `</section>
+      ${d.weakest_asset_case_id ? `
       <section style="text-align:center;">
-        <a href="/case/CS001" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح القضية المرتبطة به</a>
-      </section>
+        <a href="/case/${d.weakest_asset_case_id}" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح القضية المرتبطة به</a>
+      </section>` : ''}
       <section style="text-align:center;">
         <button class="btn" id="downloadReportBtn" onclick="downloadReport()"
           style="background:#EBEDF5; color:#0B132B; border:none; padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans Arabic';">

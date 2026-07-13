@@ -179,7 +179,7 @@
 <div id="toast"></div>
 
 <script>
-const COMPANY_ID = "C001";
+const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "C001";
 const CASE_ID    = "CS001";
 
 // تعريف الأسئلة العشرة — سؤالان لكل أصل
