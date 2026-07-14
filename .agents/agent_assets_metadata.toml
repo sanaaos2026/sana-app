@@ -6,3 +6,9 @@ id = "BhF1ueRWigTRvGjpilfWk"
 uri = "file://attached_assets/sana-project-export.zip"
 type = "unspecified"
 title = "مشروع سنع — تصدير كامل"
+
+[[outputs]]
+id = "F8kLYuTbtfGTZQrxiEfya"
+uri = "file://exports/sana_project_export.zip"
+type = "unspecified"
+title = "Sana Project - Full Export"
