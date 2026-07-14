@@ -31,6 +31,15 @@
   .qbox .declared{ font-size:13.5px; color:rgba(255,255,255,0.55); margin-bottom:14px; text-decoration:line-through; }
   .qbox .real{ font-size:17px; font-weight:600; color:#F2B233; }
 
+  .ai-assessment{ margin-top:16px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.15); }
+  .ai-assessment-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .ai-assessment-title{ font-size:12.5px; font-weight:600; color:rgba(255,255,255,0.7); }
+  .ai-conf-badge{ background:rgba(242,178,51,0.15); color:#F2B233; font-size:11.5px; font-weight:600; padding:3px 10px; border-radius:20px; font-family:'Space Grotesk'; }
+  .ai-assessment-list{ list-style:none; padding:0; margin:0; }
+  .ai-assessment-list li{ position:relative; padding-right:16px; margin-bottom:9px; font-size:13px; line-height:1.7; color:rgba(255,255,255,0.85); }
+  .ai-assessment-list li::before{ content:"–"; position:absolute; right:0; color:#F2B233; }
+  .ai-assessment-list li:last-child{ margin-bottom:0; }
+
   section{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:20px; margin-bottom:16px; }
   section h2{ font-size:14.5px; font-weight:600; color:#0B132B; margin-bottom:12px; }
 
@@ -104,6 +113,25 @@ const VIEW = new URLSearchParams(window.location.search).get('view') === 'client
 const ADMIN_KEY = new URLSearchParams(window.location.search).get('admin_key');
 let CASE_COMPANY_ID = null;
 
+function renderAiAssessment(text, confidence){
+  // ⚠ تحسين عرض فقط — لا يغيّر التحليل نفسه، فقط يقسّمه لنقاط قابلة للمسح السريع
+  const cleaned = text.replace(/^\s*(تقييم سنع الشامل|التقييم الشامل)\s*:?\s*/i, '');
+  const sentences = cleaned.split(/(?<=[.؟!])\s+/).map(s => s.trim()).filter(s => s.length > 3);
+  const confBadge = confidence
+    ? `<span class="ai-conf-badge">ثقة ${confidence}٪</span>`
+    : '';
+  const points = sentences.map(s => `<li>${s}</li>`).join('');
+  return `
+    <div class="ai-assessment">
+      <div class="ai-assessment-head">
+        <span class="ai-assessment-title">🧠 تقييم سنع الشامل</span>
+        ${confBadge}
+      </div>
+      <ul class="ai-assessment-list">${points}</ul>
+    </div>
+  `;
+}
+
 function qs(companyId, extra){
   const p = new URLSearchParams();
   if(companyId && companyId !== 'C001') p.set('company_id', companyId);
@@ -133,7 +161,7 @@ function render(d){
       <div class="lbl">Real Question</div>
       <div class="declared">المشكلة كما وصفها المالك: "${c.declared_problem || ''}"</div>
       <div class="real">السؤال الحقيقي: ${c.real_question || ''}</div>
-      ${c.ai_analysis ? `<div style="margin-top:14px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.15); font-size:13px; color:rgba(255,255,255,0.85);">🧠 تقييم سنع الشامل: ${c.ai_analysis}${c.confidence_score ? ` <span style="color:#F2B233; font-weight:600;">(ثقة ${c.confidence_score}٪)</span>` : ''}</div>` : ''}
+      ${c.ai_analysis ? renderAiAssessment(c.ai_analysis, c.confidence_score) : ''}
     </div>
 
     <a href="/methodology/sana-acquisition-system${qs(CASE_COMPANY_ID, {from_case: CASE_ID})}" class="link-out" style="display:inline-block; margin-bottom:16px; background:#F5F6FB; border:1px solid #DEE1EC; border-radius:8px; padding:8px 14px;">
