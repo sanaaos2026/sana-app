@@ -227,6 +227,9 @@ def init_db(force=False):
         companies_cols = {row[1] for row in conn.execute("PRAGMA table_info(companies)").fetchall()}
         if "signup_code" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN signup_code TEXT")
+        accounts_cols = {row[1] for row in conn.execute("PRAGMA table_info(user_accounts)").fetchall()}
+        if "referral_source" not in accounts_cols:
+            conn.execute("ALTER TABLE user_accounts ADD COLUMN referral_source TEXT")
         conn.commit()
     # لكل شركة بلا رمز دعوة (سواء قاعدة بيانات جديدة أو قديمة) — ولّد رمزًا فريدًا
     for row in conn.execute("SELECT company_id FROM companies WHERE signup_code IS NULL").fetchall():
@@ -378,37 +381,85 @@ def signup():
     body = request.get_json(silent=True) or request.form
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
-    signup_code = (body.get("signup_code") or "").strip()
+    referral_source = (body.get("referral_source") or "").strip() or None
 
     if not email or "@" not in email or "." not in email.split("@")[-1]:
         return jsonify({"success": False, "error": "INVALID_EMAIL", "message": "الرجاء إدخال بريد إلكتروني صحيح."}), 400
     if len(password) < 8:
         return jsonify({"success": False, "error": "WEAK_PASSWORD", "message": "كلمة المرور يجب أن تكون 8 أحرف على الأقل."}), 400
-    if not signup_code:
-        return jsonify({"success": False, "error": "MISSING_CODE", "message": "رمز دعوة الشركة مطلوب للتسجيل."}), 400
 
     db = get_db()
-    company = db.execute("SELECT company_id, name FROM companies WHERE signup_code=?", (signup_code,)).fetchone()
-    if not company:
-        return jsonify({"success": False, "error": "INVALID_CODE", "message": "رمز الدعوة غير صحيح."}), 400
-
     existing = db.execute("SELECT account_id FROM user_accounts WHERE email=?", (email,)).fetchone()
     if existing:
         return jsonify({"success": False, "error": "EMAIL_TAKEN", "message": "هذا البريد الإلكتروني مسجَّل بالفعل."}), 409
 
+    # كل حساب جديد يحصل تلقائيًا على شركة جديدة فارغة خاصة به — لا مشاركة
+    # مع أي حساب/شركة أخرى، ولا حاجة لرمز دعوة مسبق.
+    company_id = "C" + uuid.uuid4().hex[:8].upper()
+    db.execute(
+        "INSERT INTO companies (company_id, name, sector, employee_count) VALUES (?,?,?,?)",
+        (company_id, "شركة جديدة", None, None)
+    )
+    default_assets = [
+        ("Knowledge", "أصل المعرفة"),
+        ("Operations", "أصل التشغيل"),
+        ("Brand", "أصل البراند"),
+        ("Data", "أصل البيانات"),
+        ("Independence", "أصل الاستقلال"),
+    ]
+    for asset_type, asset_name in default_assets:
+        asset_id = "A" + uuid.uuid4().hex[:8].upper()
+        db.execute(
+            """INSERT INTO assets (asset_id, company_id, asset_type, asset_name, current_score, fragility_score, status)
+               VALUES (?,?,?,?,?,?,?)""",
+            (asset_id, company_id, asset_type, asset_name, 0, 100, "غير مقيَّم")
+        )
+
     account_id = "ACC" + uuid.uuid4().hex[:10].upper()
     db.execute(
-        "INSERT INTO user_accounts (account_id, email, password_hash, company_id) VALUES (?,?,?,?)",
-        (account_id, email, generate_password_hash(password), company["company_id"])
+        "INSERT INTO user_accounts (account_id, email, password_hash, company_id, referral_source) VALUES (?,?,?,?,?)",
+        (account_id, email, generate_password_hash(password), company_id, referral_source)
     )
     db.commit()
 
     session.clear()
     session["account_id"] = account_id
-    session["company_id"] = company["company_id"]
+    session["company_id"] = company_id
     session["email"] = email
 
-    return jsonify({"success": True, "data": {"redirect": "/home", "company_name": company["name"]}}), 201
+    return jsonify({"success": True, "data": {"redirect": "/onboarding", "company_id": company_id}}), 201
+
+
+@app.route("/onboarding", methods=["GET", "POST"])
+def onboarding():
+    """شاشة قصيرة بعد إنشاء الحساب مباشرة — تحدّث بيانات الشركة الفارغة التي أُنشئت تلقائيًا."""
+    account = current_account()
+    if not account:
+        return redirect(url_for("login"))
+
+    if request.method == "GET":
+        return render_template("11-onboarding.html")
+
+    body = request.get_json(silent=True) or request.form
+    name = (body.get("name") or "").strip()
+    sector = (body.get("sector") or "").strip() or None
+    employee_count = body.get("employee_count")
+    try:
+        employee_count = int(employee_count) if employee_count not in (None, "") else None
+    except (TypeError, ValueError):
+        employee_count = None
+
+    if not name:
+        return jsonify({"success": False, "error": "MISSING_NAME", "message": "اسم الشركة مطلوب."}), 400
+
+    db = get_db()
+    db.execute(
+        "UPDATE companies SET name=?, sector=?, employee_count=? WHERE company_id=?",
+        (name, sector, employee_count, account["company_id"])
+    )
+    db.commit()
+
+    return jsonify({"success": True, "data": {"redirect": "/home"}})
 
 
 @app.route("/login", methods=["GET", "POST"])

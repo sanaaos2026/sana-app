@@ -22,6 +22,7 @@ CREATE TABLE user_accounts (
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     company_id TEXT NOT NULL,
+    referral_source TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (company_id) REFERENCES companies(company_id)
 );

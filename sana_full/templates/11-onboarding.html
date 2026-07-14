@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#F5F6FB">
-<title>سنع — إنشاء حساب</title>
+<title>سنع — أخبرنا عن شركتك</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   html{ color-scheme: light; background:#F5F6FB; }
   :root{
-    --navy:#0B132B; --teal:#0EA5A5; --teal-light:#E1F5F5;
-    --gold:#F2B233; --paper:#F5F6FB; --ink:#333940; --slate:#6E7580; --line:#DEE1EC; --red-risk:#B23A2E;
+    --navy:#0B132B; --teal:#0EA5A5; --gold:#F2B233; --paper:#F5F6FB;
+    --ink:#333940; --slate:#6E7580; --line:#DEE1EC; --red-risk:#B23A2E;
   }
   *{ margin:0; padding:0; box-sizing:border-box; }
   body{
@@ -21,26 +21,25 @@
     padding:40px 20px;
   }
   .mark{ width:36px; height:36px; margin-bottom:18px; }
-  .card{ background:#fff; border:1px solid var(--line); border-radius:14px; padding:32px 28px; max-width:380px; width:100%; }
+  .card{ background:#fff; border:1px solid var(--line); border-radius:14px; padding:32px 28px; max-width:400px; width:100%; }
   h1{ font-size:19px; font-weight:600; color:var(--navy); margin-bottom:6px; text-align:center; }
   .sub{ font-size:12.5px; color:var(--slate); text-align:center; margin-bottom:26px; line-height:1.7; }
   label{ display:block; font-size:12.5px; font-weight:600; color:var(--navy); margin-bottom:6px; }
-  .hint{ font-size:11px; color:var(--slate); margin:-12px 0 16px; }
-  input{
+  input, select{
     width:100%; padding:11px 13px; border:1px solid var(--line); border-radius:8px; font-family:inherit;
-    font-size:13.5px; margin-bottom:6px; background:#F9FAFC;
+    font-size:13.5px; margin-bottom:16px; background:#F9FAFC;
   }
-  input:focus{ outline:none; border-color:var(--teal); background:#fff; }
+  input:focus, select:focus{ outline:none; border-color:var(--teal); background:#fff; }
   .btn{
     width:100%; padding:12px; border:none; border-radius:8px; background:var(--navy); color:#fff;
-    font-family:inherit; font-size:14px; font-weight:600; cursor:pointer; transition:opacity .15s; margin-top:10px;
+    font-family:inherit; font-size:14px; font-weight:600; cursor:pointer; transition:opacity .15s;
   }
   .btn:hover{ opacity:.9; }
   .btn:disabled{ opacity:.6; cursor:not-allowed; }
   .error{ display:none; background:#FCEBEA; color:var(--red-risk); font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:16px; }
   .error.show{ display:block; }
-  .foot{ text-align:center; margin-top:20px; font-size:12.5px; color:var(--slate); }
-  .foot a{ color:var(--teal); font-weight:600; text-decoration:none; }
+  .skip{ text-align:center; margin-top:16px; font-size:12.5px; }
+  .skip a{ color:var(--slate); text-decoration:none; }
 </style>
 </head>
 <body>
@@ -51,67 +50,62 @@
   </svg>
 
   <div class="card">
-    <h1>إنشاء حساب جديد</h1>
-    <div class="sub">حساب واحد لشركتك أنت فقط — تبدأ بمساحة عمل فارغة ومنعزلة تمامًا عن أي شركة أخرى.</div>
+    <h1>أخبرنا عن شركتك</h1>
+    <div class="sub">بضع معلومات سريعة لنجهّز مساحة شركتك — يمكنك تعديلها لاحقًا في أي وقت.</div>
 
     <div class="error" id="errorMsg"></div>
 
-    <label for="email">البريد الإلكتروني</label>
-    <input type="email" id="email" autocomplete="username" placeholder="you@company.com">
+    <label for="name">اسم الشركة</label>
+    <input type="text" id="name" placeholder="مثال: مؤسسة النجاح للتجارة">
 
-    <label for="password">كلمة المرور</label>
-    <input type="password" id="password" autocomplete="new-password" placeholder="8 أحرف على الأقل">
+    <label for="sector">القطاع</label>
+    <input type="text" id="sector" placeholder="مثال: تجزئة، تصنيع، خدمات...">
 
-    <label for="referralSource">من أين سمعت عنا؟ <span style="font-weight:400; color:var(--slate);">(اختياري)</span></label>
-    <input type="text" id="referralSource" placeholder="مثال: توصية صديق، تويتر، بحث جوجل...">
+    <label for="employeeCount">عدد الموظفين تقريبًا</label>
+    <input type="number" id="employeeCount" min="1" placeholder="مثال: 12">
 
-    <button class="btn" id="submitBtn" onclick="doSignup()">إنشاء الحساب</button>
+    <button class="btn" id="submitBtn" onclick="submitOnboarding()">متابعة</button>
 
-    <div class="foot">لديك حساب بالفعل؟ <a href="/login">سجّل الدخول</a></div>
+    <div class="skip"><a href="/home">تخطي الآن، أكمل لاحقًا ←</a></div>
   </div>
 
 <script>
-async function doSignup(){
-  const email = document.getElementById('email').value.trim();
-  const password = document.getElementById('password').value;
-  const referral_source = document.getElementById('referralSource').value.trim();
+async function submitOnboarding(){
+  const name = document.getElementById('name').value.trim();
+  const sector = document.getElementById('sector').value.trim();
+  const employee_count = document.getElementById('employeeCount').value.trim();
   const errorMsg = document.getElementById('errorMsg');
   const btn = document.getElementById('submitBtn');
   errorMsg.classList.remove('show');
 
-  if(!email || !password){
-    errorMsg.textContent = 'البريد الإلكتروني وكلمة المرور مطلوبان.';
-    errorMsg.classList.add('show');
-    return;
-  }
-  if(password.length < 8){
-    errorMsg.textContent = 'كلمة المرور يجب أن تكون 8 أحرف على الأقل.';
+  if(!name){
+    errorMsg.textContent = 'اسم الشركة مطلوب.';
     errorMsg.classList.add('show');
     return;
   }
 
   btn.disabled = true;
-  btn.textContent = 'جارٍ الإنشاء...';
+  btn.textContent = 'جارٍ الحفظ...';
   try{
-    const res = await fetch('/signup', {
+    const res = await fetch('/onboarding', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, referral_source })
+      body: JSON.stringify({ name, sector, employee_count })
     });
     const json = await res.json();
     if(res.ok && json.success){
       window.location.href = json.data.redirect || '/home';
     } else {
-      errorMsg.textContent = json.message || 'تعذّر إنشاء الحساب.';
+      errorMsg.textContent = json.message || 'تعذّر الحفظ، حاول مرة أخرى.';
       errorMsg.classList.add('show');
       btn.disabled = false;
-      btn.textContent = 'إنشاء الحساب';
+      btn.textContent = 'متابعة';
     }
   } catch(e){
     errorMsg.textContent = 'تعذّر الاتصال بالخادم، حاول مرة أخرى.';
     errorMsg.classList.add('show');
     btn.disabled = false;
-    btn.textContent = 'إنشاء الحساب';
+    btn.textContent = 'متابعة';
   }
 }
 </script>
