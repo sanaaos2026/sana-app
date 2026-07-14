@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F5F6FB">
+<title>سنع — لوحة المهام</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme: light; background:#F5F6FB; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{ background:#F5F6FB; color:#333940; font-family:'IBM Plex Sans Arabic', sans-serif; line-height:1.6; }
+  a{ color:inherit; text-decoration:none; }
+
+  header{ background:#080E1F; padding:16px 28px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.08); }
+  .brand{ display:flex; align-items:center; gap:10px; color:#fff; font-weight:600; }
+
+  main{ max-width:760px; margin:0 auto; padding:28px 20px 60px; }
+  .eyebrow{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#0EA5A5; font-weight:600; margin-bottom:10px; display:block; }
+  h1{ font-size:clamp(20px,3vw,26px); font-weight:600; color:#0B132B; margin-bottom:6px; }
+  .sub{ color:#6E7580; font-size:13.5px; margin-bottom:20px; }
+
+  .stamp-row{ display:flex; align-items:center; justify-content:center; gap:18px; background:#fff; border:1px solid #DEE1EC; border-radius:14px; padding:16px 22px; margin-bottom:16px; }
+  .stamp-num{ font-size:24px; font-weight:700; color:#0B132B; font-family:'Space Grotesk'; }
+  .stamp-text{ font-size:12.5px; color:#6E7580; }
+
+  .tabs{ display:flex; gap:8px; justify-content:center; margin-bottom:22px; }
+  .tab{ padding:8px 20px; border-radius:20px; border:1px solid #DEE1EC; background:#fff; color:#6E7580; font-size:13.5px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .tab.active{ background:#0B132B; color:#fff; border-color:#0B132B; }
+
+  section{ margin-bottom:22px; }
+  .section-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; padding:0 2px; }
+  h2{ font-size:15px; font-weight:700; color:#0B132B; }
+  .section-count{ font-size:12px; color:#9AA0AB; font-weight:600; }
+
+  .task-card{ background:#fff; border:1px solid #E9E5D8; border-radius:10px; margin-bottom:8px; padding:12px 14px; display:flex; align-items:center; gap:10px; }
+  .check-btn{ background:none; border:none; padding:2px; cursor:pointer; flex-shrink:0; line-height:0; }
+  .task-title{ font-size:14px; font-weight:600; }
+  .task-title.done{ text-decoration:line-through; color:#9AA0AB; }
+
+  .pack-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:18px; margin-bottom:12px; }
+  .pack-card h3{ font-size:15px; color:#0B132B; margin-bottom:6px; }
+  .pack-card p{ font-size:12.5px; color:#6E7580; margin-bottom:12px; }
+  .pack-btn{ background:#F2B233; color:#0B132B; border:none; padding:9px 18px; border-radius:8px; font-weight:600; font-size:13px; cursor:pointer; font-family:inherit; }
+
+  .report-box{ background:#0B132B; border-radius:14px; padding:20px 22px; margin-bottom:20px; color:#fff; }
+  .report-row{ display:flex; gap:10px; background:#fff; border:1px solid #E9E5D8; border-radius:10px; padding:10px 14px; margin-bottom:6px; }
+  .empty-note{ font-size:13px; color:#9AA0AB; padding:0 2px; }
+  .loading{ text-align:center; color:#9AA0AB; font-size:13px; padding:40px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span>سنع</span>
+  </div>
+</header>
+
+<main id="app">
+  <div class="loading">جارٍ التحميل...</div>
+</main>
+
+<script>
+const COMPANY_ID = "{{ company_id }}";
+let boardData = null;
+let view = 'tasks';
+
+async function load(){
+  const res = await fetch(`/api/companies/${COMPANY_ID}/tasks/board`);
+  const json = await res.json();
+  if(!json.success){
+    document.getElementById('app').innerHTML = `<p class="loading">تعذّر تحميل البيانات</p>`;
+    return;
+  }
+  boardData = json.data;
+  if(boardData.total === 0){
+    renderPackPicker();
+  } else {
+    render();
+  }
+}
+
+async function loadPacks(){
+  const res = await fetch('/api/task-packs');
+  const json = await res.json();
+  return json.success ? json.data : [];
+}
+
+async function renderPackPicker(){
+  const packs = await loadPacks();
+  let html = `
+    <span class="eyebrow">لوحة المهام</span>
+    <h1>ابدأ بحزمة مهام جاهزة</h1>
+    <p class="sub">لا توجد مهام بعد لهذه الشركة — اختر حزمة تناسب قطاعك لتُنشأ المهام تلقائيًا ومرتبطة بأصول الشركة.</p>
+  `;
+  if(packs.length === 0){
+    html += `<p class="empty-note">لا توجد حزم متاحة حاليًا.</p>`;
+  }
+  packs.forEach(p => {
+    html += `
+      <div class="pack-card">
+        <h3>${p.name}</h3>
+        <p>${p.description || ''} · ${p.item_count} بندًا · قطاع: ${p.sector || 'عام'}</p>
+        <button class="pack-btn" onclick="applyPack('${p.pack_id}')">طبّق هذه الحزمة</button>
+      </div>
+    `;
+  });
+  document.getElementById('app').innerHTML = html;
+}
+
+async function applyPack(packId){
+  const res = await fetch(`/api/companies/${COMPANY_ID}/tasks/apply-pack`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({pack_id: packId})
+  });
+  const json = await res.json();
+  if(json.success){
+    load();
+  }
+}
+
+function setView(v){ view = v; render(); }
+
+function render(){
+  if(view === 'tasks') renderTasks();
+  else renderReport();
+}
+
+function renderTasks(){
+  const { groups, total, done, pct } = boardData;
+  let html = `
+    <span class="eyebrow">لوحة المهام</span>
+    <h1>مهام الشركة</h1>
+    <p class="sub">إنجاز أي مهمة يرفع الأصل المرتبط بها تلقائيًا، وينعكس في جواز الشركة فورًا.</p>
+    <div class="stamp-row">
+      <div class="stamp-num">${pct}٪</div>
+      <div><div class="stamp-num" style="font-size:18px;">${done}<span style="color:#9AA0AB; font-weight:400;"> / ${total}</span></div><div class="stamp-text">مهمة مُنجزة</div></div>
+    </div>
+    <div class="tabs">
+      <button class="tab active" onclick="setView('tasks')">المهام</button>
+      <button class="tab" onclick="setView('report')">التقرير</button>
+    </div>
+  `;
+  Object.keys(groups).forEach(label => {
+    const tasks = groups[label];
+    const catDone = tasks.filter(t => t.status === 'منجزة').length;
+    html += `<section><div class="section-head"><h2>${label}</h2><span class="section-count">${catDone}/${tasks.length}</span></div>`;
+    tasks.forEach(t => {
+      const isDone = t.status === 'منجزة';
+      html += `
+        <div class="task-card">
+          <button class="check-btn" onclick="toggle('${t.task_id}', ${isDone})">
+            ${isDone
+              ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0E7C7B" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>'
+              : '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C7CBD1" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>'}
+          </button>
+          <span class="task-title ${isDone ? 'done' : ''}">${t.title}</span>
+        </div>
+      `;
+    });
+    html += `</section>`;
+  });
+  document.getElementById('app').innerHTML = html;
+}
+
+async function toggle(taskId, isDone){
+  if(isDone) return; // ⚠ لا نلغي إنجاز مهمة من هنا حاليًا — إنجاز أحادي الاتجاه يطابق سلوك سنع الحالي
+  await fetch(`/api/tasks/${taskId}/complete`, {method:'POST'});
+  await load();
+}
+
+function renderReport(){
+  const { groups, total, done, pct } = boardData;
+  const allTasks = Object.entries(groups).flatMap(([label, tasks]) => tasks.map(t => ({...t, label})));
+  const completed = allTasks.filter(t => t.status === 'منجزة');
+  const remaining = allTasks.filter(t => t.status !== 'منجزة');
+
+  let html = `
+    <span class="eyebrow">لوحة المهام</span>
+    <h1>مهام الشركة</h1>
+    <div class="tabs">
+      <button class="tab" onclick="setView('tasks')">المهام</button>
+      <button class="tab active" onclick="setView('report')">التقرير</button>
+    </div>
+    <div class="report-box">
+      <h2 style="color:#fff;">تقرير سير العمل</h2>
+      <p style="font-size:12.5px; color:#9AA0AB; margin:6px 0 10px;">${new Date().toLocaleDateString('ar-SA',{year:'numeric',month:'long',day:'numeric'})}</p>
+      <p style="font-size:14.5px;">أُنجز <b>${done}</b> من أصل <b>${total}</b> مهمة (${pct}٪).</p>
+    </div>
+    <section><h2>✓ ما تم إنجازه</h2>
+  `;
+  if(completed.length === 0){ html += `<p class="empty-note">لا توجد مهام مُنجزة بعد.</p>`; }
+  completed.forEach(t => {
+    html += `<div class="report-row"><span>✓</span><div><div class="task-title">${t.title}</div><div class="empty-note">${t.label}${t.completed_at ? ' · ' + t.completed_at.slice(0,10) : ''}</div></div></div>`;
+  });
+  html += `</section><section><h2>○ المتبقّي</h2>`;
+  if(remaining.length === 0){ html += `<p class="empty-note">اكتملت كل المهام 🎉</p>`; }
+  remaining.forEach(t => {
+    html += `<div class="report-row"><span style="color:#C7CBD1;">○</span><div><div class="task-title" style="color:#6E7580;">${t.title}</div><div class="empty-note">${t.label}</div></div></div>`;
+  });
+  html += `</section>`;
+  document.getElementById('app').innerHTML = html;
+}
+
+load();
+</script>
+</body>
+</html>

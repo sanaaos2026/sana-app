@@ -276,6 +276,24 @@ def init_db(force=False):
         cases_cols = _columns_of(conn, "cases")
         if "ai_analysis" not in cases_cols:
             conn.execute("ALTER TABLE cases ADD COLUMN ai_analysis TEXT")
+        # حزم مهام قابلة لإعادة الاستخدام عبر أي شركة/قطاع — لا ترتبط بشركة واحدة بذاتها
+        conn.execute("""CREATE TABLE IF NOT EXISTS task_packs (
+            pack_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            sector TEXT,
+            description TEXT,
+            created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS'))
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS task_pack_items (
+            item_id TEXT PRIMARY KEY,
+            pack_id TEXT NOT NULL,
+            category_label TEXT NOT NULL,
+            title TEXT NOT NULL,
+            detail TEXT,
+            asset_type TEXT NOT NULL,
+            score_impact INTEGER NOT NULL,
+            sort_order INTEGER DEFAULT 0
+        )""")
         # نظام تسجيل الدخول الحقيقي — جدول الحسابات + رمز دعوة لكل شركة
         # (بدون كسر أي قاعدة بيانات قديمة لا تحتوي عليهما بعد)
         conn.execute("""CREATE TABLE IF NOT EXISTS user_accounts (
@@ -1383,6 +1401,135 @@ def complete_task(task_id):
             "new_asset_score": updated_assets[0]["new_score"] if updated_assets else None
         }
     })
+
+
+# ------------------------------------------------------------------
+# حزم المهام (Task Packs) — قابلة لإعادة الاستخدام عبر أي شركة/قطاع
+# ------------------------------------------------------------------
+
+@app.route("/api/task-packs")
+def list_task_packs():
+    db = get_db()
+    packs = db.execute("SELECT * FROM task_packs ORDER BY sector, name").fetchall()
+    result = []
+    for pack in packs:
+        count = db.execute(
+            "SELECT COUNT(*) as c FROM task_pack_items WHERE pack_id=?", (pack["pack_id"],)
+        ).fetchone()
+        result.append({
+            "pack_id": pack["pack_id"], "name": pack["name"], "sector": pack["sector"],
+            "description": pack["description"], "item_count": count["c"],
+        })
+    return jsonify({"success": True, "data": result})
+
+
+@app.route("/api/companies/<company_id>/tasks/apply-pack", methods=["POST"])
+def apply_task_pack(company_id):
+    """⚠ يُنشئ قرارًا معتمدًا + مهمة + أثر أصل واحد لكل بند في الحزمة — لا يكرر بندًا موجودًا مسبقًا بنفس العنوان."""
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+
+    data = request.get_json(force=True, silent=True) or {}
+    pack_id = data.get("pack_id")
+    if not pack_id:
+        return jsonify({"success": False, "error": "PACK_ID_REQUIRED"}), 400
+
+    db = get_db()
+    company = db.execute("SELECT company_id FROM companies WHERE company_id=?", (company_id,)).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+
+    items = db.execute(
+        "SELECT * FROM task_pack_items WHERE pack_id=? ORDER BY sort_order ASC", (pack_id,)
+    ).fetchall()
+    if not items:
+        return jsonify({"success": False, "error": "PACK_NOT_FOUND_OR_EMPTY"}), 404
+
+    case = db.execute("SELECT case_id FROM cases WHERE company_id=? LIMIT 1", (company_id,)).fetchone()
+    case_id = case["case_id"] if case else None
+
+    assets = {
+        row["asset_type"]: row["asset_id"]
+        for row in db.execute("SELECT asset_id, asset_type FROM assets WHERE company_id=?", (company_id,)).fetchall()
+    }
+
+    import uuid
+    created, skipped = 0, 0
+    for item in items:
+        asset_id = assets.get(item["asset_type"])
+        if not asset_id:
+            skipped += 1
+            continue
+        existing = db.execute(
+            "SELECT task_id FROM tasks WHERE company_id=? AND title=?", (company_id, item["title"])
+        ).fetchone()
+        if existing:
+            skipped += 1
+            continue
+
+        decision_id = "D" + uuid.uuid4().hex[:6].upper()
+        db.execute(
+            """INSERT INTO decisions
+               (decision_id, company_id, case_id, asset_id, title, recommended_action,
+                reason, confidence_score, expected_impact, status, phase_label)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (decision_id, company_id, case_id, asset_id, item["title"], item["title"],
+             item["detail"] or "بند من حزمة مهام مُطبَّقة", 90,
+             f"رفع أصل {item['asset_type']} بمقدار {item['score_impact']} نقاط", "معتمد",
+             item["category_label"])
+        )
+        task_id = "T" + uuid.uuid4().hex[:6].upper()
+        db.execute(
+            """INSERT INTO tasks (task_id, company_id, decision_id, title, status, phase_label)
+               VALUES (?,?,?,?,?,?)""",
+            (task_id, company_id, decision_id, item["title"], "لم تبدأ", item["category_label"])
+        )
+        impact_id = "IMP-" + uuid.uuid4().hex[:8].upper()
+        db.execute(
+            """INSERT INTO decision_asset_impacts (impact_id, decision_id, asset_id, score_impact, is_primary)
+               VALUES (?,?,?,?,?)""",
+            (impact_id, decision_id, asset_id, item["score_impact"], 1)
+        )
+        created += 1
+
+    db.commit()
+    return jsonify({"success": True, "data": {"created": created, "skipped": skipped}})
+
+
+@app.route("/api/companies/<company_id>/tasks/board")
+def tasks_board(company_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+
+    db = get_db()
+    tasks = db.execute(
+        "SELECT * FROM tasks WHERE company_id=? ORDER BY phase_label, created_at ASC", (company_id,)
+    ).fetchall()
+
+    groups = {}
+    total, done = 0, 0
+    for t in tasks:
+        label = t["phase_label"] or "مهام عامة"
+        groups.setdefault(label, []).append({
+            "task_id": t["task_id"], "title": t["title"], "status": t["status"],
+            "completed_at": t["completed_at"],
+        })
+        total += 1
+        if t["status"] == "منجزة":
+            done += 1
+
+    return jsonify({
+        "success": True,
+        "data": {"groups": groups, "total": total, "done": done,
+                  "pct": round((done / total) * 100) if total else 0}
+    })
+
+
+@app.route("/company/<company_id>/tasks-board")
+def tasks_board_page(company_id):
+    return render_template("12-tasks-board.html", company_id=company_id)
 
 
 if __name__ == "__main__":

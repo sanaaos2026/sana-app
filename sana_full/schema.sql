@@ -135,6 +135,27 @@ CREATE TABLE IF NOT EXISTS methodology_docs (
     created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS'))
 );
 
+-- حزم مهام قابلة لإعادة الاستخدام عبر أي شركة/قطاع (Task Packs)
+CREATE TABLE IF NOT EXISTS task_packs (
+    pack_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    sector TEXT,
+    description TEXT,
+    created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS'))
+);
+
+CREATE TABLE IF NOT EXISTS task_pack_items (
+    item_id TEXT PRIMARY KEY,
+    pack_id TEXT NOT NULL,
+    category_label TEXT NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT,
+    asset_type TEXT NOT NULL,
+    score_impact INTEGER NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    FOREIGN KEY (pack_id) REFERENCES task_packs(pack_id)
+);
+
 CREATE TABLE IF NOT EXISTS decision_asset_impacts (
     impact_id TEXT PRIMARY KEY,
     decision_id TEXT NOT NULL,
