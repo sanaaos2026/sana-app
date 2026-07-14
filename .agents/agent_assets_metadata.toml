@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "BhF1ueRWigTRvGjpilfWk"
+uri = "file://attached_assets/sana-project-export.zip"
+type = "unspecified"
+title = "مشروع سنع — تصدير كامل"
