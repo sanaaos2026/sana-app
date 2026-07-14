@@ -73,7 +73,7 @@
 </div>
 
 <script>
-const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "C001";
+const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "{{ default_company_id }}";
 const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
 const ADMIN_KEY = new URLSearchParams(window.location.search).get('admin_key');
 const CQS = (() => {

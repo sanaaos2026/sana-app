@@ -85,6 +85,15 @@ def current_account():
     return {"account_id": session["account_id"], "company_id": session["company_id"], "email": session.get("email")}
 
 
+def default_company_id():
+    """الشركة الافتراضية لعرض صفحات الواجهة — تُقرأ من جلسة الحساب الحقيقي المسجَّل
+    إن وُجدت، وإلا (عرض داخلي للمشرف بلا حساب) تبقى C001 كما كانت دائمًا. هذا يسمح
+    لقوالب HTML بأخذ قيمة صحيحة حتى بدون ?company_id= في الرابط، مع إبقاء السلوك
+    القديم لروابط C001/C002 الصريحة يعمل كما هو دون أي تغيير."""
+    account = current_account()
+    return account["company_id"] if account else "C001"
+
+
 @app.before_request
 def enforce_company_auth():
     endpoint = request.endpoint
@@ -336,12 +345,12 @@ def entry():
 
 @app.route("/home")
 def ceo_home():
-    return render_template("01-ceo-home.html")
+    return render_template("01-ceo-home.html", default_company_id=default_company_id())
 
 
 @app.route("/case/new")
 def new_case():
-    return render_template("04-new-case.html")
+    return render_template("04-new-case.html", default_company_id=default_company_id())
 
 
 @app.route("/case/<case_id>")
@@ -351,22 +360,22 @@ def case_workspace(case_id):
 
 @app.route("/sop-builder")
 def sop_builder():
-    return render_template("05-sop-builder.html")
+    return render_template("05-sop-builder.html", default_company_id=default_company_id())
 
 
 @app.route("/assessment")
 def assessment():
-    return render_template("06-assessment.html")
+    return render_template("06-assessment.html", default_company_id=default_company_id())
 
 
 @app.route("/passport")
 def business_passport():
-    return render_template("03-business-passport.html")
+    return render_template("03-business-passport.html", default_company_id=default_company_id())
 
 
 @app.route("/services")
 def services_page():
-    return render_template("07-services.html")
+    return render_template("07-services.html", default_company_id=default_company_id())
 
 
 # ------------------------------------------------------------------
@@ -517,7 +526,7 @@ def api_session():
 
 @app.route("/methodology/<slug>")
 def methodology_page(slug):
-    return render_template("08-methodology.html", slug=slug)
+    return render_template("08-methodology.html", slug=slug, default_company_id=default_company_id())
 
 
 # ------------------------------------------------------------------
