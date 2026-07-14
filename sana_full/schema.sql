@@ -1,7 +1,10 @@
 -- سنع — النواة الأساسية (7 جداول فقط)
--- Sana Core Schema v1 (MVP starting point)
+-- Sana Core Schema v1 — PostgreSQL
+-- (محوَّلة من SQLite: أنواع البيانات TEXT/INTEGER/REAL متطابقة في Postgres،
+--  التغيير الوحيد الفعلي هو datetime('now') -> تعبير Postgres مكافئ ينتج
+--  نفس صيغة النص "YYYY-MM-DD HH:MM:SS" بالضبط حفاظًا على نفس شكل البيانات القديمة)
 
-CREATE TABLE companies (
+CREATE TABLE IF NOT EXISTS companies (
     company_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     sector TEXT,
@@ -12,22 +15,22 @@ CREATE TABLE companies (
     vision TEXT,
     main_goal TEXT,
     signup_code TEXT UNIQUE,
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS'))
 );
 
 -- حسابات دخول حقيقية للعملاء — كل حساب مرتبط بشركة واحدة فقط، ولا يمكنه
 -- أبدًا رؤية بيانات أي شركة أخرى (العزل يُفرض في طبقة الخادم عبر الجلسة).
-CREATE TABLE user_accounts (
+CREATE TABLE IF NOT EXISTS user_accounts (
     account_id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     company_id TEXT NOT NULL,
     referral_source TEXT,
-    created_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
     FOREIGN KEY (company_id) REFERENCES companies(company_id)
 );
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     user_id TEXT PRIMARY KEY,
     company_id TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -37,7 +40,7 @@ CREATE TABLE users (
     FOREIGN KEY (company_id) REFERENCES companies(company_id)
 );
 
-CREATE TABLE cases (
+CREATE TABLE IF NOT EXISTS cases (
     case_id TEXT PRIMARY KEY,
     company_id TEXT NOT NULL,
     case_title TEXT NOT NULL,
@@ -49,12 +52,12 @@ CREATE TABLE cases (
     confidence_score INTEGER,
     value_impact_estimate TEXT,
     ai_analysis TEXT,
-    opened_at TEXT DEFAULT (datetime('now')),
+    opened_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
     closed_at TEXT,
     FOREIGN KEY (company_id) REFERENCES companies(company_id)
 );
 
-CREATE TABLE assets (
+CREATE TABLE IF NOT EXISTS assets (
     asset_id TEXT PRIMARY KEY,
     company_id TEXT NOT NULL,
     asset_type TEXT NOT NULL,
@@ -63,11 +66,11 @@ CREATE TABLE assets (
     fragility_score INTEGER,
     owner_user_id TEXT,
     status TEXT,
-    updated_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
     FOREIGN KEY (company_id) REFERENCES companies(company_id)
 );
 
-CREATE TABLE evidence (
+CREATE TABLE IF NOT EXISTS evidence (
     evidence_id TEXT PRIMARY KEY,
     company_id TEXT NOT NULL,
     case_id TEXT,
@@ -75,12 +78,14 @@ CREATE TABLE evidence (
     title TEXT NOT NULL,
     source_type TEXT,
     confidence INTEGER,
-    date_collected TEXT DEFAULT (datetime('now')),
+    date_collected TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
+    ai_analysis TEXT,
+    ai_suggested_asset_id TEXT,
     FOREIGN KEY (company_id) REFERENCES companies(company_id),
     FOREIGN KEY (case_id) REFERENCES cases(case_id)
 );
 
-CREATE TABLE decisions (
+CREATE TABLE IF NOT EXISTS decisions (
     decision_id TEXT PRIMARY KEY,
     company_id TEXT NOT NULL,
     case_id TEXT,
@@ -91,13 +96,15 @@ CREATE TABLE decisions (
     confidence_score INTEGER,
     expected_impact TEXT,
     status TEXT DEFAULT 'مقترح',
-    created_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
+    phase_label TEXT,
+    structured_data TEXT,
     FOREIGN KEY (company_id) REFERENCES companies(company_id),
     FOREIGN KEY (case_id) REFERENCES cases(case_id),
     FOREIGN KEY (asset_id) REFERENCES assets(asset_id)
 );
 
-CREATE TABLE tasks (
+CREATE TABLE IF NOT EXISTS tasks (
     task_id TEXT PRIMARY KEY,
     company_id TEXT NOT NULL,
     decision_id TEXT,
@@ -106,15 +113,17 @@ CREATE TABLE tasks (
     due_date TEXT,
     status TEXT DEFAULT 'لم تبدأ',
     priority TEXT,
-    created_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
     completed_at TEXT,
+    phase_label TEXT,
+    value_note TEXT,
     FOREIGN KEY (company_id) REFERENCES companies(company_id),
     FOREIGN KEY (decision_id) REFERENCES decisions(decision_id)
 );
 
 -- وثائق منهجية عامة (مثل "نظام سنع لجلب العملاء") — مراجع مستقلة عن أي شركة،
 -- يمكن الرجوع إليها وربطها من أي Case Workspace مستقبلي.
-CREATE TABLE methodology_docs (
+CREATE TABLE IF NOT EXISTS methodology_docs (
     doc_id TEXT PRIMARY KEY,
     slug TEXT UNIQUE NOT NULL,
     title TEXT NOT NULL,
@@ -123,10 +132,10 @@ CREATE TABLE methodology_docs (
     doc_type TEXT DEFAULT 'GENERIC',
     version TEXT DEFAULT 'v1.0',
     bos_id TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS'))
 );
 
-CREATE TABLE decision_asset_impacts (
+CREATE TABLE IF NOT EXISTS decision_asset_impacts (
     impact_id TEXT PRIMARY KEY,
     decision_id TEXT NOT NULL,
     asset_id TEXT NOT NULL,

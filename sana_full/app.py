@@ -7,7 +7,8 @@ Sana Core Backend — Flask + SQLite
 ثم افتح المتصفح على:
     http://localhost:5000
 """
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import os
 import json
 import uuid
@@ -53,7 +54,7 @@ def ask_sana_ai(system_prompt, user_prompt):
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "sana.db")
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
@@ -145,11 +146,46 @@ def no_cache_html(response):
     return response
 
 
+class _PGConn:
+    """طبقة توافق فوق psycopg2 تحاكي واجهة sqlite3.Connection المستخدمة في هذا
+    الملف بالكامل (execute/executemany/executescript/commit/close)، بما يسمح
+    لكل منطق الأعمال والاستعلامات الحالية (بصياغة `?` ونتائج تُقرأ بالاسم أو
+    بالفهرس) بالعمل دون أي تغيير في السلوك، فقط فوق PostgreSQL بدل SQLite."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(sql.replace("?", "%s"), params)
+        return cur
+
+    def executemany(self, sql, seq_of_params):
+        cur = self._conn.cursor()
+        cur.executemany(sql.replace("?", "%s"), seq_of_params)
+        return cur
+
+    def executescript(self, sql):
+        cur = self._conn.cursor()
+        cur.execute(sql)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
+def _connect_pg():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return _PGConn(conn)
+
+
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        g.db = _connect_pg()
     return g.db
 
 
@@ -160,11 +196,28 @@ def close_db(exception=None):
         db.close()
 
 
+def _table_exists(conn, table_name):
+    row = conn.execute(
+        "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=?",
+        (table_name,)
+    ).fetchone()
+    return row is not None
+
+
+def _columns_of(conn, table_name):
+    rows = conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?",
+        (table_name,)
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
 def init_db(force=False):
-    if force and os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
-    fresh = not os.path.exists(DB_PATH)
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect_pg()
+    if force and _table_exists(conn, "companies"):
+        conn.executescript("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+        conn.commit()
+    fresh = not _table_exists(conn, "companies")
     if fresh:
         with open(os.path.join(BASE_DIR, "schema.sql"), "r", encoding="utf-8") as f:
             conn.executescript(f.read())
@@ -182,14 +235,14 @@ def init_db(force=False):
         )""")
         # إضافة أعمدة اختيارية لجدول tasks لدعم تجميع المهام تحت مراحل فرعية
         # مع بيان القيمة المتحققة من كل إنجاز — دون كسر أي بيانات موجودة.
-        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        existing_cols = _columns_of(conn, "tasks")
         if "phase_label" not in existing_cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN phase_label TEXT")
         if "value_note" not in existing_cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN value_note TEXT")
         # نفس فكرة التصنيف تحت مرحلة، بالإضافة إلى حقل JSON لتفاصيل قرارات موضوعية
         # غنية (مثل ترتيب الخدمات) يحتاجها عرض متخصص (صفحة الخدمات) دون تفكيك نصوص.
-        decision_cols = {row[1] for row in conn.execute("PRAGMA table_info(decisions)").fetchall()}
+        decision_cols = _columns_of(conn, "decisions")
         if "phase_label" not in decision_cols:
             conn.execute("ALTER TABLE decisions ADD COLUMN phase_label TEXT")
         if "structured_data" not in decision_cols:
@@ -204,10 +257,10 @@ def init_db(force=False):
             doc_type TEXT DEFAULT 'GENERIC',
             version TEXT DEFAULT 'v1.0',
             bos_id TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS'))
         )""")
         # ترقية جدول الوثائق المنهجية القديم لدعم نظام BOS (doc_type/version/bos_id)
-        methodology_cols = {row[1] for row in conn.execute("PRAGMA table_info(methodology_docs)").fetchall()}
+        methodology_cols = _columns_of(conn, "methodology_docs")
         if "doc_type" not in methodology_cols:
             conn.execute("ALTER TABLE methodology_docs ADD COLUMN doc_type TEXT DEFAULT 'GENERIC'")
         if "version" not in methodology_cols:
@@ -215,12 +268,12 @@ def init_db(force=False):
         if "bos_id" not in methodology_cols:
             conn.execute("ALTER TABLE methodology_docs ADD COLUMN bos_id TEXT")
         # أعمدة تحليل الذكاء الاصطناعي — دليل مفرد وقضية كاملة (بدون كسر قواعد بيانات قديمة)
-        evidence_cols = {row[1] for row in conn.execute("PRAGMA table_info(evidence)").fetchall()}
+        evidence_cols = _columns_of(conn, "evidence")
         if "ai_analysis" not in evidence_cols:
             conn.execute("ALTER TABLE evidence ADD COLUMN ai_analysis TEXT")
         if "ai_suggested_asset_id" not in evidence_cols:
             conn.execute("ALTER TABLE evidence ADD COLUMN ai_suggested_asset_id TEXT")
-        cases_cols = {row[1] for row in conn.execute("PRAGMA table_info(cases)").fetchall()}
+        cases_cols = _columns_of(conn, "cases")
         if "ai_analysis" not in cases_cols:
             conn.execute("ALTER TABLE cases ADD COLUMN ai_analysis TEXT")
         # نظام تسجيل الدخول الحقيقي — جدول الحسابات + رمز دعوة لكل شركة
@@ -230,13 +283,13 @@ def init_db(force=False):
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             company_id TEXT NOT NULL,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
             FOREIGN KEY (company_id) REFERENCES companies(company_id)
         )""")
-        companies_cols = {row[1] for row in conn.execute("PRAGMA table_info(companies)").fetchall()}
+        companies_cols = _columns_of(conn, "companies")
         if "signup_code" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN signup_code TEXT")
-        accounts_cols = {row[1] for row in conn.execute("PRAGMA table_info(user_accounts)").fetchall()}
+        accounts_cols = _columns_of(conn, "user_accounts")
         if "referral_source" not in accounts_cols:
             conn.execute("ALTER TABLE user_accounts ADD COLUMN referral_source TEXT")
         conn.commit()
@@ -251,20 +304,18 @@ def init_db(force=False):
 
 def seed_db():
     """يزرع بيانات أثر مشرق كأول شركة حقيقية على النظام."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM companies")
-    if cur.fetchone()[0] > 0:
+    conn = _connect_pg()
+    if conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] > 0:
         conn.close()
         return  # already seeded
 
-    cur.execute("""INSERT INTO companies
+    conn.execute("""INSERT INTO companies
         (company_id, name, sector, city, stage, employee_count, annual_revenue, vision, main_goal)
         VALUES (?,?,?,?,?,?,?,?,?)""",
         ("C001", "أثر مشرق", "عطور - تصنيع", "المدينة المنورة", "نمو", 8, 350000,
          "أن نكون أثر يُشم قبل أن يُرى", "رفع قيمة الشركة عبر أصل المعرفة"))
 
-    cur.execute("""INSERT INTO users (user_id, company_id, name, role, department, status)
+    conn.execute("""INSERT INTO users (user_id, company_id, name, role, department, status)
         VALUES (?,?,?,?,?,?)""",
         ("U001", "C001", "الزبير", "Owner", "الإدارة العامة", "نشط"))
 
@@ -275,11 +326,11 @@ def seed_db():
         ("A004", "C001", "Data", "أصل البيانات", 65, 30, "U001", "قوي"),
         ("A005", "C001", "Independence", "أصل الاستقلال", 22, 82, "U001", "مهدد"),
     ]
-    cur.executemany("""INSERT INTO assets
+    conn.executemany("""INSERT INTO assets
         (asset_id, company_id, asset_type, asset_name, current_score, fragility_score, owner_user_id, status)
         VALUES (?,?,?,?,?,?,?,?)""", assets)
 
-    cur.execute("""INSERT INTO cases
+    conn.execute("""INSERT INTO cases
         (case_id, company_id, case_title, case_type, case_status, declared_problem, real_question,
          related_asset_id, confidence_score, value_impact_estimate)
         VALUES (?,?,?,?,?,?,?,?,?,?)""",
@@ -288,13 +339,13 @@ def seed_db():
          "هل غياب أي موظف رئيسي يوقف الإنتاج فعليًا؟",
          "A001", 75, "رفع أصل المعرفة بمقدار 12 نقطة خلال شهر"))
 
-    cur.execute("""INSERT INTO evidence
+    conn.execute("""INSERT INTO evidence
         (evidence_id, company_id, case_id, asset_id, title, source_type, confidence)
         VALUES (?,?,?,?,?,?,?)""",
         ("E001", "C001", "CS001", "A001",
          "لا يوجد ملف SOP موثق لأي عملية تصنيع", "ملاحظة مباشرة", 55))
 
-    cur.execute("""INSERT INTO decisions
+    conn.execute("""INSERT INTO decisions
         (decision_id, company_id, case_id, asset_id, title, recommended_action, reason,
          confidence_score, expected_impact, status)
         VALUES (?,?,?,?,?,?,?,?,?,?)""",
@@ -303,7 +354,7 @@ def seed_db():
          "أضعف مؤشر حاليًا هو تغطية التوثيق (22%)، وهو يهدد الاستقلال والجودة",
          75, "رفع أصل المعرفة من 18 إلى 30 خلال شهر", "قيد التنفيذ"))
 
-    cur.execute("""INSERT INTO tasks
+    conn.execute("""INSERT INTO tasks
         (task_id, company_id, decision_id, title, owner_user_id, due_date, status, priority)
         VALUES (?,?,?,?,?,?,?,?)""",
         ("TSK001", "C001", "D001", "كتابة أول مسودة SOP لعملية التعبئة",
@@ -315,10 +366,8 @@ def seed_db():
 
 def seed_decision_impacts():
     """يربط القرار D001 بعدة أصول دفعة واحدة — فقط إذا كان الجدول فارغًا."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM decision_asset_impacts")
-    if cur.fetchone()[0] > 0:
+    conn = _connect_pg()
+    if conn.execute("SELECT COUNT(*) FROM decision_asset_impacts").fetchone()[0] > 0:
         conn.close()
         return  # already seeded
 
@@ -327,7 +376,7 @@ def seed_decision_impacts():
         ("IMP002", "D001", "A002", 3, 0),
         ("IMP003", "D001", "A005", 3, 0),
     ]
-    cur.executemany("""INSERT INTO decision_asset_impacts
+    conn.executemany("""INSERT INTO decision_asset_impacts
         (impact_id, decision_id, asset_id, score_impact, is_primary)
         VALUES (?,?,?,?,?)""", impacts)
     conn.commit()
@@ -1263,7 +1312,7 @@ def complete_task(task_id):
             }), 409
 
     cur = db.execute(
-        "UPDATE tasks SET status='منجزة', completed_at=datetime('now') "
+        "UPDATE tasks SET status='منجزة', completed_at=to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS') "
         "WHERE task_id=? AND status != 'منجزة'",
         (task_id,)
     )
