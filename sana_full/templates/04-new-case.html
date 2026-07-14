@@ -76,6 +76,22 @@
   <a href="/case/new" class="active">③ القضية</a>
   <a href="/passport">④ جواز الشركة</a>
 </div>
+<script>
+(function(){
+  var qs = window.location.search;
+  if(!qs) return;
+  var current = new URLSearchParams(qs);
+  document.querySelectorAll('.concept-nav a').forEach(function(a){
+    var href = a.getAttribute('href');
+    if(href === '/') return;
+    var url = new URL(href, window.location.origin);
+    ['company_id','view','admin_key'].forEach(function(k){
+      if(current.has(k)) url.searchParams.set(k, current.get(k));
+    });
+    a.setAttribute('href', url.pathname + url.search);
+  });
+})();
+</script>
 
 <header>
   <a href="/home" class="back">← الرئيسية</a>
@@ -128,6 +144,16 @@
 
 <script>
 const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "C001";
+const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
+const ADMIN_KEY = new URLSearchParams(window.location.search).get('admin_key');
+const CQS = (() => {
+  const p = new URLSearchParams();
+  if(COMPANY_ID !== 'C001') p.set('company_id', COMPANY_ID);
+  if(VIEW === 'client') p.set('view', 'client');
+  if(ADMIN_KEY) p.set('admin_key', ADMIN_KEY);
+  const s = p.toString();
+  return s ? `?${s}` : '';
+})();
 let selectedAssetId = null;
 let selectedAssetName = null;
 let assets = [];
@@ -252,7 +278,7 @@ async function openCase(){
     });
     const json = await res.json();
     if(res.ok && json.success){
-      window.location.href = `/case/${json.data.case_id}`;
+      window.location.href = `/case/${json.data.case_id}${CQS}`;
     } else {
       errorMsg.textContent = 'تعذر فتح القضية، حاول مرة أخرى.';
       errorMsg.classList.add('show');

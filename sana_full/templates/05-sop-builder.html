@@ -85,6 +85,22 @@
   <a href="/passport">④ جواز الشركة</a>
   <a href="/sop-builder" class="active">📄 SOP</a>
 </div>
+<script>
+(function(){
+  var qs = window.location.search;
+  if(!qs) return;
+  var current = new URLSearchParams(qs);
+  document.querySelectorAll('.concept-nav a').forEach(function(a){
+    var href = a.getAttribute('href');
+    if(href === '/') return;
+    var url = new URL(href, window.location.origin);
+    ['company_id','view','admin_key'].forEach(function(k){
+      if(current.has(k)) url.searchParams.set(k, current.get(k));
+    });
+    a.setAttribute('href', url.pathname + url.search);
+  });
+})();
+</script>
 
 <header>
   <a href="/home" class="back">← الرئيسية</a>

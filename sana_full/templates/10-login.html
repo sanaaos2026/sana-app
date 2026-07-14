@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F5F6FB">
+<title>سنع — تسجيل الدخول</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme: light; background:#F5F6FB; }
+  :root{
+    --navy:#0B132B; --teal:#0EA5A5; --teal-light:#E1F5F5;
+    --gold:#F2B233; --paper:#F5F6FB; --ink:#333940; --slate:#6E7580; --line:#DEE1EC; --red-risk:#B23A2E;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{
+    background:var(--paper); color:var(--ink); font-family:'IBM Plex Sans Arabic', sans-serif;
+    min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:40px 20px;
+  }
+  .mark{ width:36px; height:36px; margin-bottom:18px; }
+  .card{ background:#fff; border:1px solid var(--line); border-radius:14px; padding:32px 28px; max-width:380px; width:100%; }
+  h1{ font-size:19px; font-weight:600; color:var(--navy); margin-bottom:6px; text-align:center; }
+  .sub{ font-size:12.5px; color:var(--slate); text-align:center; margin-bottom:26px; }
+  label{ display:block; font-size:12.5px; font-weight:600; color:var(--navy); margin-bottom:6px; }
+  input{
+    width:100%; padding:11px 13px; border:1px solid var(--line); border-radius:8px; font-family:inherit;
+    font-size:13.5px; margin-bottom:16px; background:#F9FAFC;
+  }
+  input:focus{ outline:none; border-color:var(--teal); background:#fff; }
+  .btn{
+    width:100%; padding:12px; border:none; border-radius:8px; background:var(--navy); color:#fff;
+    font-family:inherit; font-size:14px; font-weight:600; cursor:pointer; transition:opacity .15s;
+  }
+  .btn:hover{ opacity:.9; }
+  .btn:disabled{ opacity:.6; cursor:not-allowed; }
+  .error{ display:none; background:#FCEBEA; color:var(--red-risk); font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:16px; }
+  .error.show{ display:block; }
+  .foot{ text-align:center; margin-top:20px; font-size:12.5px; color:var(--slate); }
+  .foot a{ color:var(--teal); font-weight:600; text-decoration:none; }
+</style>
+</head>
+<body>
+
+  <svg class="mark" viewBox="0 0 100 100">
+    <path d="M78,32 L78,17 L19,17 L19,83 L78,83 L78,68" fill="none" stroke="#0B132B" stroke-width="9" stroke-linecap="square"/>
+    <rect x="44" y="41" width="19" height="19" fill="#F2B233"/>
+  </svg>
+
+  <div class="card">
+    <h1>تسجيل الدخول</h1>
+    <div class="sub">ادخل إلى بيانات شركتك — بيانات شركتك أنت فقط، بمعزل تام عن أي شركة أخرى.</div>
+
+    <div class="error" id="errorMsg"></div>
+
+    <label for="email">البريد الإلكتروني</label>
+    <input type="email" id="email" autocomplete="username" placeholder="you@company.com">
+
+    <label for="password">كلمة المرور</label>
+    <input type="password" id="password" autocomplete="current-password" placeholder="••••••••">
+
+    <button class="btn" id="submitBtn" onclick="doLogin()">دخول</button>
+
+    <div class="foot">ليس لديك حساب؟ <a href="/signup">أنشئ حسابًا جديدًا</a></div>
+  </div>
+
+<script>
+async function doLogin(){
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const errorMsg = document.getElementById('errorMsg');
+  const btn = document.getElementById('submitBtn');
+  errorMsg.classList.remove('show');
+
+  if(!email || !password){
+    errorMsg.textContent = 'الرجاء إدخال البريد الإلكتروني وكلمة المرور.';
+    errorMsg.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'جارٍ الدخول...';
+  try{
+    const res = await fetch('/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const json = await res.json();
+    if(res.ok && json.success){
+      window.location.href = json.data.redirect || '/home';
+    } else {
+      errorMsg.textContent = json.message || 'تعذّر تسجيل الدخول.';
+      errorMsg.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = 'دخول';
+    }
+  } catch(e){
+    errorMsg.textContent = 'تعذّر الاتصال بالخادم، حاول مرة أخرى.';
+    errorMsg.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'دخول';
+  }
+}
+
+document.getElementById('password').addEventListener('keydown', (e) => { if(e.key === 'Enter') doLogin(); });
+</script>
+
+</body>
+</html>

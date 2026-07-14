@@ -11,7 +11,19 @@ CREATE TABLE companies (
     annual_revenue REAL,
     vision TEXT,
     main_goal TEXT,
+    signup_code TEXT UNIQUE,
     created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- حسابات دخول حقيقية للعملاء — كل حساب مرتبط بشركة واحدة فقط، ولا يمكنه
+-- أبدًا رؤية بيانات أي شركة أخرى (العزل يُفرض في طبقة الخادم عبر الجلسة).
+CREATE TABLE user_accounts (
+    account_id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    company_id TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (company_id) REFERENCES companies(company_id)
 );
 
 CREATE TABLE users (

@@ -69,6 +69,22 @@
   <a href="/case/{{ case_id }}" class="active">③ القضية</a>
   <a href="/passport">④ جواز الشركة</a>
 </div>
+<script>
+(function(){
+  var qs = window.location.search;
+  if(!qs) return;
+  var current = new URLSearchParams(qs);
+  document.querySelectorAll('.concept-nav a').forEach(function(a){
+    var href = a.getAttribute('href');
+    if(href === '/') return;
+    var url = new URL(href, window.location.origin);
+    ['company_id','view','admin_key'].forEach(function(k){
+      if(current.has(k)) url.searchParams.set(k, current.get(k));
+    });
+    a.setAttribute('href', url.pathname + url.search);
+  });
+})();
+</script>
 
 <header>
   <a href="/home" class="back" id="backLink">← الرئيسية</a>
@@ -85,12 +101,14 @@
 <script>
 const CASE_ID = "{{ case_id }}";
 const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
+const ADMIN_KEY = new URLSearchParams(window.location.search).get('admin_key');
 let CASE_COMPANY_ID = null;
 
 function qs(companyId, extra){
   const p = new URLSearchParams();
   if(companyId && companyId !== 'C001') p.set('company_id', companyId);
   if(VIEW === 'client') p.set('view', 'client');
+  if(ADMIN_KEY) p.set('admin_key', ADMIN_KEY);
   if(extra) Object.entries(extra).forEach(([k,v]) => p.set(k, v));
   const s = p.toString();
   return s ? `?${s}` : '';

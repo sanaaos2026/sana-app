@@ -99,69 +99,22 @@
   <p class="sub" style="margin-bottom:24px;">اختر طريقة دخولك إلى النظام</p>
 
   <div class="choices">
-    <a href="/home" class="choice-card owner">
+    <a href="/login" class="choice-card owner">
       <div class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-      <div class="title">دخول كصاحب سنع</div>
-      <div class="desc">إدارة كل الشركات المسجلة، القرارات، والقضايا من مكان واحد.</div>
-      <div class="go">افتح CEO Home ←</div>
+      <div class="title">تسجيل الدخول</div>
+      <div class="desc">ادخل إلى بيانات شركتك أنت فقط، بمعزل تام عن أي شركة أخرى.</div>
+      <div class="go">دخول ←</div>
     </a>
 
-    <div class="choice-card client" onclick="openClientPanel()">
+    <a href="/signup" class="choice-card client">
       <div class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg></div>
-      <div class="title">دخول كعميل</div>
-      <div class="desc">اختر شركتك من القائمة لعرض ملفك الخاص فقط.</div>
-      <div class="go">اختر شركتك ←</div>
-    </div>
+      <div class="title">حساب جديد</div>
+      <div class="desc">أنشئ حسابًا لشركتك برمز الدعوة الذي وصلك من فريق سنع.</div>
+      <div class="go">إنشاء حساب ←</div>
+    </a>
   </div>
 
   <footer>سنع — نكتشف الفرص · نصنع النمو</footer>
-
-  <div class="overlay" id="clientOverlay">
-    <div class="panel">
-      <h2>اختر شركتك</h2>
-      <div class="panel-sub">سترى بيانات شركتك فقط دون صلاحية الوصول لباقي الشركات.</div>
-      <div id="companyList"><div class="panel-empty">يحمّل قائمة الشركات...</div></div>
-      <div class="panel-close" onclick="closeClientPanel()">إغلاق</div>
-    </div>
-  </div>
-
-<script>
-  let companiesLoaded = false;
-
-  async function openClientPanel(){
-    document.getElementById('clientOverlay').classList.add('show');
-    if(companiesLoaded) return;
-    try{
-      const res = await fetch('/api/companies');
-      const json = await res.json();
-      const list = document.getElementById('companyList');
-      if(!json.success || !json.data.length){
-        list.innerHTML = '<div class="panel-empty">لا توجد شركات مسجلة حاليًا.</div>';
-        return;
-      }
-      list.innerHTML = json.data.map(c => `
-        <a class="company-option" href="/home?company_id=${encodeURIComponent(c.company_id)}&view=client">
-          <div>
-            <div class="co-name">${c.name}</div>
-            <div class="co-meta">${c.sector || ''}${c.city ? ' · ' + c.city : ''}</div>
-          </div>
-          <span class="co-arrow">←</span>
-        </a>
-      `).join('');
-      companiesLoaded = true;
-    }catch(e){
-      document.getElementById('companyList').innerHTML = '<div class="panel-error">تعذّر تحميل قائمة الشركات، حاول مجددًا.</div>';
-    }
-  }
-
-  function closeClientPanel(){
-    document.getElementById('clientOverlay').classList.remove('show');
-  }
-
-  document.getElementById('clientOverlay').addEventListener('click', (e) => {
-    if(e.target.id === 'clientOverlay') closeClientPanel();
-  });
-</script>
 
 </body>
 </html>

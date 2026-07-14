@@ -10,8 +10,11 @@ Sana Core Backend — Flask + SQLite
 import sqlite3
 import os
 import json
+import uuid
+import secrets
 from datetime import datetime
-from flask import Flask, jsonify, request, render_template, g
+from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
 def ask_sana_ai(system_prompt, user_prompt):
@@ -53,6 +56,74 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "sana.db")
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
+
+# مفتاح "العرض الداخلي التجريبي" — يسمح لك أنت كمشرف بفتح أي شركة عبر
+# ?company_id=...&admin_key=... دون تسجيل دخول، منفصل تمامًا عن حسابات العملاء الحقيقية.
+# لا يُعرض هذا المفتاح في أي صفحة عامة؛ استخدمه يدويًا في المتصفح فقط.
+ADMIN_PREVIEW_KEY = os.environ.get("ADMIN_PREVIEW_KEY")
+
+# نقاط الوصول العامة فقط — كل ما عداها (صفحات وAPI) يحمل بيانات شركة
+# بشكل أو بآخر، ويُحظر افتراضيًا ما لم يوجد تسجيل دخول حقيقي أو مفتاح
+# العرض الداخلي للمشرف. هذا يمنع أي تسريب عبر استدعاء API مباشرة أيضًا،
+# وليس فقط عبر صفحات HTML.
+PUBLIC_ENDPOINTS = {
+    "entry", "login", "signup", "logout", "api_session",
+    "methodology_page", "methodology_detail", "companies_list",
+    "system_health", "static",
+}
+
+
+def is_admin_preview():
+    """وضع العرض الداخلي التجريبي — يتطلب معرفة المفتاح السرّي، وليس مجرد تعديل الرابط."""
+    return bool(ADMIN_PREVIEW_KEY) and request.args.get("admin_key") == ADMIN_PREVIEW_KEY
+
+
+def current_account():
+    if "account_id" not in session:
+        return None
+    return {"account_id": session["account_id"], "company_id": session["company_id"], "email": session.get("email")}
+
+
+@app.before_request
+def enforce_company_auth():
+    endpoint = request.endpoint
+    if endpoint is None or endpoint in PUBLIC_ENDPOINTS:
+        return
+
+    account = current_account()
+
+    # 1) أي مسار (صفحة أو API) يحمل بيانات شركة — يتطلب جلسة دخول حقيقية،
+    #    أو مفتاح العرض الداخلي للمشرف. بدون أحدهما لا وصول إطلاقًا،
+    #    سواء عبر المتصفح أو عبر استدعاء API مباشر.
+    if not account and not is_admin_preview():
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "success": False, "error": "UNAUTHORIZED",
+                "message": "يلزم تسجيل الدخول للوصول لهذه البيانات."
+            }), 401
+        return redirect(url_for("login", next=request.full_path))
+
+    # 2) أي مسار API يحمل company_id في الرابط نفسه — لا يمكن لحساب مسجَّل
+    #    الوصول إلا لشركته هو، حتى لو عدّل الرابط يدويًا
+    if account and "company_id" in (request.view_args or {}):
+        if request.view_args["company_id"] != account["company_id"]:
+            return jsonify({
+                "success": False, "error": "FORBIDDEN",
+                "message": "لا تملك صلاحية الوصول لبيانات هذه الشركة."
+            }), 403
+
+
+def enforce_entity_company_scope(entity_company_id):
+    """للمسارات التي لا تحمل company_id في الرابط (مثل /api/cases/<id>) —
+    يتحقق أن الحساب المسجَّل (إن وُجد) يملك هذا السجل فعلًا قبل إرجاعه."""
+    account = current_account()
+    if account and entity_company_id != account["company_id"]:
+        return jsonify({
+            "success": False, "error": "FORBIDDEN",
+            "message": "لا تملك صلاحية الوصول لبيانات هذه الشركة."
+        }), 403
+    return None
 
 
 @app.after_request
@@ -143,7 +214,25 @@ def init_db(force=False):
         cases_cols = {row[1] for row in conn.execute("PRAGMA table_info(cases)").fetchall()}
         if "ai_analysis" not in cases_cols:
             conn.execute("ALTER TABLE cases ADD COLUMN ai_analysis TEXT")
+        # نظام تسجيل الدخول الحقيقي — جدول الحسابات + رمز دعوة لكل شركة
+        # (بدون كسر أي قاعدة بيانات قديمة لا تحتوي عليهما بعد)
+        conn.execute("""CREATE TABLE IF NOT EXISTS user_accounts (
+            account_id TEXT PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            company_id TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (company_id) REFERENCES companies(company_id)
+        )""")
+        companies_cols = {row[1] for row in conn.execute("PRAGMA table_info(companies)").fetchall()}
+        if "signup_code" not in companies_cols:
+            conn.execute("ALTER TABLE companies ADD COLUMN signup_code TEXT")
         conn.commit()
+    # لكل شركة بلا رمز دعوة (سواء قاعدة بيانات جديدة أو قديمة) — ولّد رمزًا فريدًا
+    for row in conn.execute("SELECT company_id FROM companies WHERE signup_code IS NULL").fetchall():
+        code = f"SANA-{row[0]}-{secrets.token_hex(3).upper()}"
+        conn.execute("UPDATE companies SET signup_code=? WHERE company_id=?", (code, row[0]))
+    conn.commit()
     conn.close()
     return fresh
 
@@ -277,6 +366,104 @@ def services_page():
     return render_template("07-services.html")
 
 
+# ------------------------------------------------------------------
+# تسجيل الدخول الحقيقي للعملاء — بريد إلكتروني + كلمة مرور مشفَّرة
+# ------------------------------------------------------------------
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    if request.method == "GET":
+        return render_template("09-signup.html")
+
+    body = request.get_json(silent=True) or request.form
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    signup_code = (body.get("signup_code") or "").strip()
+
+    if not email or "@" not in email or "." not in email.split("@")[-1]:
+        return jsonify({"success": False, "error": "INVALID_EMAIL", "message": "الرجاء إدخال بريد إلكتروني صحيح."}), 400
+    if len(password) < 8:
+        return jsonify({"success": False, "error": "WEAK_PASSWORD", "message": "كلمة المرور يجب أن تكون 8 أحرف على الأقل."}), 400
+    if not signup_code:
+        return jsonify({"success": False, "error": "MISSING_CODE", "message": "رمز دعوة الشركة مطلوب للتسجيل."}), 400
+
+    db = get_db()
+    company = db.execute("SELECT company_id, name FROM companies WHERE signup_code=?", (signup_code,)).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "INVALID_CODE", "message": "رمز الدعوة غير صحيح."}), 400
+
+    existing = db.execute("SELECT account_id FROM user_accounts WHERE email=?", (email,)).fetchone()
+    if existing:
+        return jsonify({"success": False, "error": "EMAIL_TAKEN", "message": "هذا البريد الإلكتروني مسجَّل بالفعل."}), 409
+
+    account_id = "ACC" + uuid.uuid4().hex[:10].upper()
+    db.execute(
+        "INSERT INTO user_accounts (account_id, email, password_hash, company_id) VALUES (?,?,?,?)",
+        (account_id, email, generate_password_hash(password), company["company_id"])
+    )
+    db.commit()
+
+    session.clear()
+    session["account_id"] = account_id
+    session["company_id"] = company["company_id"]
+    session["email"] = email
+
+    return jsonify({"success": True, "data": {"redirect": "/home", "company_name": company["name"]}}), 201
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        return render_template("10-login.html")
+
+    body = request.get_json(silent=True) or request.form
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+
+    if not email or not password:
+        return jsonify({"success": False, "error": "MISSING_FIELDS", "message": "البريد الإلكتروني وكلمة المرور مطلوبان."}), 400
+
+    db = get_db()
+    account = db.execute("SELECT * FROM user_accounts WHERE email=?", (email,)).fetchone()
+    if not account or not check_password_hash(account["password_hash"], password):
+        return jsonify({"success": False, "error": "INVALID_CREDENTIALS", "message": "البريد الإلكتروني أو كلمة المرور غير صحيحة."}), 401
+
+    session.clear()
+    session["account_id"] = account["account_id"]
+    session["company_id"] = account["company_id"]
+    session["email"] = account["email"]
+
+    return jsonify({"success": True, "data": {"redirect": "/home"}})
+
+
+@app.route("/logout", methods=["GET", "POST"])
+def logout():
+    session.clear()
+    return redirect("/")
+
+
+@app.route("/api/session")
+def api_session():
+    """يخبر واجهة العميل بشركته الفعلية (من الجلسة) — لا يُستخدم أبدًا رابط قابل للتعديل."""
+    account = current_account()
+    if account:
+        db = get_db()
+        company = db.execute("SELECT company_id, name FROM companies WHERE company_id=?", (account["company_id"],)).fetchone()
+        return jsonify({
+            "success": True,
+            "data": {
+                "authenticated": True,
+                "company_id": account["company_id"],
+                "company_name": company["name"] if company else None,
+                "email": account["email"],
+            }
+        })
+    return jsonify({
+        "success": True,
+        "data": {"authenticated": False, "admin_preview": is_admin_preview()}
+    })
+
+
 @app.route("/methodology/<slug>")
 def methodology_page(slug):
     return render_template("08-methodology.html", slug=slug)
@@ -288,7 +475,12 @@ def methodology_page(slug):
 
 @app.route("/api/companies")
 def companies_list():
-    """قائمة كل الشركات المسجلة — تُستخدم في صفحة الدخول (بوابة صاحب سنع/العميل)."""
+    """قائمة كل الشركات المسجلة — أداة عرض داخلي للمشرف فقط، وليست جزءًا من تجربة العميل المسجَّل."""
+    if current_account():
+        return jsonify({
+            "success": False, "error": "FORBIDDEN",
+            "message": "لا تملك صلاحية الوصول لدليل الشركات."
+        }), 403
     db = get_db()
     companies = db.execute(
         "SELECT company_id, name, sector, city FROM companies ORDER BY company_id ASC"
@@ -404,6 +596,9 @@ def case_detail(case_id):
     case = db.execute("SELECT * FROM cases WHERE case_id=?", (case_id,)).fetchone()
     if not case:
         return jsonify({"success": False, "error": "CASE_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(case["company_id"])
+    if guard:
+        return guard
 
     evidence = db.execute("SELECT * FROM evidence WHERE case_id=?", (case_id,)).fetchall()
     decisions = db.execute("SELECT * FROM decisions WHERE case_id=?", (case_id,)).fetchall()
@@ -715,6 +910,9 @@ def approve_decision(decision_id):
     decision = db.execute("SELECT * FROM decisions WHERE decision_id=?", (decision_id,)).fetchone()
     if not decision:
         return jsonify({"success": False, "error": "DECISION_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(decision["company_id"])
+    if guard:
+        return guard
 
     db.execute("UPDATE decisions SET status='معتمد' WHERE decision_id=?", (decision_id,))
 
@@ -735,6 +933,13 @@ def approve_decision(decision_id):
 @app.route("/api/decisions/<decision_id>/defer", methods=["POST"])
 def defer_decision(decision_id):
     db = get_db()
+    decision = db.execute("SELECT * FROM decisions WHERE decision_id=?", (decision_id,)).fetchone()
+    if not decision:
+        return jsonify({"success": False, "error": "DECISION_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(decision["company_id"])
+    if guard:
+        return guard
+
     db.execute("UPDATE decisions SET status='قيد المراجعة' WHERE decision_id=?", (decision_id,))
     db.commit()
     return jsonify({"success": True, "data": {"decision_id": decision_id, "status": "قيد المراجعة"}})
@@ -850,6 +1055,9 @@ def analyze_evidence(evidence_id):
     evidence = db.execute("SELECT * FROM evidence WHERE evidence_id=?", (evidence_id,)).fetchone()
     if not evidence:
         return jsonify({"success": False, "error": "EVIDENCE_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(evidence["company_id"])
+    if guard:
+        return guard
 
     case = None
     if evidence["case_id"]:
@@ -905,6 +1113,9 @@ def analyze_case(case_id):
     case = db.execute("SELECT * FROM cases WHERE case_id=?", (case_id,)).fetchone()
     if not case:
         return jsonify({"success": False, "error": "CASE_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(case["company_id"])
+    if guard:
+        return guard
 
     evidence_rows = db.execute("SELECT * FROM evidence WHERE case_id=?", (case_id,)).fetchall()
     evidence_text = "\n".join(f"- {e['title']} (مصدر: {e['source_type']}, ثقة: {e['confidence']}٪)"
@@ -973,6 +1184,9 @@ def complete_task(task_id):
     task = db.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
     if not task:
         return jsonify({"success": False, "error": "TASK_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(task["company_id"])
+    if guard:
+        return guard
     if task["status"] == "منجزة":
         return jsonify({"success": False, "error": "TASK_ALREADY_COMPLETED"}), 409
 

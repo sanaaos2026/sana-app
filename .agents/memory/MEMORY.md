@@ -1,1 +1,2 @@
 - [Sana multi-company support](sana-multi-company.md) — app was hardcoded single-tenant (COMPANY_ID="C001" in JS); added `?company_id=` query param support instead of a full switcher UI.
+- [Sana auth & tenant isolation](sana-auth-isolation.md) — real login (session-based) + a separate secret-gated admin-preview mode replaced the old public `?company_id=` bypass; guard covers API calls too, not just pages.

@@ -42,3 +42,8 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+ADMIN_PREVIEW_KEY = "L5ohCVX2FIIz7WUmphW8sXar"
