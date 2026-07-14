@@ -35,6 +35,7 @@ CREATE TABLE cases (
     related_asset_id TEXT,
     confidence_score INTEGER,
     value_impact_estimate TEXT,
+    ai_analysis TEXT,
     opened_at TEXT DEFAULT (datetime('now')),
     closed_at TEXT,
     FOREIGN KEY (company_id) REFERENCES companies(company_id)

@@ -796,6 +796,129 @@ def add_evidence(company_id):
 
 
 # ------------------------------------------------------------------
+# API — AI Analysis (أول اتصال ذكاء اصطناعي حقيقي في سنع)
+# ------------------------------------------------------------------
+
+@app.route("/api/evidence/<evidence_id>/analyze", methods=["POST"])
+def analyze_evidence(evidence_id):
+    db = get_db()
+    evidence = db.execute("SELECT * FROM evidence WHERE evidence_id=?", (evidence_id,)).fetchone()
+    if not evidence:
+        return jsonify({"success": False, "error": "EVIDENCE_NOT_FOUND"}), 404
+
+    case = None
+    if evidence["case_id"]:
+        case = db.execute("SELECT * FROM cases WHERE case_id=?", (evidence["case_id"],)).fetchone()
+
+    assets = db.execute("SELECT asset_id, asset_type, asset_name, current_score FROM assets WHERE company_id=?",
+                         (evidence["company_id"],)).fetchall()
+    assets_list = "\n".join(f"- {a['asset_id']}: {a['asset_name']} ({a['asset_type']}, الدرجة الحالية: {a['current_score']})"
+                             for a in assets)
+
+    system_prompt = """أنت محرك تشخيص داخل نظام سنع (Sana) لرفع قيمة الشركات الصغيرة والمتوسطة.
+مهمتك: قراءة دليل واحد (ملاحظة كتبها صاحب الشركة) وتحليله بموضوعية.
+لا تجامل، ولا تفترض أكثر مما يقوله النص فعليًا.
+أجب بصيغة JSON فقط، بلا أي نص قبله أو بعده، بهذا الشكل بالضبط:
+{"summary": "ملخص من جملة واحدة لما يكشفه الدليل", "confidence_assessment": رقم من 0 إلى 100 يعكس قوة هذا الدليل بمفرده, "suggested_asset_id": "معرّف الأصل الأكثر ارتباطًا من القائمة المعطاة أو null إن لم يكن واضحًا", "reasoning": "سبب مختصر لماذا هذا الأصل تحديدًا"}"""
+
+    user_prompt = f"""القضية: {case['case_title'] if case else 'غير مرتبطة بقضية'}
+السؤال الحقيقي المطروح: {case['real_question'] if case else '—'}
+
+الدليل المطلوب تحليله:
+"{evidence['title']}"
+(نوع المصدر: {evidence['source_type']}، الثقة المعلَنة عند الإضافة: {evidence['confidence']}٪)
+
+أصول الشركة المتاحة:
+{assets_list}
+
+حلّل هذا الدليل تحديدًا."""
+
+    result = ask_sana_ai(system_prompt, user_prompt)
+    if "error" in result:
+        return jsonify({"success": False, "error": "AI_ERROR", "message": result["error"]}), 502
+
+    try:
+        parsed = json.loads(result["raw_text"])
+    except (json.JSONDecodeError, KeyError):
+        return jsonify({"success": False, "error": "AI_PARSE_ERROR",
+                         "message": "تعذّر فهم رد الذكاء الاصطناعي", "raw": result.get("raw_text", "")}), 502
+
+    db.execute(
+        "UPDATE evidence SET ai_analysis=?, ai_suggested_asset_id=?, confidence=? WHERE evidence_id=?",
+        (parsed.get("summary", ""), parsed.get("suggested_asset_id"),
+         parsed.get("confidence_assessment", evidence["confidence"]), evidence_id)
+    )
+    db.commit()
+
+    return jsonify({"success": True, "data": parsed})
+
+
+@app.route("/api/cases/<case_id>/analyze", methods=["POST"])
+def analyze_case(case_id):
+    """حوار فكري: يقرأ كل أدلة القضية معًا ويقيّم السؤال الحقيقي ككل، لا دليلًا واحدًا بمعزل."""
+    db = get_db()
+    case = db.execute("SELECT * FROM cases WHERE case_id=?", (case_id,)).fetchone()
+    if not case:
+        return jsonify({"success": False, "error": "CASE_NOT_FOUND"}), 404
+
+    evidence_rows = db.execute("SELECT * FROM evidence WHERE case_id=?", (case_id,)).fetchall()
+    evidence_text = "\n".join(f"- {e['title']} (مصدر: {e['source_type']}, ثقة: {e['confidence']}٪)"
+                               for e in evidence_rows) or "لا توجد أدلة مسجَّلة بعد."
+
+    assets = db.execute("SELECT asset_id, asset_type, asset_name, current_score FROM assets WHERE company_id=?",
+                         (case["company_id"],)).fetchall()
+    assets_list = "\n".join(f"- {a['asset_id']}: {a['asset_name']} (الدرجة: {a['current_score']})" for a in assets)
+
+    system_prompt = """أنت محرك تشخيص داخل سنع. تقرأ كل الأدلة المسجَّلة لقضية واحدة معًا، لا كل دليل بمعزل.
+قاعدة أساسية: لا تصدر حكمًا نهائيًا إن كانت الأدلة قليلة أو متضاربة — قل ذلك صراحة.
+أجب بصيغة JSON فقط بهذا الشكل بالضبط:
+{"overall_assessment": "تقييمك الكامل للسؤال الحقيقي بناءً على كل الأدلة مجتمعة، فقرة واحدة", "confidence_score": رقم 0-100, "recommended_decision_title": "عنوان قرار مقترح واحد قابل للتنفيذ", "recommended_reason": "سبب هذا القرار تحديدًا"}"""
+
+    user_prompt = f"""عنوان القضية: {case['case_title']}
+المشكلة كما وُصفت: {case['declared_problem']}
+السؤال الحقيقي: {case['real_question']}
+
+كل الأدلة المسجَّلة ({len(evidence_rows)}):
+{evidence_text}
+
+أصول الشركة:
+{assets_list}
+
+قيّم هذه القضية ككل الآن."""
+
+    result = ask_sana_ai(system_prompt, user_prompt)
+    if "error" in result:
+        return jsonify({"success": False, "error": "AI_ERROR", "message": result["error"]}), 502
+
+    try:
+        parsed = json.loads(result["raw_text"])
+    except (json.JSONDecodeError, KeyError):
+        return jsonify({"success": False, "error": "AI_PARSE_ERROR",
+                         "message": "تعذّر فهم رد الذكاء الاصطناعي", "raw": result.get("raw_text", "")}), 502
+
+    db.execute("UPDATE cases SET ai_analysis=?, confidence_score=? WHERE case_id=?",
+               (parsed.get("overall_assessment", ""), parsed.get("confidence_score", case["confidence_score"]), case_id))
+    db.commit()
+
+    return jsonify({"success": True, "data": parsed})
+
+
+@app.route("/api/system/health")
+def system_health():
+    """فحص بدون أي نداء فعلي لـ Claude (لا تكلفة، لا إنترنت لازم لهذا الفحص نفسه) —
+    يتحقق فقط أن المكتبة مثبَّتة والمفتاح موجود، حتى تتأكد قبل إرسال الرابط لعميل محتمل."""
+    checks = {"library_installed": False, "api_key_present": False}
+    try:
+        import anthropic  # noqa: F401
+        checks["library_installed"] = True
+    except ImportError:
+        pass
+    checks["api_key_present"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    checks["ai_ready"] = checks["library_installed"] and checks["api_key_present"]
+    return jsonify({"success": True, "data": checks})
+
+
+# ------------------------------------------------------------------
 # API — Tasks (إنجاز المهمة = ترفع الأصل المرتبط بالقرار تلقائيًا)
 # ------------------------------------------------------------------
 
