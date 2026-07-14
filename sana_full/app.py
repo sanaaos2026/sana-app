@@ -134,6 +134,15 @@ def init_db(force=False):
             conn.execute("ALTER TABLE methodology_docs ADD COLUMN version TEXT DEFAULT 'v1.0'")
         if "bos_id" not in methodology_cols:
             conn.execute("ALTER TABLE methodology_docs ADD COLUMN bos_id TEXT")
+        # أعمدة تحليل الذكاء الاصطناعي — دليل مفرد وقضية كاملة (بدون كسر قواعد بيانات قديمة)
+        evidence_cols = {row[1] for row in conn.execute("PRAGMA table_info(evidence)").fetchall()}
+        if "ai_analysis" not in evidence_cols:
+            conn.execute("ALTER TABLE evidence ADD COLUMN ai_analysis TEXT")
+        if "ai_suggested_asset_id" not in evidence_cols:
+            conn.execute("ALTER TABLE evidence ADD COLUMN ai_suggested_asset_id TEXT")
+        cases_cols = {row[1] for row in conn.execute("PRAGMA table_info(cases)").fetchall()}
+        if "ai_analysis" not in cases_cols:
+            conn.execute("ALTER TABLE cases ADD COLUMN ai_analysis TEXT")
         conn.commit()
     conn.close()
     return fresh
