@@ -115,6 +115,7 @@ function render(d){
       <div class="lbl">Real Question</div>
       <div class="declared">المشكلة كما وصفها المالك: "${c.declared_problem || ''}"</div>
       <div class="real">السؤال الحقيقي: ${c.real_question || ''}</div>
+      ${c.ai_analysis ? `<div style="margin-top:14px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.15); font-size:13px; color:rgba(255,255,255,0.85);">🧠 تقييم سنع الشامل: ${c.ai_analysis}${c.confidence_score ? ` <span style="color:#F2B233; font-weight:600;">(ثقة ${c.confidence_score}٪)</span>` : ''}</div>` : ''}
     </div>
 
     <a href="/methodology/sana-acquisition-system${qs(CASE_COMPANY_ID, {from_case: CASE_ID})}" class="link-out" style="display:inline-block; margin-bottom:16px; background:#F5F6FB; border:1px solid #DEE1EC; border-radius:8px; padding:8px 14px;">
@@ -126,13 +127,24 @@ function render(d){
   `;
   if(d.evidence.length === 0){ html += `<p style="color:#6E7580; font-size:13px;">لا توجد أدلة بعد.</p>`; }
   d.evidence.forEach(e => {
-    html += `<div class="evidence-item"><span class="dot"></span><div>${e.title} <span class="conf-tag">— ${e.source_type}, ثقة ${e.confidence}٪</span></div></div>`;
+    html += `<div class="evidence-item">
+      <span class="dot"></span>
+      <div style="flex:1;">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
+          <div>${e.title} <span class="conf-tag">— ${e.source_type}, ثقة ${e.confidence}٪</span></div>
+          <button class="ai-btn" onclick="analyzeEvidence('${e.evidence_id}')">🧠 حلّل</button>
+        </div>
+        <div id="ai-evidence-${e.evidence_id}">${e.ai_analysis ? `<div class="ai-note">🧠 ${e.ai_analysis}</div>` : ''}</div>
+      </div>
+    </div>`;
   });
   html += `
     <div class="add-form">
       <input type="text" id="newEvidence" placeholder="أضف دليلًا جديدًا...">
       <button onclick="addEvidence()">إضافة</button>
     </div>
+    <button class="ai-case-btn" onclick="analyzeCase()">🧠 حلّل القضية كاملة بالذكاء الاصطناعي</button>
+    <div id="ai-case-result"></div>
   </section>`;
 
   html += `<section><h2>القرارات الناتجة</h2>`;
@@ -234,6 +246,41 @@ async function approveDecision(id){
   const res = await fetch(`/api/decisions/${id}/approve`, {method:'POST'});
   const json = await res.json();
   if(json.success){ showToast('تم اعتماد القرار — أُنشئت مهمة تنفيذية تلقائيًا'); loadCase(); }
+}
+
+async function analyzeEvidence(evidenceId){
+  const box = document.getElementById(`ai-evidence-${evidenceId}`);
+  if(box) box.innerHTML = `<span style="font-size:11.5px; color:#9AA0AB;">سنع يحلّل...</span>`;
+  try{
+    const res = await fetch(`/api/evidence/${evidenceId}/analyze`, {method:'POST'});
+    const json = await res.json();
+    if(!json.success){
+      if(box) box.innerHTML = `<div class="ai-error">تعذّر التحليل: ${json.message || json.error}</div>`;
+      return;
+    }
+    showToast('تم تحليل الدليل بالذكاء الاصطناعي');
+    loadCase();
+  }catch(e){
+    if(box) box.innerHTML = `<div class="ai-error">تعذّر الاتصال بالخادم أثناء التحليل.</div>`;
+  }
+}
+
+async function analyzeCase(){
+  const box = document.getElementById('ai-case-result');
+  if(box) box.innerHTML = `<span style="font-size:12px; color:#9AA0AB;">سنع يحلّل القضية كاملة...</span>`;
+  showToast('سنع يحلّل القضية كاملة...');
+  try{
+    const res = await fetch(`/api/cases/${CASE_ID}/analyze`, {method:'POST'});
+    const json = await res.json();
+    if(!json.success){
+      if(box) box.innerHTML = `<div class="ai-error">تعذّر التحليل: ${json.message || json.error}</div>`;
+      return;
+    }
+    showToast('تم تحليل القضية كاملة بالذكاء الاصطناعي');
+    loadCase();
+  }catch(e){
+    if(box) box.innerHTML = `<div class="ai-error">تعذّر الاتصال بالخادم أثناء التحليل.</div>`;
+  }
 }
 
 function showToast(msg){

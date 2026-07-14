@@ -13,6 +13,42 @@ import json
 from datetime import datetime
 from flask import Flask, jsonify, request, render_template, g
 
+
+def ask_sana_ai(system_prompt, user_prompt):
+    """
+    نداء حقيقي لـ Claude — أول اتصال فعلي بذكاء اصطناعي في سنع، بدل أي حساب مبرمج يدويًا.
+    يحتاج ANTHROPIC_API_KEY كمتغيّر بيئة (على Replit: أضفه من قسم Secrets).
+    """
+    try:
+        import anthropic
+    except ImportError:
+        return {"error": "مكتبة anthropic غير مثبَّتة — شغّل: pip install anthropic"}
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return {"error": "ANTHROPIC_API_KEY غير موجود — أضفه في Secrets على Replit أولاً"}
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=1000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        raw_text = "".join(
+            block.text for block in response.content if getattr(block, "type", "") == "text"
+        )
+        cleaned = raw_text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("```")[1]
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:]
+        return {"raw_text": cleaned.strip()}
+    except Exception as e:
+        return {"error": f"فشل الاتصال بالذكاء الاصطناعي: {str(e)}"}
+
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "sana.db")
 
