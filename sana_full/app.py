@@ -247,6 +247,11 @@ def init_db(force=False):
             conn.execute("ALTER TABLE decisions ADD COLUMN phase_label TEXT")
         if "structured_data" not in decision_cols:
             conn.execute("ALTER TABLE decisions ADD COLUMN structured_data TEXT")
+        # مسؤول تنفيذ القرار وموعده — حقلان اختياريان بسيطان (لا نظام متابعة كامل بعد)
+        if "owner_name" not in decision_cols:
+            conn.execute("ALTER TABLE decisions ADD COLUMN owner_name TEXT")
+        if "due_date" not in decision_cols:
+            conn.execute("ALTER TABLE decisions ADD COLUMN due_date TEXT")
         # وثائق منهجية عامة (مستقلة عن أي شركة) — قد لا يكون الجدول موجودًا في قواعد بيانات قديمة
         conn.execute("""CREATE TABLE IF NOT EXISTS methodology_docs (
             doc_id TEXT PRIMARY KEY,
@@ -1041,7 +1046,14 @@ def approve_decision(decision_id):
     if guard:
         return guard
 
-    db.execute("UPDATE decisions SET status='معتمد' WHERE decision_id=?", (decision_id,))
+    body = request.get_json(force=True, silent=True) or {}
+    owner_name = (body.get("owner_name") or "").strip() or None
+    due_date = (body.get("due_date") or "").strip() or None
+
+    db.execute(
+        "UPDATE decisions SET status='معتمد', owner_name=?, due_date=? WHERE decision_id=?",
+        (owner_name, due_date, decision_id)
+    )
 
     # القانون الأول: أي قرار معتمد يجب أن ينتج عنه مهمة تنفيذية فعلية
     existing_task = db.execute(

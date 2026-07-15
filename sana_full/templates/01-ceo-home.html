@@ -198,7 +198,27 @@ function render(d){
   document.getElementById('companyName').textContent = `${c.name} — ${c.sector}`;
   const topDecision = d.top_decision;
 
-  let html = `
+  let html = '';
+
+  // ⚠ جلسة أولى: كل الأصول صفر ولا يوجد أي نشاط بعد — رسالة ترحيبية بدل أرقام مربكة بلا سياق
+  const isFirstSession = d.quality_score === 0 && d.open_decisions_count === 0 && !topDecision;
+  if(isFirstSession){
+    html += `
+      <span class="eyebrow">مرحبًا بك في سنع</span>
+      <h1>شركتك جديدة هنا — لا توجد بيانات بعد، وهذا طبيعي تمامًا.</h1>
+      <p style="color:#6E7580; font-size:13.5px; margin:8px 0 20px; line-height:1.7;">
+        الدرجة 0/100 لكل الأصول لأنه لا توجد أدلة أو قرارات مسجَّلة بعد — لا لأن شركتك ضعيفة. ابدأ بأي من الخيارين:
+      </p>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <a href="/case/new${CQS}" class="btn btn-primary" style="text-align:center; display:block;">🔍 ابدأ تشخيصًا جديدًا</a>
+        <a href="/company/${COMPANY_ID}/tasks-board" class="btn btn-primary" style="text-align:center; display:block; background:#0B132B;">📋 طبّق حزمة مهام جاهزة لقطاعك</a>
+      </div>
+    `;
+    document.getElementById('app').innerHTML = html;
+    return;
+  }
+
+  html += `
     <span class="eyebrow">الملخص التنفيذي</span>
     <h1>أكبر فرصة اليوم في <span class="hl">${d.weakest_asset ? d.weakest_asset.asset_name : ''}</span>. قرار واحد ينتظر اعتمادك.</h1>
 
@@ -219,19 +239,35 @@ function render(d){
   `;
 
   if(topDecision){
+    const alreadyApproved = topDecision.status === 'معتمد';
     html += `
     <section>
       <h2>القرار المطلوب اليوم</h2>
       <div class="decision-title">${topDecision.title}</div>
       <div class="decision-reason">${topDecision.reason || ''}</div>
-      <button class="btn btn-primary" onclick="approveDecision('${topDecision.decision_id}')" ${topDecision.status==='معتمد'?'disabled':''}>
-        ${topDecision.status==='معتمد' ? 'تم الاعتماد ✓' : 'اعتماد القرار'}
+      ${alreadyApproved
+        ? `<div style="font-size:12.5px; color:#6E7580; margin:10px 0;">
+             ${topDecision.owner_name ? `👤 المسؤول: ${topDecision.owner_name}` : ''}
+             ${topDecision.due_date ? ` · 📅 الموعد: ${topDecision.due_date}` : ''}
+             ${(!topDecision.owner_name && !topDecision.due_date) ? 'لم يُحدَّد مسؤول أو موعد لهذا القرار.' : ''}
+           </div>`
+        : `<div style="display:flex; gap:8px; margin:12px 0;">
+             <input id="ownerInput" type="text" placeholder="المسؤول عن التنفيذ (اختياري)" style="flex:1; padding:9px 10px; border:1px solid #DEE1EC; border-radius:8px; font-size:13px; font-family:'IBM Plex Sans Arabic';">
+             <input id="dueDateInput" type="date" style="padding:9px 10px; border:1px solid #DEE1EC; border-radius:8px; font-size:13px; font-family:'IBM Plex Sans Arabic';">
+           </div>`
+      }
+      <button class="btn btn-primary" onclick="approveDecision('${topDecision.decision_id}')" ${alreadyApproved?'disabled':''}>
+        ${alreadyApproved ? 'تم الاعتماد ✓' : 'اعتماد القرار'}
       </button>
       ${topDecision.case_id ? `<a href="/case/${topDecision.case_id}${CQS}" class="link-out" style="display:block; margin-top:12px;">← افتح القضية الكاملة لرؤية التفاصيل والأدلة</a>` : ''}
     </section>`;
   }
 
-  const baselineScores = { Knowledge: 18, Operations: 41, Brand: 72, Data: 65, Independence: 22 };
+  // ⚠ هذي القيم خاصة بأثر مشرق (C001) فقط منذ البداية — لا تُطبَّق على أي شركة أخرى
+  // (كانت تُطبَّق خطأً على الجميع سابقًا، منتجة فروقات غلط لأي شركة غير C001)
+  const baselineScores = COMPANY_ID === 'C001'
+    ? { Knowledge: 18, Operations: 41, Brand: 72, Data: 65, Independence: 22 }
+    : {};
   html += `<section><h2>خريطة الأصول</h2>`;
   d.assets.forEach(a => {
     const baseline = baselineScores[a.asset_type];
@@ -249,7 +285,8 @@ function render(d){
     <div id="suggestPanel"></div>
   </section>`;
 
-  html += `<section><h2>المهام الحالية</h2>`;
+  html += `<section><h2>المهام الحالية</h2>
+    <a href="/company/${COMPANY_ID}/tasks-board" class="link-out" style="display:inline-block; margin-bottom:12px;">📋 افتح لوحة المهام الكاملة (حزم جاهزة + تقرير سير العمل) ←</a>`;
   if(d.tasks && d.tasks.length){
     d.tasks.forEach(t => {
       const done = t.status === 'منجزة';
@@ -286,7 +323,16 @@ function renderSuggestPanel(){
 }
 
 async function approveDecision(id){
-  const res = await fetch(`/api/decisions/${id}/approve${apiQS()}`, {method:'POST'});
+  const ownerEl = document.getElementById('ownerInput');
+  const dueEl = document.getElementById('dueDateInput');
+  const res = await fetch(`/api/decisions/${id}/approve${apiQS()}`, {
+    method:'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      owner_name: ownerEl ? ownerEl.value : '',
+      due_date: dueEl ? dueEl.value : '',
+    })
+  });
   const json = await res.json();
   if(json.success){ showToast('تم اعتماد القرار — أُنشئت مهمة تنفيذية تلقائيًا'); loadData(); }
 }
