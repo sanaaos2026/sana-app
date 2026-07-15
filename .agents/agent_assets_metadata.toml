@@ -12,3 +12,9 @@ id = "F8kLYuTbtfGTZQrxiEfya"
 uri = "file://exports/sana_project_export.zip"
 type = "unspecified"
 title = "Sana Project - Full Export"
+
+[[outputs]]
+id = "pUiHPgxw_8kpS2d6DJ8BR"
+uri = "file://downloads/sana_full.zip"
+type = "unspecified"
+title = "sana_full - نسخة مضغوطة من المشروع"
