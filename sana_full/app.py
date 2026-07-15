@@ -1532,6 +1532,77 @@ def tasks_board_page(company_id):
     return render_template("12-tasks-board.html", company_id=company_id)
 
 
+# ------------------------------------------------------------------
+# Sana Score — طبقة "لماذا هذه الدرجة؟" و"ماذا لو نفّذت القرارات المعتمدة؟"
+# مبنية بالكامل فوق بيانات موجودة أصلاً (decision_asset_impacts + حالة المهام)
+# — لا جداول جديدة، لا "معرفة مشتركة بين الشركات".
+# ------------------------------------------------------------------
+
+@app.route("/api/companies/<company_id>/score-explanation")
+def score_explanation(company_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+
+    db = get_db()
+    assets = db.execute("SELECT * FROM assets WHERE company_id=?", (company_id,)).fetchall()
+    if not assets:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND_OR_NO_ASSETS"}), 404
+
+    current_score = round(sum(a["current_score"] for a in assets) / len(assets))
+
+    # "لماذا؟" — آخر 5 تأثيرات فعلية نتجت عن مهام مُنجزة فعلًا (لا افتراضية)
+    recent_rows = db.execute(
+        """SELECT a.asset_type, a.asset_name, d.title, dai.score_impact, t.completed_at
+           FROM decision_asset_impacts dai
+           JOIN decisions d ON d.decision_id = dai.decision_id
+           JOIN tasks t ON t.decision_id = d.decision_id
+           JOIN assets a ON a.asset_id = dai.asset_id
+           WHERE d.company_id=? AND t.status='منجزة'
+           ORDER BY t.completed_at DESC LIMIT 5""",
+        (company_id,)
+    ).fetchall()
+    recent_changes = [
+        {"asset_name": r["asset_name"], "title": r["title"],
+         "impact": r["score_impact"], "completed_at": r["completed_at"]}
+        for r in recent_rows
+    ]
+
+    # "ماذا لو؟" — قرارات معتمدة لكن مهمتها لم تُنجز بعد (أثر متوقَّع، لا مضمون)
+    pending_rows = db.execute(
+        """SELECT a.asset_id, a.asset_type, a.asset_name, d.title, dai.score_impact
+           FROM decision_asset_impacts dai
+           JOIN decisions d ON d.decision_id = dai.decision_id
+           JOIN tasks t ON t.decision_id = d.decision_id
+           JOIN assets a ON a.asset_id = dai.asset_id
+           WHERE d.company_id=? AND d.status='معتمد' AND t.status!='منجزة'""",
+        (company_id,)
+    ).fetchall()
+
+    pending_by_asset = {}
+    pending_list = []
+    for r in pending_rows:
+        pending_by_asset[r["asset_id"]] = pending_by_asset.get(r["asset_id"], 0) + r["score_impact"]
+        pending_list.append({"asset_name": r["asset_name"], "title": r["title"], "impact": r["score_impact"]})
+
+    projected_scores = []
+    for a in assets:
+        added = pending_by_asset.get(a["asset_id"], 0)
+        projected_scores.append(min(100, a["current_score"] + added))
+    projected_score = round(sum(projected_scores) / len(projected_scores)) if projected_scores else current_score
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "current_score": current_score,
+            "recent_changes": recent_changes,
+            "pending_decisions": pending_list,
+            "projected_score": projected_score,
+            "projected_delta": projected_score - current_score,
+        }
+    })
+
+
 if __name__ == "__main__":
     fresh = init_db()
     seed_db()
