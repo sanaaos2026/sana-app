@@ -40,24 +40,27 @@
   .principle-box .lbl{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:1px; text-transform:uppercase; color:rgba(255,255,255,0.75); font-weight:600; margin-bottom:6px; }
   .principle-box .txt{ font-size:13.5px; font-weight:500; }
 
-  .section-title{ font-family:'Space Grotesk'; font-size:12px; letter-spacing:1.5px; text-transform:uppercase; color:#0EA5A5; font-weight:600; margin:0 0 12px; }
+  .section-title{ font-family:'Space Grotesk'; font-size:12.5px; letter-spacing:1.5px; text-transform:uppercase; color:#0EA5A5; font-weight:700; margin:0 0 14px; }
   .section{ margin-bottom:32px; }
 
-  .cycle-strip{ display:flex; gap:6px; margin-bottom:6px; overflow-x:auto; padding-bottom:4px; }
-  .cycle-step{ flex:1; min-width:150px; background:#fff; border:1.5px solid #DEE1EC; border-radius:10px; padding:12px 14px; }
-  .cycle-step .stage{ font-family:'Space Grotesk'; font-weight:700; font-size:15px; color:#0EA5A5; }
-  .cycle-step .label{ font-size:11px; color:#6E7580; margin:2px 0 8px; }
-  .cycle-step .q{ font-size:11.5px; color:#0B132B; font-weight:600; margin-bottom:6px; }
-  .cycle-step dl{ font-size:11px; color:#6E7580; }
-  .cycle-step dt{ color:#9AA0AB; font-weight:600; margin-top:6px; }
-  .cycle-step dd{ margin:1px 0 0; }
-  .cycle-arrow{ align-self:center; color:#9AA0AB; font-size:16px; flex-shrink:0; }
+  .cycle-strip{ display:flex; gap:10px; margin-bottom:6px; overflow-x:auto; scroll-snap-type:x proximity; padding:4px 4px 12px; }
+  .cycle-step{ flex:0 0 auto; width:230px; scroll-snap-align:start; background:#fff; border:1.5px solid #DEE1EC; border-radius:14px; padding:18px 18px 16px; box-shadow:0 1px 3px rgba(11,19,43,0.04); }
+  .cycle-step .stage{ font-family:'Space Grotesk'; font-weight:700; font-size:19px; color:#0EA5A5; }
+  .cycle-step .label{ font-size:12px; color:#9AA0AB; margin:2px 0 12px; font-weight:500; }
+  .cycle-step .q{ font-size:13.5px; color:#0B132B; font-weight:600; line-height:1.6; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #F0F1F5; }
+  .cycle-step dl{ font-size:13px; }
+  .cycle-step dt{ font-size:11px; color:#0EA5A5; font-weight:700; letter-spacing:0.3px; margin-top:12px; }
+  .cycle-step dt:first-of-type{ margin-top:0; }
+  .cycle-step dd{ margin:4px 0 0; color:#44464B; line-height:1.65; }
+  .cycle-step .chip-row{ display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; }
+  .cycle-step .chip{ background:#F5F6FB; color:#333940; font-size:11.5px; padding:3px 9px; border-radius:20px; border:1px solid #E9EAF0; }
+  .cycle-arrow{ align-self:center; color:#C7CBD1; font-size:18px; flex-shrink:0; }
 
-  .rule-group{ margin-bottom:18px; }
-  .rule-group-title{ font-weight:600; color:#0B132B; font-size:14px; margin-bottom:10px; }
-  .rule-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:14px 16px; margin-bottom:8px; display:flex; gap:10px; align-items:baseline; }
-  .rule-num{ font-family:'Space Grotesk'; font-weight:700; font-size:13px; color:#0B132B; background:#F5F6FB; border-radius:6px; padding:1px 9px; flex-shrink:0; }
-  .rule-text{ font-size:13.5px; color:#333940; }
+  .rule-group{ margin-bottom:22px; }
+  .rule-group-title{ font-weight:700; color:#0B132B; font-size:15px; margin-bottom:12px; padding-right:2px; }
+  .rule-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:15px 17px; margin-bottom:9px; display:flex; gap:12px; align-items:flex-start; }
+  .rule-num{ font-family:'Space Grotesk'; font-weight:700; font-size:13px; color:#0B132B; background:#F5F6FB; border-radius:7px; padding:3px 10px; flex-shrink:0; line-height:1.5; }
+  .rule-text{ font-size:14px; color:#333940; line-height:1.75; }
 
   .platform-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; margin-top:4px; margin-bottom:20px; }
   .platform-item{ background:#F5F6FB; border-radius:8px; padding:10px 12px; }
@@ -192,15 +195,21 @@ function render(d){
     stages.forEach((s, i) => {
       const detailRows = [
         ['السؤال', s.question], ['الهدف', s.goal], ['المؤشرات', s.kpis],
-        ['الأصول', s.assets], ['القرارات', s.decisions], ['المحتوى', s.content],
+        ['القرارات', s.decisions], ['المحتوى', s.content],
         ['الدليل', s.evidence], ['أخطاء شائعة', s.mistakes],
       ].filter(([, v]) => v);
+      const assetChips = s.assets
+        ? String(s.assets).split(/[،,]/).map(a => a.trim()).filter(Boolean)
+        : [];
       html += `<div class="cycle-step">
         <div class="stage">${s.name || s.stage}</div>
         <div class="label">${s.label || ''}</div>
         ${s.question ? `<div class="q">${s.question}</div>` : ''}
-        <dl>${detailRows.map(([k,v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
-        ${s.desc ? `<div style="font-size:11px; color:#9AA0AB; margin-top:6px;">${s.desc}</div>` : ''}
+        <dl>
+          ${assetChips.length ? `<dt>الأصول</dt><dd><div class="chip-row">${assetChips.map(a => `<span class="chip">${a}</span>`).join('')}</div></dd>` : ''}
+          ${detailRows.map(([k,v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}
+        </dl>
+        ${s.desc ? `<div style="font-size:11.5px; color:#9AA0AB; margin-top:10px; line-height:1.6;">${s.desc}</div>` : ''}
       </div>`;
       if(i < stages.length - 1) html += `<div class="cycle-arrow">←</div>`;
     });
@@ -213,7 +222,8 @@ function render(d){
   if(d.rule_groups){
     html += `<div class="section"><div class="section-title">قواعد النظام (20 قاعدة)</div>`;
     d.rule_groups.forEach(group => {
-      html += `<div class="rule-group"><div class="rule-group-title">${group.title}</div>`;
+      const count = (group.rules || []).length;
+      html += `<div class="rule-group"><div class="rule-group-title">${group.title} <span style="color:#9AA0AB; font-weight:500; font-size:12.5px;">(${count})</span></div>`;
       (group.rules || []).forEach(r => {
         ruleNum += 1;
         numberedRules.push({num: ruleNum, text: r});
