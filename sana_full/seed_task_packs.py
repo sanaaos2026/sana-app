@@ -22,7 +22,7 @@ PACKS = [
             ("التمركز والهوية", "تحديد العملاء المستهدفين",
              "تحديد شرائح العملاء بدقة وترتيب الأولوية (شركات صغيرة/متوسطة، عائلية، مستثمرون، مقاولات) وتوثيق مشاكلهم القانونية الشائعة.",
              "Brand", 2),
-            ("التمركز والهوية", "اعتماد الخدمات الرئيسية",
+            ("التمركز والهوية", "اعتماد الخدمات الخمس الرئيسية",
              "اعتماد 5 خدمات محورية يتمحور حولها التسويق، مع تعريف مختصر لكل خدمة.", "Brand", 2),
             ("التمركز والهوية", "كتابة الرسالة التسويقية",
              "صياغة رسالة موحّدة تُستخدم في كل المواد التسويقية.", "Brand", 2),
@@ -34,7 +34,7 @@ PACKS = [
              "تحديد نبرة العلامة: رسمية تقليدية أم حديثة قريبة من العميل.", "Brand", 2),
             ("التمركز والهوية", "تحديد أسلوب ونبرة التواصل",
              "قواعد كتابة موحّدة لكل المحتوى والمنشورات.", "Brand", 2),
-            ("الملفات التعريفية", "الملف التعريفي للمكتب",
+            ("الملفات التعريفية", "الملف التعريفي للمكتب (Company Profile)",
              "ملف PDF شامل: نبذة، رؤية، قيم، خدمات، منهجية عمل، خطوات التعاقد.", "Brand", 3),
             ("الملفات التعريفية", "ملف خدمات الشركات",
              "موجَّه للشركات: الرعاية القانونية السنوية، العقود، الحوكمة، إدارة المخاطر.", "Brand", 3),
@@ -52,13 +52,13 @@ PACKS = [
              "نموذج موحّد لتوثيق كل استشارة أولية.", "Operations", 2),
             ("نظام التشغيل", "إعداد آلية متابعة العملاء",
              "تذكيرات منتظمة لمتابعة من لم يقرر بعد.", "Operations", 3),
-            ("تجهيز المحتوى", "إعداد خطة محتوى 90 يومًا",
+            ("تجهيز المحتوى", "إعداد خطة محتوى لمدة 90 يومًا",
              "جدول أسبوعي لموضوعات المحتوى طوال الفترة.", "Knowledge", 3),
             ("تجهيز المحتوى", "كتابة السكربتات",
              "نصوص أول دفعة من الفيديوهات القصيرة.", "Knowledge", 3),
             ("تجهيز المحتوى", "تصميم القوالب",
              "قوالب بصرية موحّدة لكل المنصات.", "Knowledge", 3),
-            ("تجهيز المحتوى", "تصوير أول دفعة فيديوهات",
+            ("تجهيز المحتوى", "تصوير أول دفعة من الفيديوهات",
              "أول 5-10 فيديوهات جاهزة للنشر عند الإطلاق.", "Knowledge", 3),
         ],
     },
@@ -94,13 +94,29 @@ PACKS = [
 def run():
     with app.app_context():
         db = get_db()
-        added_packs, skipped_packs = 0, 0
+        added_packs, updated_packs = 0, 0
         for pack in PACKS:
             existing = db.execute(
                 "SELECT pack_id FROM task_packs WHERE pack_id=?", (pack["pack_id"],)
             ).fetchone()
             if existing:
-                skipped_packs += 1
+                # الحزمة موجودة مسبقًا: نحدّث بياناتها وبنودها لتطابق آخر نسخة في هذا السكربت،
+                # بدل تخطّيها بلا تحديث (يضمن انعكاس أي تصحيح على عناوين/تفاصيل البنود).
+                db.execute(
+                    "UPDATE task_packs SET name=?, sector=?, description=? WHERE pack_id=?",
+                    (pack["name"], pack["sector"], pack["description"], pack["pack_id"])
+                )
+                db.execute("DELETE FROM task_pack_items WHERE pack_id=?", (pack["pack_id"],))
+                for i, (category, title, detail, asset_type, impact) in enumerate(pack["items"]):
+                    item_id = "ITEM-" + uuid.uuid4().hex[:8].upper()
+                    db.execute(
+                        """INSERT INTO task_pack_items
+                           (item_id, pack_id, category_label, title, detail, asset_type, score_impact, sort_order)
+                           VALUES (?,?,?,?,?,?,?,?)""",
+                        (item_id, pack["pack_id"], category, title, detail, asset_type, impact, i)
+                    )
+                updated_packs += 1
+                print(f"↻ حُدِّثت حزمة: {pack['name']} ({len(pack['items'])} بندًا)")
                 continue
             db.execute(
                 "INSERT INTO task_packs (pack_id, name, sector, description) VALUES (?,?,?,?)",
@@ -118,7 +134,7 @@ def run():
             print(f"✓ أُضيفت حزمة: {pack['name']} ({len(pack['items'])} بندًا)")
 
         db.commit()
-        print(f"تم: {added_packs} حزمة جديدة، {skipped_packs} موجودة مسبقًا (تخطّي).")
+        print(f"تم: {added_packs} حزمة جديدة، {updated_packs} تم تحديثها.")
 
 
 if __name__ == "__main__":
