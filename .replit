@@ -1,6 +1,7 @@
 modules = ["nodejs-24", "python-3.11", "postgresql-16"]
 
 [deployment]
+run = ["bash", "-c", "cd sana_full && python3 app.py"]
 router = "application"
 deploymentTarget = "autoscale"
 
