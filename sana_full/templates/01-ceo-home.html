@@ -200,7 +200,7 @@ function render(d){
       <div class="cell"><div class="label">الإيرادات</div><div class="val num">${(c.annual_revenue/1000).toFixed(0)}<span style="font-size:10px;">ألف</span></div></div>
       <div class="cell risk"><div class="label">أهم خطر</div><div class="val">${d.weakest_asset ? d.weakest_asset.asset_name + ' ضعيف' : '—'}</div></div>
       <div class="cell opp"><div class="label">أهم فرصة</div><div class="val">${topDecision ? topDecision.title : '—'}</div></div>
-      <div class="cell"><div class="label">قرارات مفتوحة</div><div class="val num">${d.open_decisions_count}</div></div>
+      <div class="cell"><div class="label">بانتظار اعتمادك</div><div class="val num">${d.open_decisions_count}</div></div>
     </div>
   `;
 
@@ -213,7 +213,7 @@ function render(d){
       <button class="btn btn-primary" onclick="approveDecision('${topDecision.decision_id}')" ${topDecision.status==='معتمد'?'disabled':''}>
         ${topDecision.status==='معتمد' ? 'تم الاعتماد ✓' : 'اعتماد القرار'}
       </button>
-      <a href="/case/${topDecision.case_id}${CQS}" class="link-out" style="display:block; margin-top:12px;">← افتح القضية الكاملة لرؤية التفاصيل والأدلة</a>
+      ${topDecision.case_id ? `<a href="/case/${topDecision.case_id}${CQS}" class="link-out" style="display:block; margin-top:12px;">← افتح القضية الكاملة لرؤية التفاصيل والأدلة</a>` : ''}
     </section>`;
   }
 

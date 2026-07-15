@@ -193,7 +193,13 @@ function render(d){
     <div id="ai-case-result"></div>
   </section>`;
 
-  html += `<section><h2>القرارات الناتجة</h2>`;
+  const decCounts = { 'معتمد': 0, 'مقترح': 0, 'قيد التنفيذ': 0 };
+  d.decisions.forEach(dec => { decCounts[dec.status] = (decCounts[dec.status] || 0) + 1; });
+  const decBreakdown = [
+    decCounts['معتمد'] ? `${decCounts['معتمد']} معتمد` : null,
+    (decCounts['مقترح'] + decCounts['قيد التنفيذ']) ? `${decCounts['مقترح'] + decCounts['قيد التنفيذ']} بانتظار الاعتماد` : null,
+  ].filter(Boolean).join(' · ');
+  html += `<section><h2>القرارات الناتجة (${d.decisions.length})</h2>${decBreakdown ? `<p style="font-size:12px; color:#9AA0AB; margin:-8px 0 12px;">${decBreakdown}</p>` : ''}`;
   if(d.decisions.length === 0){ html += `<p style="color:#6E7580; font-size:13px;">لا توجد قرارات بعد لهذه القضية.</p>`; }
   const decisionsByPhase = {};
   d.decisions.forEach(dec => {
