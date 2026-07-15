@@ -71,7 +71,7 @@ ADMIN_PREVIEW_KEY = os.environ.get("ADMIN_PREVIEW_KEY")
 PUBLIC_ENDPOINTS = {
     "entry", "login", "signup", "logout", "api_session",
     "methodology_page", "methodology_detail", "companies_list",
-    "system_health", "static",
+    "system_health", "static", "guide_page",
 }
 
 
@@ -594,6 +594,11 @@ def api_session():
         "success": True,
         "data": {"authenticated": False, "admin_preview": is_admin_preview()}
     })
+
+
+@app.route("/guide")
+def guide_page():
+    return render_template("13-guide.html")
 
 
 @app.route("/methodology/<slug>")

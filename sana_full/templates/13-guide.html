@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>دليل أول تجربة — سنع</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0B132B; --teal:#0EA5A5; --teal-light:#E1F5F5;
+    --gold:#F2B233; --paper:#F5F6FB; --ink:#333940; --slate:#6E7580;
+    --line:#DEE1EC;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html{ color-scheme:light; background:var(--paper); }
+  body{
+    font-family:'IBM Plex Sans Arabic', sans-serif;
+    color:var(--ink); background:var(--paper);
+    min-height:100vh; padding:48px 20px 80px;
+  }
+  .num{ font-family:'Space Grotesk', sans-serif; }
+
+  /* ترويسة */
+  .top-bar{
+    display:flex; align-items:center; justify-content:space-between;
+    max-width:700px; margin:0 auto 40px;
+  }
+  .back-link{
+    font-size:13px; color:var(--slate); text-decoration:none;
+    display:flex; align-items:center; gap:6px;
+    transition:color .15s;
+  }
+  .back-link:hover{ color:var(--navy); }
+  .brand{ font-family:'Space Grotesk'; font-size:13px; font-weight:600; color:var(--navy); letter-spacing:.5px; }
+
+  /* بطاقة المحتوى */
+  .card{
+    max-width:700px; margin:0 auto;
+    background:#fff; border:1px solid var(--line);
+    border-radius:18px; padding:40px 40px 48px;
+  }
+  @media(max-width:600px){ .card{ padding:28px 20px 36px; } }
+
+  /* الشعار العلوي */
+  .guide-eyebrow{
+    font-family:'Space Grotesk'; font-size:11px; letter-spacing:2px;
+    text-transform:uppercase; color:#B8860B; font-weight:600; margin-bottom:10px;
+  }
+  .guide-title{
+    font-size:clamp(20px,4vw,26px); font-weight:700; color:var(--navy);
+    margin-bottom:6px; line-height:1.35;
+  }
+  .guide-tagline{
+    font-size:13.5px; color:var(--slate); margin-bottom:32px;
+  }
+  .divider{ width:36px; height:3px; background:var(--gold); border-radius:2px; margin-bottom:32px; }
+
+  /* أقسام */
+  .section{ margin-bottom:34px; }
+  .section-title{
+    font-size:15px; font-weight:700; color:var(--navy);
+    display:flex; align-items:center; gap:8px; margin-bottom:12px;
+  }
+  .section-title .ico{
+    width:28px; height:28px; border-radius:8px;
+    background:var(--navy); display:flex; align-items:center; justify-content:center;
+    font-size:14px; flex-shrink:0;
+  }
+  .section-title .ico.teal{ background:var(--teal-light); }
+  .section-title .ico.gold{ background:#FFF8E6; }
+  .section-title .ico.red{ background:#FDECEA; }
+
+  p.body-text{ font-size:13.5px; color:var(--slate); line-height:1.85; }
+
+  /* خطوات مرقّمة */
+  .steps{ display:flex; flex-direction:column; gap:10px; }
+  .step{
+    display:flex; gap:12px; align-items:flex-start;
+    background:var(--paper); border-radius:10px; padding:12px 14px;
+  }
+  .step-num{
+    font-family:'Space Grotesk'; font-size:13px; font-weight:700;
+    color:#fff; background:var(--navy); border-radius:6px;
+    width:24px; height:24px; display:flex; align-items:center; justify-content:center;
+    flex-shrink:0; margin-top:1px;
+  }
+  .step-text{ font-size:13.5px; color:var(--ink); line-height:1.7; }
+
+  /* نقاط التجربة */
+  .try-grid{ display:flex; flex-direction:column; gap:8px; }
+  .try-item{
+    display:flex; gap:10px; align-items:flex-start;
+    border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+    background:#fff;
+  }
+  .try-icon{ font-size:16px; flex-shrink:0; margin-top:1px; }
+  .try-content{}
+  .try-label{ font-size:13.5px; font-weight:600; color:var(--navy); margin-bottom:2px; }
+  .try-desc{ font-size:12.5px; color:var(--slate); line-height:1.7; }
+
+  /* حدود */
+  .limits{ display:flex; flex-direction:column; gap:8px; }
+  .limit-item{
+    display:flex; gap:10px; align-items:flex-start;
+    background:#FFF8E6; border:1px solid #F2E0A8; border-radius:10px; padding:11px 14px;
+  }
+  .limit-icon{ font-size:14px; flex-shrink:0; margin-top:2px; }
+  .limit-text{ font-size:13px; color:#6B4C00; line-height:1.7; }
+
+  /* تواصل */
+  .contact-box{
+    margin-top:36px; background:var(--teal-light);
+    border:1px solid #A8DFE1; border-radius:14px; padding:22px 24px;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .contact-title{ font-size:14px; font-weight:600; color:var(--navy); }
+  .contact-desc{ font-size:13px; color:var(--slate); line-height:1.7; }
+  .wa-btn{
+    display:inline-flex; align-items:center; gap:8px;
+    background:#25D366; color:#fff; font-size:13.5px; font-weight:600;
+    padding:10px 18px; border-radius:10px; text-decoration:none;
+    font-family:'IBM Plex Sans Arabic'; transition:opacity .15s; width:fit-content;
+  }
+  .wa-btn:hover{ opacity:.88; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="/" class="back-link">→ العودة للرئيسية</a>
+  <span class="brand">سنع · Sana</span>
+</div>
+
+<div class="card">
+  <div class="guide-eyebrow">دليل أول تجربة</div>
+  <h1 class="guide-title">كيف تبدأ مع سنع</h1>
+  <p class="guide-tagline">وضوح يصنع النمو</p>
+  <div class="divider"></div>
+
+  <!-- ما هو سنع؟ -->
+  <div class="section">
+    <div class="section-title">
+      <span class="ico">🧠</span>
+      ما هو سنع؟
+    </div>
+    <p class="body-text">
+      سنع أداة تساعدك تشخّص مشاكل شركتك الحقيقية، وتشوف كيف قراراتك اليومية ترفع قيمة الشركة فعليًا — لا مجرد لوحة أرقام.
+      تبني تشخيصك حول <strong>خمسة أصول أساسية</strong> في أي شركة:
+      المعرفة، التشغيل، البراند، البيانات، والاستقلال.
+    </p>
+  </div>
+
+  <!-- كيف تبدأ -->
+  <div class="section">
+    <div class="section-title">
+      <span class="ico teal">🚀</span>
+      كيف تبدأ — دقيقتان فقط
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text">افتح رابط سنع الذي وصلك.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text">اضغط <strong>"إنشاء حساب"</strong> — بريد إلكتروني وكلمة مرور فقط، بلا رمز دعوة.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text">بمجرد التسجيل، تُنشأ لك شركة فارغة خاصة بك تلقائيًا — لا يشاركها أحد غيرك.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- وش تجرّب -->
+  <div class="section">
+    <div class="section-title">
+      <span class="ico gold">✨</span>
+      وش تجرّب بالضبط
+    </div>
+    <div class="try-grid">
+      <div class="try-item">
+        <div class="try-icon">🔍</div>
+        <div class="try-content">
+          <div class="try-label">تشخيص جديد</div>
+          <div class="try-desc">صف مشكلة حقيقية في شركتك، وسنع يبني منها "السؤال الحقيقي" تلقائيًا.</div>
+        </div>
+      </div>
+      <div class="try-item">
+        <div class="try-icon">⚡</div>
+        <div class="try-content">
+          <div class="try-label">تقييم سريع</div>
+          <div class="try-desc">10 أسئلة تعطيك صورة أولية عن أصولك الخمسة خلال دقائق.</div>
+        </div>
+      </div>
+      <div class="try-item">
+        <div class="try-icon">📋</div>
+        <div class="try-content">
+          <div class="try-label">حزمة مهام جاهزة</div>
+          <div class="try-desc">من صفحة "لوحة المهام"، طبّق حزمة مهام مناسبة لقطاعك لتبدأ فورًا بمهام حقيقية مرتبطة بأصولك.</div>
+        </div>
+      </div>
+      <div class="try-item">
+        <div class="try-icon">🤖</div>
+        <div class="try-content">
+          <div class="try-label">تحليل الذكاء الاصطناعي</div>
+          <div class="try-desc">بعد إضافة دليل، اضغط "حلّل" ليقيّمه سنع فعليًا ويحدّث درجة الثقة.</div>
+        </div>
+      </div>
+      <div class="try-item">
+        <div class="try-icon">🏢</div>
+        <div class="try-content">
+          <div class="try-label">جواز الشركة (Business Passport)</div>
+          <div class="try-desc">شوف القيمة التقديرية لشركتك، الفجوة، وخريطة أصولك.</div>
+        </div>
+      </div>
+      <div class="try-item">
+        <div class="try-icon">💡</div>
+        <div class="try-content">
+          <div class="try-label">لماذا هذه الدرجة؟</div>
+          <div class="try-desc">من الصفحة الرئيسية، اضغط الزر لترى بالضبط وش رفع درجتك، وماذا لو نفّذت قراراتك المعتمدة الحالية.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- حدود معروفة -->
+  <div class="section">
+    <div class="section-title">
+      <span class="ico red">⚠️</span>
+      حدود معروفة حاليًا — بصراحة تامة
+    </div>
+    <div class="limits">
+      <div class="limit-item">
+        <div class="limit-icon">🔑</div>
+        <div class="limit-text">لا يوجد بعد خيار "نسيت كلمة المرور" — احفظ كلمة مرورك جيدًا مؤقتًا.</div>
+      </div>
+      <div class="limit-item">
+        <div class="limit-icon">💰</div>
+        <div class="limit-text">معادلة "القيمة التقديرية للشركة" تقريب مبسّط حاليًا، ليست محرك تقييم مالي رسمي بعد.</div>
+      </div>
+      <div class="limit-item">
+        <div class="limit-icon">📊</div>
+        <div class="limit-text">لا يوجد بعد نظام مبيعات/CRM متكامل — سنع يركّز حاليًا على التشخيص والقرار.</div>
+      </div>
+      <div class="limit-item">
+        <div class="limit-icon">🧪</div>
+        <div class="limit-text">المنصة في مرحلة تجريبية مبكرة — من الطبيعي تواجه ملاحظات نحتاج نصلحها بمساعدتك.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- تواصل -->
+  <div class="contact-box">
+    <div class="contact-title">💬 أرسل ملاحظتك مباشرة</div>
+    <div class="contact-desc">
+      أي شيء يعلق، أو أي فكرة تراها مفيدة — كل ملاحظة حقيقية تساعدنا نبني النسخة التالية بدقة أكبر.
+    </div>
+    <a href="https://wa.me/966536005855" target="_blank" rel="noopener" class="wa-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+      تواصل عبر واتساب
+    </a>
+  </div>
+
+</div>
+
+</body>
+</html>

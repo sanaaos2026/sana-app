@@ -73,9 +73,23 @@
 
   footer{ margin-top:40px; font-size:11.5px; color:#9AA0AB; }
   @media (max-width:600px){ .choices{ grid-template-columns:1fr; } }
+
+  /* أيقونة الدليل */
+  .guide-btn{
+    position:fixed; top:18px; left:18px;
+    width:36px; height:36px; border-radius:50%;
+    background:#fff; border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    text-decoration:none; font-size:17px;
+    box-shadow:0 2px 8px rgba(11,19,43,0.08);
+    transition:all .15s; z-index:10;
+  }
+  .guide-btn:hover{ border-color:var(--gold); box-shadow:0 4px 14px rgba(242,178,51,0.18); transform:scale(1.08); }
 </style>
 </head>
 <body>
+
+  <a href="/guide" class="guide-btn" title="دليل أول تجربة">📘</a>
 
   <svg class="mark" viewBox="0 0 100 100">
     <path d="M78,32 L78,17 L19,17 L19,83 L78,83 L78,68" fill="none" stroke="#0B132B" stroke-width="9" stroke-linecap="square"/>
