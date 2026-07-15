@@ -1624,4 +1624,5 @@ if __name__ == "__main__":
     print("افتح المتصفح على: http://localhost:5000")
     print("=" * 60)
     port = int(os.environ.get("PORT", 5000))
-    app.run(debug=True, host="0.0.0.0", port=port)
+    is_dev = os.environ.get("REPLIT_DEPLOYMENT") != "1"
+    app.run(debug=is_dev, use_reloader=is_dev, host="0.0.0.0", port=port)
