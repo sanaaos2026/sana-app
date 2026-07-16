@@ -252,6 +252,9 @@ def init_db(force=False):
             conn.execute("ALTER TABLE decisions ADD COLUMN owner_name TEXT")
         if "due_date" not in decision_cols:
             conn.execute("ALTER TABLE decisions ADD COLUMN due_date TEXT")
+        # DEC-01: مقياس النجاح — حقل إلزامي عند الاعتماد للقرارات الجديدة (لا يكسر القديمة)
+        if "success_metric" not in decision_cols:
+            conn.execute("ALTER TABLE decisions ADD COLUMN success_metric TEXT")
         # وثائق منهجية عامة (مستقلة عن أي شركة) — قد لا يكون الجدول موجودًا في قواعد بيانات قديمة
         conn.execute("""CREATE TABLE IF NOT EXISTS methodology_docs (
             doc_id TEXT PRIMARY KEY,
@@ -793,6 +796,22 @@ def passport_summary(company_id):
             (company_id, weakest["asset_id"])
         ).fetchone()
 
+    # SCORE-03: لا تُعرض الدرجة إلا بعد توفر دليل واحد + تقييم سريع مكتمل لأصل واحد على الأقل
+    evidence_count = db.execute(
+        "SELECT COUNT(*) as cnt FROM evidence WHERE company_id=?", (company_id,)
+    ).fetchone()["cnt"]
+    assessed_assets = [a for a in assets if (a["current_score"] or 0) > 0]
+    score_ready = evidence_count >= 1 and len(assessed_assets) >= 1
+    if not score_ready:
+        missing = []
+        if evidence_count < 1:
+            missing.append("دليل واحد على الأقل")
+        if len(assessed_assets) < 1:
+            missing.append("تقييم سريع مكتمل لأصل واحد")
+        score_missing_reason = "لاستعراض درجة الجودة، أضف " + " و".join(missing) + "."
+    else:
+        score_missing_reason = None
+
     return jsonify({
         "success": True,
         "data": {
@@ -805,6 +824,8 @@ def passport_summary(company_id):
             "weakest_asset": dict(weakest) if weakest else None,
             "strongest_asset": dict(strongest) if strongest else None,
             "weakest_asset_case_id": weakest_case["case_id"] if weakest_case else None,
+            "score_ready": score_ready,
+            "score_missing_reason": score_missing_reason,
         },
         "meta": {
             "disclaimer": "تقدير مبسّط للعرض فقط — ليس محرك SVS الرسمي المُوثَّق في المعمارية"
@@ -1054,10 +1075,16 @@ def approve_decision(decision_id):
     body = request.get_json(force=True, silent=True) or {}
     owner_name = (body.get("owner_name") or "").strip() or None
     due_date = (body.get("due_date") or "").strip() or None
+    success_metric = (body.get("success_metric") or "").strip() or None
+
+    # DEC-01: مقياس النجاح إلزامي عند الاعتماد
+    if not success_metric:
+        return jsonify({"success": False, "error": "SUCCESS_METRIC_REQUIRED",
+                        "message": "أدخل مقياس النجاح لاعتماد هذا القرار"}), 400
 
     db.execute(
-        "UPDATE decisions SET status='معتمد', owner_name=?, due_date=? WHERE decision_id=?",
-        (owner_name, due_date, decision_id)
+        "UPDATE decisions SET status='معتمد', owner_name=?, due_date=?, success_metric=? WHERE decision_id=?",
+        (owner_name, due_date, success_metric, decision_id)
     )
 
     # القانون الأول: أي قرار معتمد يجب أن ينتج عنه مهمة تنفيذية فعلية

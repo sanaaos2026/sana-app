@@ -100,10 +100,11 @@ function render(d, meta){
       <div class="name">${d.company.name}</div>
       <div class="sub">جواز سفر الشركة · مُحدَّث الآن</div>
       <div class="value-row">
-        <div class="vitem gold"><div class="label">القيمة الحالية</div><div class="val num">${(d.current_value/1000).toFixed(0)}<span style="font-size:13px;">ألف</span></div></div>
-        <div class="vitem teal"><div class="label">القيمة الممكنة</div><div class="val num">${(d.potential_value/1000).toFixed(0)}<span style="font-size:13px;">ألف</span></div></div>
-        <div class="vitem"><div class="label">درجة الجودة</div><div class="val num">${d.quality_score}<span style="font-size:13px;">/100</span></div></div>
+        <div class="vitem gold"><div class="label">القيمة الحالية</div><div class="val num">${d.score_ready ? (d.current_value/1000).toFixed(0) : '—'}<span style="font-size:13px;">${d.score_ready ? 'ألف' : ''}</span></div></div>
+        <div class="vitem teal"><div class="label">القيمة الممكنة</div><div class="val num">${d.score_ready ? (d.potential_value/1000).toFixed(0) : '—'}<span style="font-size:13px;">${d.score_ready ? 'ألف' : ''}</span></div></div>
+        <div class="vitem"><div class="label">درجة الجودة</div><div class="val num">${d.score_ready ? d.quality_score : '—'}<span style="font-size:13px;">${d.score_ready ? '/100' : ''}</span></div></div>
       </div>
+      ${!d.score_ready ? `<div style="background:#F5F6FB;border:1px solid #DEE1EC;border-radius:10px;padding:14px 16px;margin-top:14px;font-size:13px;color:#6E7580;line-height:1.7;text-align:center;">${d.score_missing_reason}</div>` : ''}
     </div>
 
     <main>
