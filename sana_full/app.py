@@ -14,8 +14,9 @@ import json
 import uuid
 import secrets
 from datetime import datetime
-from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for
+from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for, Response
 from werkzeug.security import generate_password_hash, check_password_hash
+# weasyprint يُستورد داخل الدالة فقط لتفادي crash عند غياب libpango وقت التشغيل
 
 
 def ask_sana_ai(system_prompt, user_prompt):
@@ -1062,7 +1063,121 @@ def passport_report_text(company_id):
     return jsonify({"success": True, "data": {"report_text": "\n".join(lines)}})
 
 
-@app.route("/api/decisions/<decision_id>/approve", methods=["POST"])
+# ------------------------------------------------------------------
+# دالة مساعدة: بيانات جواز الشركة المجمَّعة (تُستخدم في HTML و PDF)
+# ------------------------------------------------------------------
+def _build_passport_context(company_id):
+    """يُعيد dict جاهزًا لـ render_template('14-passport-report.html', ...)
+    أو None إذا لم تُوجد الشركة."""
+    db = get_db()
+    company = db.execute("SELECT * FROM companies WHERE company_id=?", (company_id,)).fetchone()
+    if not company:
+        return None
+
+    assets = db.execute(
+        "SELECT * FROM assets WHERE company_id=? ORDER BY current_score ASC", (company_id,)
+    ).fetchall()
+    decisions = db.execute(
+        "SELECT * FROM decisions WHERE company_id=? ORDER BY created_at DESC", (company_id,)
+    ).fetchall()
+    completed_tasks = db.execute(
+        "SELECT * FROM tasks WHERE company_id=? AND status='منجزة' ORDER BY completed_at ASC",
+        (company_id,)
+    ).fetchall()
+    evidence_count = db.execute(
+        "SELECT COUNT(*) as cnt FROM evidence WHERE company_id=?", (company_id,)
+    ).fetchone()["cnt"]
+
+    avg_score = round(sum(a["current_score"] for a in assets) / len(assets)) if assets else 0
+    base = (company["annual_revenue"] or 0) * 2.5
+    current_value  = round(base * avg_score / 100)
+    potential_value = round(base * min((avg_score + 35) / 100, 1.1))
+    gap = potential_value - current_value
+
+    assessed_assets = [a for a in assets if (a["current_score"] or 0) > 0]
+    score_ready = evidence_count >= 1 and len(assessed_assets) >= 1
+
+    if avg_score <= 30:
+        score_hint = "🌱 نقطة بداية طبيعية — الدرجة ترتفع مع كل دليل تضيفه وقرار تنفّذه، لا مع مرور الوقت وحده."
+    elif avg_score <= 60:
+        score_hint = "📈 أساس جيد — هناك فجوة قابلة للتحسين مع كل قرار منجز."
+    else:
+        score_hint = "🏆 شركة متقدمة — حافظ على الزخم بقرارات منتظمة ومدعومة بالأدلة."
+
+    def _asset_color(score):
+        if score <= 30:   return "#E5484D"
+        if score <= 60:   return "#F2B233"
+        return "#0EA5A5"
+
+    asset_colors = [_asset_color(a["current_score"]) for a in assets]
+
+    tasks_by_phase = {}
+    for t in completed_tasks:
+        key = t["phase_label"] or "مهام منجزة أخرى"
+        tasks_by_phase.setdefault(key, []).append(t)
+
+    weakest = min(assets, key=lambda a: a["current_score"]) if assets else None
+
+    return {
+        "company":        dict(company),
+        "export_date":    datetime.utcnow().strftime("%Y-%m-%d"),
+        "avg_score":      avg_score,
+        "current_value":  current_value,
+        "potential_value": potential_value,
+        "gap":            gap,
+        "score_ready":    score_ready,
+        "score_hint":     score_hint,
+        "assets_sorted":  [dict(a) for a in assets],
+        "asset_colors":   asset_colors,
+        "tasks_by_phase": tasks_by_phase,
+        "decisions":      [dict(d) for d in decisions],
+        "weakest_asset":  dict(weakest) if weakest else None,
+    }
+
+
+@app.route("/api/companies/<company_id>/passport/report-pdf")
+def passport_report_pdf(company_id):
+    """يُنتج PDF جواز الشركة من القالب HTML ويُعيده كملف قابل للتنزيل."""
+    company = get_db().execute(
+        "SELECT * FROM companies WHERE company_id=?", (company_id,)
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(company["company_id"])
+    if guard:
+        return guard
+
+    ctx = _build_passport_context(company_id)
+    if not ctx:
+        return jsonify({"success": False, "error": "BUILD_FAILED"}), 500
+
+    html_string = render_template("14-passport-report.html", **ctx)
+
+    # lazy import — weasyprint يحتاج libpango كـ system lib
+    import weasyprint  # noqa: PLC0415
+
+    # WeasyPrint: base_url مطلوب لتحميل الخطوط من Google Fonts
+    pdf_bytes = weasyprint.HTML(
+        string=html_string,
+        base_url=request.host_url
+    ).write_pdf()
+
+    from urllib.parse import quote as _quote
+    safe_name = ctx["company"]["name"].replace("/", "-")
+    encoded = _quote(f"جواز_{safe_name}.pdf", safe="")
+
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={
+            # RFC 5987 — اسم الملف مُرمَّز UTF-8 لدعم العربي في كل المتصفحات
+            "Content-Disposition": f"attachment; filename=\"passport.pdf\"; filename*=UTF-8''{encoded}",
+            "Content-Length": str(len(pdf_bytes)),
+        }
+    )
+
+
+@app.route("/decisions/<decision_id>/approve", methods=["POST"])
 def approve_decision(decision_id):
     db = get_db()
     decision = db.execute("SELECT * FROM decisions WHERE decision_id=?", (decision_id,)).fetchone()

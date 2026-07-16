@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>جواز الشركة — {{ company.name }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0B132B; --gold:#F2B233; --teal:#0EA5A5;
+    --paper:#F9FAFB; --card:#FFFFFF; --line:#E7E9EF; --muted:#7A8194; --ink:#2C3140;
+  }
+  *{margin:0; padding:0; box-sizing:border-box;}
+  body{ background:var(--paper); color:var(--ink); font-family:'IBM Plex Sans Arabic', sans-serif; line-height:1.7; }
+  .mono{ font-family:'IBM Plex Mono', monospace; direction:ltr; display:inline-block; }
+  .wrap{ max-width:720px; margin:0 auto; padding:0 0 60px; }
+
+  header{ background:var(--card); border-bottom:1px solid var(--line); padding:32px 28px 26px; }
+  .head-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:22px; }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand svg{ width:26px; height:26px; }
+  .brand span{ font-family:'Cairo'; font-weight:800; font-size:17px; color:var(--navy); }
+  .export-date{ font-family:'IBM Plex Mono',monospace; direction:ltr; font-size:11px; color:var(--muted); }
+  h1{ font-family:'Cairo'; font-weight:800; font-size:24px; color:var(--navy); margin-bottom:4px; }
+  .company-name{ color:var(--muted); font-size:14px; }
+
+  section{ padding:26px 28px; border-bottom:1px solid var(--line); }
+  .sec-head{ display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+  .sec-icon{ width:30px; height:30px; flex-shrink:0; }
+  .sec-title{ font-family:'Cairo'; font-weight:800; font-size:16px; color:var(--navy); }
+  .sec-note{ font-size:12px; color:var(--muted); margin-right:auto; }
+
+  .stat-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:20px; }
+  .stat{ background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:14px 12px; text-align:center; }
+  .stat .num{ font-family:'IBM Plex Mono',monospace; direction:ltr; font-size:20px; font-weight:600; color:var(--navy); }
+  .stat .lbl{ font-size:11px; color:var(--muted); margin-top:4px; }
+
+  .quality-box{ background:linear-gradient(135deg,#FDF6E8,#FBF2E0); border:1px solid #F0E0B8; border-radius:10px; padding:16px 18px; }
+  .quality-top{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+  .quality-top .t{ font-size:13px; font-weight:600; color:var(--navy); }
+  .quality-top .v{ font-family:'IBM Plex Mono'; direction:ltr; font-weight:600; color:var(--gold); font-size:14px; }
+  .bar-track{ height:8px; background:#EFE3C4; border-radius:20px; overflow:hidden; }
+  .bar-fill{ height:100%; background:var(--gold); border-radius:20px; }
+  .quality-hint{ font-size:11.5px; color:#8a6d1f; margin-top:10px; }
+
+  .asset-row{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .asset-row:last-child{ margin-bottom:0; }
+  .asset-name{ width:100px; flex-shrink:0; font-size:13px; font-weight:600; color:var(--ink); }
+  .asset-track{ flex:1; height:10px; background:var(--line); border-radius:20px; overflow:hidden; }
+  .asset-fill{ height:100%; border-radius:20px; }
+  .asset-val{ width:50px; flex-shrink:0; font-family:'IBM Plex Mono'; direction:ltr; font-size:12px; color:var(--muted); text-align:left; }
+
+  .ach-group{ margin-bottom:18px; }
+  .ach-group:last-child{ margin-bottom:0; }
+  .ach-group-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .ach-group-title{ font-size:13.5px; font-weight:700; color:var(--navy); }
+  .ach-count{ font-family:'IBM Plex Mono'; direction:ltr; font-size:11px; color:var(--teal); background:#E4F7F6; padding:2px 9px; border-radius:20px; }
+  .ach-item{ display:flex; align-items:center; gap:9px; padding:6px 0; font-size:13px; color:var(--ink); }
+  .ach-check{ width:16px; height:16px; flex-shrink:0; }
+  .no-data{ font-size:13px; color:var(--muted); font-style:italic; }
+
+  .decision{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:12px; }
+  .decision:last-child{ margin-bottom:0; }
+  .decision-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .decision-title{ font-family:'Cairo'; font-weight:700; font-size:14px; color:var(--navy); }
+  .badge{ font-size:10.5px; font-weight:700; padding:3px 10px; border-radius:20px; }
+  .badge.approved{ background:#E4F7F6; color:#0a7a75; }
+  .badge.pending{ background:#FEF3C7; color:#92400E; }
+  .badge.other{ background:#F3F4F6; color:#6B7280; }
+  .decision-field{ font-size:12.5px; color:var(--ink); margin-bottom:5px; }
+  .decision-field b{ color:var(--muted); font-weight:600; }
+  .decision-meta{ font-size:12px; color:var(--muted); margin-top:6px; }
+  .conf-row{ display:flex; align-items:center; gap:8px; margin-top:10px; }
+  .conf-track{ flex:1; height:6px; background:var(--line); border-radius:20px; overflow:hidden; }
+  .conf-fill{ height:100%; background:var(--teal); border-radius:20px; }
+  .conf-val{ font-family:'IBM Plex Mono'; direction:ltr; font-size:11px; color:var(--teal); font-weight:600; }
+
+  .next-step{ background:var(--navy); border-radius:12px; padding:22px 22px; margin:26px 28px 0; text-align:center; }
+  .next-step .k{ font-family:'IBM Plex Mono'; direction:ltr; font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--gold); margin-bottom:8px; }
+  .next-step .t{ font-family:'Cairo'; font-weight:700; font-size:15.5px; color:#fff; line-height:1.6; }
+  .disclaimer{ font-size:10.5px; color:var(--muted); margin-top:8px; }
+
+  footer{ text-align:center; padding:26px 20px 10px; font-size:11px; color:var(--muted); }
+
+  @media print{
+    body{ background:#fff; }
+    .wrap{ max-width:100%; }
+    .next-step{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .quality-box{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="head-top">
+      <div class="brand">
+        <svg viewBox="0 0 100 100"><path d="M76 20 H24 V80 H76 V64" stroke="#0B132B" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/><path d="M76 20 V36" stroke="#0B132B" stroke-width="7" stroke-linecap="butt" fill="none"/><rect x="50" y="42" width="16" height="16" fill="#F2B233"/></svg>
+        <span>سنع</span>
+      </div>
+      <div class="export-date">EXPORTED {{ export_date }}</div>
+    </div>
+    <h1>جواز الشركة</h1>
+    <div class="company-name">{{ company.name }}{% if company.sector %} — {{ company.sector }}{% endif %}</div>
+  </header>
+
+  <!-- 1. القيمة -->
+  <section>
+    <div class="sec-head">
+      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M24 4 L44 24 L24 44 L4 24 Z" stroke="#0B132B" stroke-width="3" fill="none"/><rect x="19" y="19" width="10" height="10" fill="#F2B233"/></svg>
+      <div class="sec-title">القيمة</div>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="num">{{ "{:,.0f}".format(current_value) }}</div><div class="lbl">القيمة الحالية</div></div>
+      <div class="stat"><div class="num">{{ "{:,.0f}".format(potential_value) }}</div><div class="lbl">القيمة الممكنة</div></div>
+      <div class="stat"><div class="num">{{ "{:,.0f}".format(gap) }}</div><div class="lbl">الفجوة</div></div>
+    </div>
+    <div class="quality-box">
+      <div class="quality-top">
+        <span class="t">درجة جودة الجواز</span>
+        <span class="v">{{ avg_score }}<span style="font-size:11px;color:#c9a44c;">/100</span></span>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:{{ avg_score }}%;"></div></div>
+      <div class="quality-hint">{{ score_hint }}</div>
+    </div>
+    {% if not score_ready %}
+    <div class="disclaimer" style="margin-top:10px;">⚠ الأرقام تقديرية مبسّطة — تحتاج دليل واحد وتقييم سريع لتفعيل الحساب الكامل.</div>
+    {% endif %}
+  </section>
+
+  <!-- 2. خريطة الأصول -->
+  <section>
+    <div class="sec-head">
+      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><rect x="8" y="10" width="22" height="17" rx="2" stroke="#0B132B" stroke-width="2.8" fill="none"/><rect x="14" y="16" width="7" height="7" fill="#F2B233"/><path d="M33 20 H42 M33 27 H42 M33 34 H42" stroke="#0B132B" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <div class="sec-title">خريطة الأصول</div>
+      <div class="sec-note">من الأضعف للأقوى</div>
+    </div>
+    {% if assets_sorted %}
+      {% for a in assets_sorted %}
+      <div class="asset-row">
+        <div class="asset-name">{{ a.asset_name }}</div>
+        <div class="asset-track"><div class="asset-fill" style="width:{{ [a.current_score, 1]|max }}%; background:{{ asset_colors[loop.index0] }};"></div></div>
+        <div class="asset-val">{{ a.current_score }}/100</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="no-data">لا توجد أصول مسجَّلة بعد.</div>
+    {% endif %}
+  </section>
+
+  <!-- 3. الإنجازات -->
+  <section>
+    <div class="sec-head">
+      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="18" stroke="#0B132B" stroke-width="3" fill="none"/><path d="M17 24 L22 29 L32 18" stroke="#F2B233" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="sec-title">الإنجازات المنجزة</div>
+    </div>
+    {% if tasks_by_phase %}
+      {% for phase, tasks in tasks_by_phase.items() %}
+      <div class="ach-group">
+        <div class="ach-group-head">
+          <div class="ach-group-title">{{ phase }}</div>
+          <div class="ach-count">{{ tasks|length }}</div>
+        </div>
+        {% for t in tasks %}
+        <div class="ach-item">
+          <svg class="ach-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#0EA5A5"/><path d="M7 12.5 L10.5 16 L17 8" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          {{ t.title }}{% if t.value_note %} <span style="font-size:11px; color:var(--muted);">({{ t.value_note }})</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="no-data">لا توجد إنجازات مسجَّلة بعد.</div>
+    {% endif %}
+  </section>
+
+  <!-- 4. القرارات -->
+  <section style="border-bottom:none;">
+    <div class="sec-head">
+      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M8 10 H40 V32 H22 L14 40 V32 H8 Z" stroke="#0B132B" stroke-width="3" fill="none" stroke-linejoin="round"/><rect x="19" y="17" width="9" height="9" fill="#F2B233"/></svg>
+      <div class="sec-title">القرارات</div>
+    </div>
+    {% if decisions %}
+      {% for d in decisions %}
+      <div class="decision">
+        <div class="decision-top">
+          <div class="decision-title">{{ d.title }}</div>
+          {% if d.status == 'معتمد' %}
+            <div class="badge approved">معتمد</div>
+          {% elif d.status == 'مقترح' %}
+            <div class="badge pending">مقترح</div>
+          {% else %}
+            <div class="badge other">{{ d.status }}</div>
+          {% endif %}
+        </div>
+        {% if d.recommended_action %}
+        <div class="decision-field"><b>الإجراء الموصى به:</b> {{ d.recommended_action }}</div>
+        {% endif %}
+        {% if d.reason %}
+        <div class="decision-field"><b>السبب:</b> {{ d.reason }}</div>
+        {% endif %}
+        {% if d.owner_name or d.due_date %}
+        <div class="decision-meta">
+          {% if d.owner_name %}المسؤول: {{ d.owner_name }}{% endif %}
+          {% if d.owner_name and d.due_date %} · {% endif %}
+          {% if d.due_date %}الموعد: {{ d.due_date }}{% endif %}
+        </div>
+        {% endif %}
+        {% if d.success_metric %}
+        <div class="decision-meta"><b style="color:var(--muted);">مقياس النجاح:</b> {{ d.success_metric }}</div>
+        {% endif %}
+        {% if d.confidence_score is not none %}
+        <div class="conf-row">
+          <span class="conf-val">{{ d.confidence_score }}%</span>
+          <div class="conf-track"><div class="conf-fill" style="width:{{ d.confidence_score }}%;"></div></div>
+          <span style="font-size:11px; color:var(--muted);">الثقة</span>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="no-data">لا توجد قرارات مسجَّلة بعد.</div>
+    {% endif %}
+  </section>
+
+  <!-- الخطوة التالية -->
+  {% if weakest_asset %}
+  <div class="next-step">
+    <div class="k">SANA · NEXT STEP</div>
+    <div class="t">أقرب أصل لك من التحسّن هو "{{ weakest_asset.asset_name }}" ({{ weakest_asset.current_score }}/100) — إضافة أول دليل عليه يرفع جواز الشركة بأكمله.</div>
+  </div>
+  {% endif %}
+
+  <footer>سنع — وضوح يصنع النمو · تقدير مبسّط للعرض فقط، ليس محرك SVS الرسمي</footer>
+
+</div>
+</body>
+</html>

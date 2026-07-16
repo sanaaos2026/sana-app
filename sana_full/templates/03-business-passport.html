@@ -128,8 +128,8 @@ function render(d, meta){
       </section>` : ''}
       <section style="text-align:center;">
         <button class="btn" id="downloadReportBtn" onclick="downloadReport()"
-          style="background:#EBEDF5; color:#0B132B; border:none; padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans Arabic';">
-          ⬇ تحميل التقرير كملف نصي
+          style="background:#0B132B; color:#fff; border:none; padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans Arabic';">
+          ⬇ تحميل الجواز PDF
         </button>
       </section>
     </main>
@@ -143,18 +143,21 @@ async function downloadReport(){
   const originalText = btn.textContent;
   btn.textContent = 'جارٍ التحضير...';
   try{
-    const res = await fetch(`/api/companies/${COMPANY_ID}/passport/report-text`);
-    const json = await res.json();
-    if(json.success){
-      const blob = new Blob([json.data.report_text], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+    const res = await fetch(`/api/companies/${COMPANY_ID}/passport/report-pdf${CQS}`);
+    if(res.ok){
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
       a.href = url;
-      a.download = `جواز الشركة.txt`;
+      a.download = `جواز الشركة.pdf`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
+    } else {
+      showToast('تعذر توليد PDF — حاول مرة أخرى');
     }
-  } catch(e){ /* تعذر التحميل — لا حاجة لإجراء إضافي */ }
+  } catch(e){ showToast('تعذر الاتصال بالخادم'); }
   btn.disabled = false;
   btn.textContent = originalText;
 }
