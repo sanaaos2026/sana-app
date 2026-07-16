@@ -679,15 +679,15 @@ def discovery_save():
     }
 
     def add_ev(title, asset_type=None):
-        ev_id = "EV" + uuid.uuid4().hex[:8].upper()
-        db.execute(
-            """INSERT INTO evidence
-               (evidence_id, company_id, case_id, asset_id, title,
-                source_type, confidence, date_collected)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (ev_id, company_id, case_id,
-             assets_by_type.get(asset_type) if asset_type else None,
-             title, "اكتشاف_ذاتي", 0.5, datetime.utcnow().isoformat())
+        from sana_evidence import save_evidence as _save_ev
+        _save_ev(
+            db,
+            company_id  = company_id,
+            case_id     = case_id,
+            asset_id    = assets_by_type.get(asset_type) if asset_type else None,
+            title       = title,
+            source_type = "اكتشاف_ذاتي",
+            confidence  = 50,
         )
 
     # Q3 — الأصل الأهم: 5 خيارات فقط مطابقة للأصول المعتمدة
@@ -1551,19 +1551,17 @@ def create_case(company_id):
 
 @app.route("/api/companies/<company_id>/evidence", methods=["POST"])
 def add_evidence(company_id):
+    from sana_evidence import save_evidence as _save_evidence
     body = request.get_json(force=True)
     db = get_db()
-    import uuid
 
-    case_id = body.get("case_id")
-    asset_id = body.get("asset_id")
-    title = (body.get("title") or "").strip()
+    case_id     = body.get("case_id")
+    asset_id    = body.get("asset_id")
+    title       = (body.get("title") or "").strip()
     source_type = body.get("source_type", "ملاحظة مباشرة")
-    confidence = body.get("confidence", 50)
+    confidence  = int(body.get("confidence", 50))
 
-    # حماية من الحفظ المزدوج والتكرار: إن وُجد دليل مطابق تمامًا في المحتوى
-    # (نفس الشركة + القضية + الأصل + العنوان + نوع المصدر) لا يُنشأ سجل جديد،
-    # بل يُعاد نفس السجل الموجود مع علامة duplicate=true.
+    # حماية من الحفظ المزدوج: إن وُجد دليل مطابق تمامًا لا يُنشأ سجل جديد.
     existing = db.execute(
         """SELECT evidence_id FROM evidence
            WHERE company_id=? AND COALESCE(case_id,'')=COALESCE(?,'')
@@ -1581,14 +1579,21 @@ def add_evidence(company_id):
             }
         }), 200
 
-    evidence_id = "E" + uuid.uuid4().hex[:6].upper()
-    db.execute("""INSERT INTO evidence (evidence_id, company_id, case_id, asset_id, title, source_type, confidence)
-        VALUES (?,?,?,?,?,?,?)""",
-        (evidence_id, company_id, case_id, asset_id, title, source_type, confidence))
-    db.commit()
+    result = _save_evidence(
+        db,
+        company_id  = company_id,
+        case_id     = case_id,
+        asset_id    = asset_id,
+        title       = title,
+        source_type = source_type,
+        confidence  = confidence,
+    )
+    if not result["success"]:
+        return jsonify({"success": False, "error": result["error"]}), 400
+
     return jsonify({
         "success": True,
-        "data": {"evidence_id": evidence_id},
+        "data": {"evidence_id": result["evidence_id"]},
         "meta": {"duplicate": False}
     }), 201
 
