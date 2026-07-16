@@ -1467,9 +1467,9 @@ def add_evidence(company_id):
     # بل يُعاد نفس السجل الموجود مع علامة duplicate=true.
     existing = db.execute(
         """SELECT evidence_id FROM evidence
-           WHERE company_id=? AND IFNULL(case_id,'')=IFNULL(?,'')
-             AND IFNULL(asset_id,'')=IFNULL(?,'') AND title=?
-             AND IFNULL(source_type,'')=IFNULL(?,'')""",
+           WHERE company_id=? AND COALESCE(case_id,'')=COALESCE(?,'')
+             AND COALESCE(asset_id,'')=COALESCE(?,'') AND title=?
+             AND COALESCE(source_type,'')=COALESCE(?,'')""",
         (company_id, case_id, asset_id, title, source_type)
     ).fetchone()
     if existing:
