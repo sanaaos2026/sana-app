@@ -561,6 +561,26 @@ def onboarding():
     return jsonify({"success": True, "data": {"redirect": "/discovery"}})
 
 
+@app.route("/dev-preview-login")
+def dev_preview_login():
+    """مسار مؤقت للتطوير — يسجّل دخول شركة معينة عبر admin_key ويحوّل للصفحة المطلوبة."""
+    key = request.args.get("admin_key", "")
+    company_id = request.args.get("company_id", "")
+    redirect_to = request.args.get("redirect_to", "/home")
+    if not key or key != os.environ.get("ADMIN_PREVIEW_KEY", ""):
+        return jsonify({"error": "unauthorized"}), 401
+    db = get_db()
+    acc = db.execute(
+        "SELECT * FROM user_accounts WHERE company_id=%s LIMIT 1", (company_id,)
+    ).fetchone()
+    if not acc:
+        return jsonify({"error": "company not found"}), 404
+    session["account_id"] = acc["account_id"]
+    session["company_id"] = acc["company_id"]
+    session["email"] = acc["email"]
+    return redirect(redirect_to)
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
