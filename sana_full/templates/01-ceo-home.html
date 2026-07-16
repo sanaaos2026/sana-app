@@ -74,6 +74,48 @@
   #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; }
   #toast.show{ opacity:1; }
   .skeleton{ color:#9AA0AB; font-size:13px; padding:20px 0; text-align:center; }
+
+  /* ── صندوق اللمحة الأولية — يظهر فقط إذا اكتمل Discovery ── */
+  #glimpse-banner{ display:none; }
+  #glimpse-banner.visible{
+    display:block;
+    background:#fff; border-bottom:2px solid #F2B233;
+    padding:14px 28px;
+  }
+  .glimpse-inner{
+    max-width:1000px; margin:0 auto;
+    display:grid; grid-template-columns:1fr 1fr 1fr auto;
+    gap:0; align-items:center;
+    border:1px solid #DEE1EC; border-radius:10px; overflow:hidden;
+  }
+  .glimpse-cell{
+    padding:13px 18px; border-left:1px solid #DEE1EC;
+  }
+  .glimpse-cell:last-child{ border-left:none; }
+  .glimpse-cell .gc-label{
+    font-size:10px; color:#6E7580; letter-spacing:.04em;
+    text-transform:uppercase; font-family:'Space Grotesk'; margin-bottom:4px;
+  }
+  .glimpse-cell .gc-val{
+    font-size:13.5px; font-weight:600; color:#0B132B; line-height:1.4;
+  }
+  .glimpse-cell .gc-val.num{
+    font-family:'Space Grotesk'; font-size:22px; color:#0EA5A5;
+  }
+  .glimpse-btn{
+    display:block; background:#0B132B; color:#fff;
+    font-family:'IBM Plex Sans Arabic'; font-weight:600; font-size:13px;
+    border:none; border-radius:0; padding:13px 20px;
+    cursor:pointer; white-space:nowrap; text-align:center;
+    transition:background .15s;
+  }
+  .glimpse-btn:hover{ background:#111d3e; }
+  @media(max-width:680px){
+    .glimpse-inner{ grid-template-columns:1fr 1fr; }
+    .glimpse-cell:nth-child(3){ border-top:1px solid #DEE1EC; }
+    .glimpse-cell:last-child{ grid-column:1/-1; border-top:1px solid #DEE1EC; border-left:none; }
+    .glimpse-btn{ padding:13px; }
+  }
 </style>
 </head>
 <body>
@@ -121,6 +163,27 @@
     <a href="/case/new" onclick="this.href='/case/new'+CQS" style="color:#0EA5A5; font-weight:600;">+ تشخيص جديد</a>
     <a href="/sop-builder" onclick="this.href='/sop-builder'+CQS" style="color:#6E7580; font-weight:600;">📄 بناء SOP</a>
     <a href="/assessment" onclick="this.href='/assessment'+CQS" style="color:#6E7580; font-weight:600;">📊 تقييم سريع</a>
+  </div>
+</div>
+
+<!-- لمحة أولية — تظهر فقط إذا اكتمل Discovery (main_goal غير فارغ) -->
+<div id="glimpse-banner">
+  <div class="glimpse-inner">
+    <div class="glimpse-cell">
+      <div class="gc-label">الهدف</div>
+      <div class="gc-val" id="gb-goal">—</div>
+    </div>
+    <div class="glimpse-cell">
+      <div class="gc-label">أول تحدٍّ</div>
+      <div class="gc-val" id="gb-challenge">—</div>
+    </div>
+    <div class="glimpse-cell">
+      <div class="gc-label">أدلة مجمَّعة</div>
+      <div class="gc-val num" id="gb-evidence">0</div>
+    </div>
+    <div class="glimpse-cell" style="padding:0;">
+      <button class="glimpse-btn" id="gb-btn" onclick="">افتح القضية الأولى ←</button>
+    </div>
   </div>
 </div>
 
@@ -196,6 +259,22 @@ let lastSuggestions = null;
 function render(d){
   const c = d.company;
   document.getElementById('companyName').textContent = `${c.name} — ${c.sector}`;
+
+  // ── لمحة أولية: تظهر فقط إذا اكتمل Discovery (main_goal غير فارغ) ──
+  if(c.main_goal){
+    const firstCase = d.cases && d.cases[0];
+    document.getElementById('gb-goal').textContent      = c.main_goal;
+    document.getElementById('gb-challenge').textContent = (firstCase && firstCase.declared_problem) || '—';
+    document.getElementById('gb-evidence').textContent  = d.evidence_count || 0;
+    const btn = document.getElementById('gb-btn');
+    if(firstCase){
+      btn.onclick = () => { window.location.href = `/case/${firstCase.case_id}${CQS}`; };
+    } else {
+      btn.textContent = 'ابدأ قضية جديدة ←';
+      btn.onclick = () => { window.location.href = `/case/new${CQS}`; };
+    }
+    document.getElementById('glimpse-banner').classList.add('visible');
+  }
   const topDecision = d.top_decision;
 
   // تحديث رابط القضية في شريط التنقل بأول قضية حقيقية للشركة، أو صفحة إنشاء قضية إن لم توجد
