@@ -286,6 +286,21 @@ function render(d){
 
   let html = '';
 
+  // ⚠ حالة خاصة: أكمل Discovery لكن بياناته لم تُحفظ (sds_done=1 ولكن main_goal فارغ)
+  // السبب: request وصل ببيانات فارغة أو قُطع قبل الحفظ — نطلب منه إعادة الجلسة
+  if(c.sds_done && !c.main_goal){
+    html += `
+      <span class="eyebrow">اكتمل التسجيل — خطوة أخيرة</span>
+      <h1>جلسة الاكتشاف لم تكتمل بشكل صحيح.</h1>
+      <p style="color:#6E7580; font-size:13.5px; margin:8px 0 20px; line-height:1.7;">
+        وصلنا طلبك لكن بيانات إجاباتك لم تصل معه — أعِد جلسة الاكتشاف (دقيقتان فقط) لتُبنى على أساس صحيح.
+      </p>
+      <a href="/discovery${CQS}" class="btn btn-primary" style="text-align:center; display:block;">🔄 أكمل جلسة الاكتشاف</a>
+    `;
+    document.getElementById('app').innerHTML = html;
+    return;
+  }
+
   // ⚠ جلسة أولى: كل الأصول صفر ولا يوجد أي نشاط بعد — رسالة ترحيبية بدل أرقام مربكة بلا سياق
   const isFirstSession = d.quality_score === 0 && d.open_decisions_count === 0 && !topDecision;
   if(isFirstSession){

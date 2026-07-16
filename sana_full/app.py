@@ -629,9 +629,12 @@ def discovery_save():
     company_id = account["company_id"]
     db = get_db()
 
-    # ضمان عدم التكرار — إذا اكتملت الجلسة من قبل
-    company = db.execute("SELECT sds_done FROM companies WHERE company_id=?", (company_id,)).fetchone()
-    if company and company["sds_done"]:
+    # ضمان عدم التكرار — فقط إذا اكتملت الجلسة وحُفظت البيانات فعليًا (main_goal غير فارغ)
+    # إذا كان sds_done=1 لكن main_goal فارغ: نسمح بإعادة الحفظ لأن البيانات ضاعت
+    company = db.execute(
+        "SELECT sds_done, main_goal FROM companies WHERE company_id=?", (company_id,)
+    ).fetchone()
+    if company and company["sds_done"] and company["main_goal"]:
         case = db.execute(
             "SELECT case_id FROM cases WHERE company_id=? ORDER BY opened_at ASC LIMIT 1",
             (company_id,)
@@ -1549,12 +1552,16 @@ def create_case(company_id):
          observation, real_question, asset_id, 45))
 
     if supporting_evidence:
-        evidence_id = "E" + uuid.uuid4().hex[:6].upper()
-        db.execute("""INSERT INTO evidence
-            (evidence_id, company_id, case_id, asset_id, title, source_type, confidence)
-            VALUES (?,?,?,?,?,?,?)""",
-            (evidence_id, company_id, case_id, asset_id,
-             supporting_evidence, "دليل تأسيسي", 50))
+        from sana_evidence import save_evidence as _save_ev
+        _save_ev(
+            db,
+            company_id  = company_id,
+            case_id     = case_id,
+            asset_id    = asset_id,
+            title       = supporting_evidence,
+            source_type = "دليل تأسيسي",
+            confidence  = 50,
+        )
 
     db.commit()
     return jsonify({"success": True, "data": {"case_id": case_id}}), 201
