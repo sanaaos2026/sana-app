@@ -2,3 +2,4 @@
 - [Sana auth & tenant isolation](sana-auth-isolation.md) — real login (session-based) + a separate secret-gated admin-preview mode replaced the old public `?company_id=` bypass; guard covers API calls too, not just pages.
 - [Sana SQLite → PostgreSQL migration](sana-postgres-migration.md) — compatibility-wrapper pattern (auto `?`→`%s`, DictCursor, information_schema instead of PRAGMA) avoided rewriting every call site.
 - [Sana uploaded zip drift](sana-uploaded-zip-drift.md) — user-provided app.py/schema.sql in feature zips are often stale forks missing later migrations; diff against current before applying, merge additively.
+- [Sana SDS-001 discovery session](sana-sds001-discovery.md) — 8-question onboarding flow; sds_done column guards idempotency; Q7 stored silently; no score in outro (SCORE-03).

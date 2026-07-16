@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>جلسة الاكتشاف — سنع</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0B132B; --navy2: #111d3e;
+    --gold: #F2B233; --gold-dim: rgba(242,178,51,.15); --gold-border: rgba(242,178,51,.35);
+    --teal: #0EA5A5; --teal-dim: rgba(14,165,165,.12);
+    --ink: #E8ECF4; --muted: #7A8DA8; --line: rgba(255,255,255,.09);
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%; background: var(--navy);
+    font-family: 'IBM Plex Sans Arabic', sans-serif;
+    color: var(--ink); overscroll-behavior: none;
+  }
+  body { display: flex; flex-direction: column; align-items: center; }
+
+  /* ── Progress bar ── */
+  #progress-wrap {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    padding: 14px 24px 0; display: flex; flex-direction: column; gap: 6px;
+    opacity: 0; transition: opacity .3s;
+  }
+  #progress-wrap.visible { opacity: 1; }
+  #progress-track {
+    height: 3px; background: rgba(255,255,255,.1); border-radius: 99px; overflow: hidden;
+  }
+  #progress-fill {
+    height: 100%; background: var(--gold); border-radius: 99px;
+    transition: width .6s cubic-bezier(.4,0,.2,1);
+  }
+  #progress-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    color: var(--muted); letter-spacing: .04em; text-align: left; direction: ltr;
+  }
+
+  /* ── Stage ── */
+  #stage {
+    width: 100%; max-width: 480px;
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 80px 20px 100px; position: relative;
+  }
+
+  /* ── Screen ── */
+  .screen {
+    width: 100%; display: flex; flex-direction: column; align-items: center;
+    gap: 0;
+  }
+  .screen.entering { animation: sldIn .35s cubic-bezier(.25,.46,.45,.94) forwards; }
+  .screen.exiting  { animation: sldOut .3s cubic-bezier(.55,0,1,.45) forwards; }
+  @keyframes sldIn  { from { opacity: 0; transform: translateX(32px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes sldOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(-32px); } }
+
+  /* ── Question icon ── */
+  .q-icon { width: 52px; height: 52px; margin-bottom: 20px; }
+
+  /* ── Question title ── */
+  .q-title {
+    font-family: 'Cairo', sans-serif; font-weight: 800;
+    font-size: clamp(19px, 5vw, 23px); color: #fff;
+    text-align: center; line-height: 1.45; margin-bottom: 8px;
+  }
+  .q-sub {
+    font-size: 14px; color: var(--muted); text-align: center;
+    margin-bottom: 26px; line-height: 1.6;
+  }
+
+  /* ── Choice grid ── */
+  .choices {
+    display: flex; flex-direction: column; gap: 10px; width: 100%;
+  }
+  .choices.grid2 {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+  .choice {
+    background: rgba(255,255,255,.04); border: 1.5px solid var(--line);
+    border-radius: 12px; padding: 13px 16px;
+    font-size: 14px; font-weight: 500; color: var(--ink);
+    cursor: pointer; text-align: right;
+    transition: background .15s, border-color .15s, color .15s;
+    user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  .choice:hover { background: rgba(242,178,51,.08); border-color: var(--gold-border); }
+  .choice.selected {
+    background: var(--gold-dim); border-color: var(--gold);
+    color: var(--gold); font-weight: 700;
+  }
+  .choice.sel-teal {
+    background: var(--teal-dim); border-color: var(--teal);
+    color: var(--teal); font-weight: 700;
+  }
+
+  /* ── Follow-up section ── */
+  .followup-wrap {
+    width: 100%; margin-top: 18px;
+    border-top: 1px solid var(--line); padding-top: 16px;
+    opacity: 0; transform: translateY(8px);
+    transition: opacity .3s, transform .3s;
+    pointer-events: none;
+  }
+  .followup-wrap.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .followup-label {
+    font-size: 13px; color: var(--muted); margin-bottom: 12px; text-align: center;
+  }
+  .followup-input {
+    width: 100%; background: transparent;
+    border: none; border-bottom: 1.5px solid rgba(255,255,255,.2);
+    color: #fff; font-size: 14.5px; font-family: inherit;
+    padding: 8px 2px; outline: none; transition: border-color .2s;
+    text-align: right;
+  }
+  .followup-input:focus { border-bottom-color: var(--gold); }
+  .followup-input::placeholder { color: var(--muted); }
+
+  /* ── Next / submit button ── */
+  .next-btn {
+    margin-top: 22px; width: 100%;
+    background: var(--gold); color: var(--navy);
+    font-family: 'Cairo', sans-serif; font-weight: 800; font-size: 15px;
+    border: none; border-radius: 12px; padding: 15px 24px;
+    cursor: pointer; transition: opacity .2s, transform .1s;
+    opacity: 0; pointer-events: none; transform: translateY(4px);
+    transition: opacity .25s, transform .25s;
+  }
+  .next-btn.show { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  .next-btn:active { transform: scale(.98); }
+
+  /* ── Motivation toast ── */
+  #motivation {
+    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+    background: rgba(14,165,165,.18); border: 1px solid rgba(14,165,165,.4);
+    backdrop-filter: blur(8px); border-radius: 30px;
+    padding: 10px 22px; font-size: 13.5px; color: var(--teal);
+    white-space: nowrap; max-width: calc(100% - 40px);
+    opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 200;
+    text-align: center; font-weight: 600;
+  }
+  #motivation.show { opacity: 1; }
+
+  /* ── Welcome screen ── */
+  .welcome-logo { margin-bottom: 28px; }
+  .welcome-title {
+    font-family: 'Cairo', sans-serif; font-weight: 900;
+    font-size: clamp(26px, 7vw, 34px); color: #fff; text-align: center;
+    margin-bottom: 12px; line-height: 1.3;
+  }
+  .welcome-sub {
+    font-size: 15px; color: var(--muted); text-align: center;
+    margin-bottom: 36px; line-height: 1.7; max-width: 340px;
+  }
+  .start-btn {
+    background: var(--gold); color: var(--navy);
+    font-family: 'Cairo', sans-serif; font-weight: 800; font-size: 16px;
+    border: none; border-radius: 14px; padding: 16px 52px;
+    cursor: pointer; transition: opacity .2s, transform .1s;
+  }
+  .start-btn:active { transform: scale(.97); }
+
+  /* ── Outro screen ── */
+  .outro-wrap { text-align: center; }
+  .outro-logo { animation: logoIn .6s ease forwards; margin-bottom: 24px; }
+  @keyframes logoIn { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: scale(1); } }
+  .outro-title {
+    font-family: 'Cairo', sans-serif; font-weight: 900;
+    font-size: 26px; color: #fff; margin-bottom: 14px;
+  }
+  .outro-body {
+    font-size: 14.5px; color: var(--muted); line-height: 1.8;
+    margin-bottom: 32px; max-width: 340px; text-align: center;
+  }
+  .outro-btn {
+    background: var(--gold); color: var(--navy);
+    font-family: 'Cairo', sans-serif; font-weight: 800; font-size: 16px;
+    border: none; border-radius: 14px; padding: 16px 36px;
+    cursor: pointer; transition: opacity .2s, transform .1s; display: inline-block;
+  }
+  .outro-btn:active { transform: scale(.97); }
+  .loading-dots { color: var(--muted); font-size: 22px; letter-spacing: 4px; }
+
+  /* ── Multi-select badge ── */
+  .multi-count {
+    font-family: 'IBM Plex Mono', monospace; direction: ltr;
+    font-size: 11px; color: var(--teal); text-align: left;
+    margin-bottom: 10px;
+  }
+
+  /* ── Sana logo SVG inline ── */
+  .sana-logo { display: block; }
+</style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div id="progress-wrap">
+  <div id="progress-track"><div id="progress-fill" style="width:0%"></div></div>
+  <div id="progress-label">بقي 8 أسئلة</div>
+</div>
+
+<!-- Stage -->
+<div id="stage">
+  <div class="screen" id="screen"></div>
+</div>
+
+<!-- Motivation toast -->
+<div id="motivation"></div>
+
+<script>
+// ────────────────────────────────────────────────
+// SANA LOGO SVG (inline — same style as the app)
+// ────────────────────────────────────────────────
+const LOGO_SVG = `<svg class="sana-logo" width="44" height="44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M76 20 H24 V80 H76 V64" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/>
+  <path d="M76 20 V36" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" fill="none"/>
+  <rect x="50" y="42" width="16" height="16" fill="#F2B233"/>
+</svg>`;
+
+const LOGO_LG = `<svg class="sana-logo" width="60" height="60" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M76 20 H24 V80 H76 V64" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/>
+  <path d="M76 20 V36" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" fill="none"/>
+  <rect x="50" y="42" width="16" height="16" fill="#F2B233"/>
+</svg>`;
+
+// ────────────────────────────────────────────────
+// ICONS per question (navy frame + gold accent SVG)
+// ────────────────────────────────────────────────
+function icon(inner) {
+  return `<svg class="q-icon" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+}
+const ICONS = {
+  q1: icon(`<circle cx="26" cy="26" r="22" stroke="rgba(255,255,255,.15)" stroke-width="2"/>
+    <circle cx="26" cy="26" r="14" stroke="rgba(255,255,255,.25)" stroke-width="2"/>
+    <rect x="22" y="22" width="8" height="8" fill="#F2B233"/>
+    <line x1="26" y1="4" x2="26" y2="10" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <line x1="26" y1="42" x2="26" y2="48" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <line x1="4" y1="26" x2="10" y2="26" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <line x1="42" y1="26" x2="48" y2="26" stroke="white" stroke-width="2" stroke-linecap="round"/>`),
+
+  q2: icon(`<path d="M26 8 L42 26 L26 44 L10 26 Z" stroke="white" stroke-width="2.2" stroke-linejoin="round" fill="none"/>
+    <rect x="22" y="22" width="8" height="8" fill="#F2B233"/>
+    <path d="M26 15 L33 26 L26 37 L19 26 Z" stroke="rgba(255,255,255,.2)" stroke-width="1.5" fill="none"/>`),
+
+  q3: icon(`<polygon points="26,6 31.5,18.5 45,20 35,30 37.5,44 26,37 14.5,44 17,30 7,20 20.5,18.5" stroke="white" stroke-width="2" stroke-linejoin="round" fill="none"/>
+    <rect x="22" y="21" width="8" height="8" fill="#F2B233"/>`),
+
+  q4: icon(`<path d="M10 36 C10 28 18 24 26 24 C34 24 42 28 42 36" stroke="white" stroke-width="2.2" fill="none"/>
+    <circle cx="18" cy="20" r="6" stroke="rgba(255,255,255,.5)" stroke-width="2" fill="none"/>
+    <circle cx="34" cy="20" r="6" stroke="rgba(255,255,255,.5)" stroke-width="2" fill="none"/>
+    <rect x="22" y="30" width="8" height="8" fill="#F2B233"/>`),
+
+  q5: icon(`<rect x="16" y="6" width="20" height="24" rx="2" stroke="white" stroke-width="2" fill="none"/>
+    <rect x="20" y="10" width="8" height="8" fill="#F2B233"/>
+    <path d="M10 46 C10 40 16 36 26 36 C36 36 42 40 42 46" stroke="rgba(255,255,255,.6)" stroke-width="2" fill="none"/>`),
+
+  q6: icon(`<circle cx="26" cy="26" r="18" stroke="white" stroke-width="2.2" fill="none"/>
+    <line x1="26" y1="14" x2="26" y2="18" stroke="rgba(255,255,255,.5)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="26" y1="34" x2="26" y2="38" stroke="rgba(255,255,255,.5)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="14" y1="26" x2="18" y2="26" stroke="rgba(255,255,255,.5)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="34" y1="26" x2="38" y2="26" stroke="rgba(255,255,255,.5)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="26" y1="26" x2="26" y2="16" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <line x1="26" y1="26" x2="34" y2="22" stroke="#F2B233" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="26" cy="26" r="2.5" fill="#F2B233"/>`),
+
+  q7: icon(`<path d="M26 8 L38 20 L38 32 L26 44 L14 32 L14 20 Z" stroke="white" stroke-width="2.2" stroke-linejoin="round" fill="none"/>
+    <path d="M26 16 L33 23 L26 36 L19 23 Z" stroke="rgba(255,255,255,.25)" stroke-width="1.5" fill="none"/>
+    <rect x="22" y="22" width="8" height="8" fill="#F2B233"/>`),
+
+  q8: icon(`<path d="M26 44 L26 26" stroke="#F2B233" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M14 34 L26 26 L38 34" stroke="#F2B233" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path d="M20 14 L26 8 L32 14" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <line x1="26" y1="8" x2="26" y2="20" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="26" cy="22" r="2.5" fill="white"/>
+    <rect x="10" y="40" width="8" height="4" rx="1" fill="rgba(255,255,255,.2)"/>
+    <rect x="22" y="40" width="8" height="4" rx="1" fill="rgba(255,255,255,.2)"/>
+    <rect x="34" y="40" width="8" height="4" rx="1" fill="rgba(255,255,255,.2)"/>`)
+};
+
+// ────────────────────────────────────────────────
+// QUESTION DATA
+// ────────────────────────────────────────────────
+const Q = [
+  // 0 = welcome (handled separately)
+  // idx 1–8 map to Q1–Q8
+  {
+    id: 'q1', icon: ICONS.q1,
+    title: '🎯 لماذا جئت لسنع اليوم؟',
+    sub: 'ما النتيجة الأهم اللي تبيها خلال 12 شهر؟',
+    type: 'single',
+    key: 'q1',
+    motivation: '🎯 تمام، صار عندنا وجهة واضحة.',
+    choices: ['زيادة الإيرادات','رفع الأرباح','رفع قيمة الشركة',
+              'التوسع وفتح فروع','بناء فريق قوي','تنظيم التشغيل',
+              'التحول الرقمي والذكاء الاصطناعي','الاستعداد للاستثمار أو البيع','شيء آخر']
+  },
+  {
+    id: 'q2', icon: ICONS.q2,
+    title: '🎯 لو ما تقدر تاخذ إلا قرار واحد هالأسبوع…',
+    sub: 'أي قرار بيكون الأكثر تأثيرًا على شركتك؟',
+    type: 'single+text',
+    key: 'q2', textKey: 'q2_text',
+    textLabel: 'لماذا؟ (اختياري)',
+    motivation: '🧠 هذا بالضبط نوع القرار اللي سنع تُبنى عشانه.',
+    choices: ['زيادة المبيعات','تحسين التسويق','تنظيم التشغيل',
+              'تطوير الفريق','تحسين الأرباح','التوسع',
+              'ما أعرف من وين أبدأ','شيء آخر']
+  },
+  {
+    id: 'q3', icon: ICONS.q3,
+    title: '⭐ أكثر شيء تعتمد عليه شركتك اليوم؟',
+    sub: 'اختر الأقرب.',
+    type: 'single',
+    key: 'q3',
+    motivation: '⭐ بدأنا نشوف وين قوتك الحقيقية.',
+    choices: ['سمعة الشركة','العلاقات','المؤسس','الفريق','البراند',
+              'المنتج أو الخدمة','الخبرة والمعرفة','السعر','ما أعرف']
+  },
+  {
+    id: 'q4', icon: ICONS.q4,
+    title: '🤝 كيف يجيك أغلب عملائك اليوم؟',
+    type: 'single+followup-choice',
+    key: 'q4', fuKey: 'q4_fu',
+    fuLabel: 'وهل هذا المصدر وحده يكفي لنمو الشركة؟',
+    motivation: '🤝 وضّحت لنا من وين يجيك عملاؤك، وهذا يكشف مستوى المخاطرة الحقيقي.',
+    choices: ['إحالات العملاء','البحث في Google','السوشيال ميديا',
+              'الإعلانات','المبيعات المباشرة','الفرع','المناقصات','ما أعرف'],
+    fuChoices: ['نعم','إلى حد ما','لا']
+  },
+  {
+    id: 'q5', icon: ICONS.q5,
+    title: '🏖️ تخيّل إنك سافرت شهرًا كاملًا بدون أي تواصل مع الشركة…',
+    sub: 'ماذا تتوقع أن يحدث؟',
+    type: 'single+text',
+    key: 'q5', textKey: 'q5_text',
+    textLabel: 'ما أكثر شيء يقلقك لو حدث ذلك؟ (اختياري)',
+    motivation: '🏖️ سؤال يكشف الكثير — شكرًا على صراحتك.',
+    choices: ['😎 العمل يستمر بشكل طبيعي',
+              '🙂 بعض الأمور تحتاج مراجعة بسيطة',
+              '😐 تتوقف بعض العمليات المهمة',
+              '😟 أغلب العمل يعتمد على وجودي',
+              '💥 الشركة لا تستطيع العمل بدوني']
+  },
+  {
+    id: 'q6', icon: ICONS.q6,
+    title: '📊 لما تاخذ قرار مهم… غالبًا على شنو تعتمد؟',
+    type: 'single',
+    key: 'q6',
+    motivation: '📈 صار عندنا فكرة عن أسلوبك بالقرار.',
+    choices: ['الأرقام والتقارير','رأي الفريق','خبرتي الشخصية',
+              'إحساسي','مستشار خارجي','حسب الظروف']
+  },
+  {
+    id: 'q7', icon: ICONS.q7,
+    title: '💎 لو جاك مستثمر اليوم… كم تتوقع قيمة شركتك؟',
+    type: 'single+text',
+    key: 'q7', textKey: 'q7_text',
+    textLabel: 'ليش اخترت هذا الرقم؟ (اختياري)',
+    motivation: '💎 هذا الرقم بيصير مرجعًا مهمًا لاحقًا.',
+    choices: ['أقل من مليون','1-5 مليون','5-20 مليون','أكثر من 20 مليون','ما أعرف']
+  },
+  {
+    id: 'q8', icon: ICONS.q8,
+    title: '🚀 بعد سنة من اليوم، إذا نجحت سنع معك…',
+    sub: 'كيف بتكون شركتك؟ اختر أهم ثلاثة.',
+    type: 'multi',
+    key: 'q8', maxSelect: 3,
+    motivation: '🚀 آخر سؤال، وأهمه — تخيّلنا المستقبل معك.',
+    choices: ['مبيعات أعلى','أرباح أفضل','قيمة سوقية أعلى',
+              'تشغيل أكثر انضباطًا','فريق أقوى','قرارات أسرع وأدق',
+              'وقت أكثر للمالك','جاهزية للتوسع','جاهزية للاستثمار']
+  }
+];
+
+// ────────────────────────────────────────────────
+// STATE
+// ────────────────────────────────────────────────
+// step 0 = welcome, steps 1-8 = Q1-Q8, step 9 = outro
+let step = 0;
+const ans = {};
+let firstCaseId = null;
+
+// ────────────────────────────────────────────────
+// HELPERS
+// ────────────────────────────────────────────────
+const $screen   = document.getElementById('screen');
+const $progress = document.getElementById('progress-wrap');
+const $fill     = document.getElementById('progress-fill');
+const $label    = document.getElementById('progress-label');
+const $toast    = document.getElementById('motivation');
+
+function updateProgress(s) {
+  if (s === 0 || s === 9) { $progress.classList.remove('visible'); return; }
+  $progress.classList.add('visible');
+  const pct = Math.round((s / 8) * 100);
+  $fill.style.width = pct + '%';
+  const rem = 8 - s;
+  $label.textContent = rem === 0 ? 'السؤال الأخير' : `بقي ${rem} ${rem === 1 ? 'سؤال' : 'أسئلة'}`;
+}
+
+let toastTimer;
+function showToast(msg, cb) {
+  clearTimeout(toastTimer);
+  $toast.textContent = msg;
+  $toast.classList.add('show');
+  toastTimer = setTimeout(() => {
+    $toast.classList.remove('show');
+    if (cb) setTimeout(cb, 300);
+  }, 1600);
+}
+
+function transitionTo(renderFn) {
+  const cur = $screen;
+  cur.classList.add('exiting');
+  setTimeout(() => {
+    cur.className = 'screen';
+    renderFn();
+    cur.classList.add('entering');
+    setTimeout(() => cur.classList.remove('entering'), 350);
+  }, 290);
+}
+
+// ────────────────────────────────────────────────
+// RENDERERS
+// ────────────────────────────────────────────────
+function render() {
+  updateProgress(step);
+  if (step === 0) return renderWelcome();
+  if (step === 9) return renderOutro();
+  renderQuestion(Q[step - 1]);
+}
+
+function renderWelcome() {
+  $screen.innerHTML = `
+    <div class="screen" style="align-items:center; padding-top:20px;">
+      <div class="welcome-logo">${LOGO_LG}</div>
+      <div class="welcome-title">أهلًا بك في سنع 👋</div>
+      <div class="welcome-sub">8 أسئلة بسيطة، وبعدها نبني معك أول تشخيص حقيقي لشركتك.</div>
+      <button class="start-btn" onclick="goNext()">ابدأ ←</button>
+    </div>`;
+}
+
+function renderOutro() {
+  $screen.innerHTML = `
+    <div class="outro-wrap">
+      <div class="outro-logo">${LOGO_LG}</div>
+      <div class="outro-title">✨ بداية جيدة…</div>
+      <div class="outro-body">
+        اليوم بدأنا بناء النسخة الرقمية لشركتك داخل سنع.<br>
+        كل إجابة أضفتها صارت دليلًا يساعدنا نفهم شركتك بدقة أكبر.<br>
+        كل ما تضيف معلومات أكثر، تصير القرارات أدق والتوصيات أذكى.
+      </div>
+      <div id="outro-action"><div class="loading-dots">· · ·</div></div>
+    </div>`;
+  saveAndFinish();
+}
+
+async function saveAndFinish() {
+  try {
+    const res = await fetch('/api/discovery/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ans)
+    });
+    const json = await res.json();
+    if (json.success) {
+      firstCaseId = json.data.case_id;
+    }
+  } catch(e) { /* silently continue */ }
+
+  const dest = firstCaseId ? `/case/${firstCaseId}` : '/home';
+  document.getElementById('outro-action').innerHTML =
+    `<button class="outro-btn" onclick="location.href='${dest}'">🚀 افتح أول قضية</button>`;
+}
+
+function renderQuestion(q) {
+  const chosen = ans[q.key];
+
+  let body = '';
+
+  if (q.type === 'single' || q.type === 'single+text') {
+    body += renderChoices(q.choices, q.key, 'single', chosen);
+    if (q.type === 'single+text') {
+      const textVal = ans[q.textKey] || '';
+      const showFu = !!chosen;
+      body += `
+        <div class="followup-wrap${showFu ? ' show' : ''}" id="fu-wrap">
+          <div class="followup-label">${q.textLabel}</div>
+          <input class="followup-input" type="text"
+            placeholder="اكتب هنا..."
+            value="${escHtml(textVal)}"
+            id="fu-input"
+            onchange="ans['${q.textKey}']=this.value"
+            oninput="ans['${q.textKey}']=this.value">
+        </div>
+        <button class="next-btn${showFu ? ' show' : ''}" id="next-btn"
+          onclick="afterFollowupText()">التالي ←</button>`;
+    }
+  }
+
+  if (q.type === 'single+followup-choice') {
+    const fuChosen = ans[q.fuKey];
+    body += renderChoices(q.choices, q.key, 'single', chosen);
+    const showFu = !!chosen;
+    body += `
+      <div class="followup-wrap${showFu ? ' show' : ''}" id="fu-wrap">
+        <div class="followup-label">${q.fuLabel}</div>
+        ${renderChoices(q.fuChoices, q.fuKey, 'fu-single', fuChosen, true)}
+      </div>`;
+  }
+
+  if (q.type === 'multi') {
+    const sel = ans[q.key] || [];
+    body += `<div class="multi-count" id="multi-count">${sel.length}/${q.maxSelect} مختار</div>`;
+    body += renderChoices(q.choices, q.key, 'multi', sel);
+    body += `<button class="next-btn${sel.length > 0 ? ' show' : ''}" id="next-btn"
+      onclick="submitMulti()">التالي ←</button>`;
+  }
+
+  $screen.innerHTML = `
+    ${q.icon}
+    <div class="q-title">${q.title}</div>
+    ${q.sub ? `<div class="q-sub">${q.sub}</div>` : ''}
+    ${body}`;
+}
+
+function renderChoices(choices, key, mode, current, inline = false) {
+  const isMulti = mode === 'multi';
+  const isFu    = mode === 'fu-single';
+  const sel = isMulti ? (current || []) : null;
+  const useGrid2 = choices.length <= 4 || inline;
+  const cls = useGrid2 ? 'choices grid2' : 'choices';
+
+  const items = choices.map(c => {
+    let selectedCls = '';
+    if (isMulti)     selectedCls = (sel || []).includes(c) ? ' sel-teal' : '';
+    else if (isFu)   selectedCls = current === c ? ' sel-teal' : '';
+    else             selectedCls = current === c ? ' selected' : '';
+    const clickFn = isMulti
+      ? `toggleMulti('${escJs(c)}', ${mode === 'multi' ? "'q8'" : "''" })`
+      : isFu
+        ? `pickFuChoice('${escJs(key)}','${escJs(c)}')`
+        : `pickChoice('${escJs(key)}','${escJs(c)}')`;
+    return `<div class="choice${selectedCls}" onclick="${clickFn}">${c}</div>`;
+  }).join('');
+
+  return `<div class="${cls}" id="${isFu ? 'fu-choices' : 'main-choices'}">${items}</div>`;
+}
+
+// ────────────────────────────────────────────────
+// INTERACTIONS
+// ────────────────────────────────────────────────
+function pickChoice(key, value) {
+  ans[key] = value;
+  // re-render choices to update selection highlight
+  const q = Q[step - 1];
+  const choiceEls = document.getElementById('main-choices');
+  if (choiceEls) {
+    choiceEls.querySelectorAll('.choice').forEach(el => {
+      el.className = 'choice' + (el.textContent === value ? ' selected' : '');
+    });
+  }
+
+  if (q.type === 'single') {
+    showToast(q.motivation, goNext);
+  } else {
+    // show follow-up
+    const fw = document.getElementById('fu-wrap');
+    const nb = document.getElementById('next-btn');
+    if (fw) fw.classList.add('show');
+    if (nb) nb.classList.add('show');
+  }
+}
+
+function pickFuChoice(fuKey, value) {
+  ans[fuKey] = value;
+  const q = Q[step - 1];
+  // update fu-choices highlight
+  const fuEl = document.getElementById('fu-choices');
+  if (fuEl) {
+    fuEl.querySelectorAll('.choice').forEach(el => {
+      el.className = 'choice' + (el.textContent === value ? ' sel-teal' : '');
+    });
+  }
+  showToast(q.motivation, goNext);
+}
+
+function afterFollowupText() {
+  const q = Q[step - 1];
+  showToast(q.motivation, goNext);
+}
+
+function toggleMulti(value) {
+  const q = Q[step - 1];
+  if (!ans[q.key]) ans[q.key] = [];
+  const arr = ans[q.key];
+  const idx = arr.indexOf(value);
+  if (idx >= 0) {
+    arr.splice(idx, 1);
+  } else if (arr.length < q.maxSelect) {
+    arr.push(value);
+  }
+  // update UI
+  const cnt = document.getElementById('multi-count');
+  const nb  = document.getElementById('next-btn');
+  if (cnt) cnt.textContent = `${arr.length}/${q.maxSelect} مختار`;
+  if (nb) nb.classList.toggle('show', arr.length > 0);
+  // update card styles
+  const mainCh = document.getElementById('main-choices');
+  if (mainCh) {
+    mainCh.querySelectorAll('.choice').forEach(el => {
+      el.className = 'choice' + (arr.includes(el.textContent) ? ' sel-teal' : '');
+    });
+  }
+}
+
+function submitMulti() {
+  const q = Q[step - 1];
+  if (!ans[q.key] || ans[q.key].length === 0) return;
+  showToast(q.motivation, goNext);
+}
+
+function goNext() {
+  step++;
+  transitionTo(render);
+}
+
+// ────────────────────────────────────────────────
+// ESCAPE HELPERS
+// ────────────────────────────────────────────────
+function escHtml(str) { return (str||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function escJs(str) { return (str||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+
+// ────────────────────────────────────────────────
+// INIT
+// ────────────────────────────────────────────────
+// dev: ?step=N يفتح سؤالًا محددًا مباشرة (للمعاينة فقط)
+const _devStep = parseInt(new URL(location.href).searchParams.get('step') || '0');
+if (_devStep > 0 && _devStep <= 9) step = _devStep;
+render();
+</script>
+</body>
+</html>

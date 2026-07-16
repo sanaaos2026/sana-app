@@ -319,6 +319,8 @@ def init_db(force=False):
         accounts_cols = _columns_of(conn, "user_accounts")
         if "referral_source" not in accounts_cols:
             conn.execute("ALTER TABLE user_accounts ADD COLUMN referral_source TEXT")
+        if "sds_done" not in companies_cols:
+            conn.execute("ALTER TABLE companies ADD COLUMN sds_done SMALLINT DEFAULT 0")
         conn.commit()
     # لكل شركة بلا رمز دعوة (سواء قاعدة بيانات جديدة أو قديمة) — ولّد رمزًا فريدًا
     for row in conn.execute("SELECT company_id FROM companies WHERE signup_code IS NULL").fetchall():
@@ -544,7 +546,7 @@ def onboarding():
     )
     db.commit()
 
-    return jsonify({"success": True, "data": {"redirect": "/home"}})
+    return jsonify({"success": True, "data": {"redirect": "/discovery"}})
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -569,7 +571,160 @@ def login():
     session["company_id"] = account["company_id"]
     session["email"] = account["email"]
 
-    return jsonify({"success": True, "data": {"redirect": "/home"}})
+    # إذا لم تكتمل جلسة الاكتشاف بعد → وجّه إليها أولًا
+    company = db.execute("SELECT sds_done FROM companies WHERE company_id=?",
+                         (account["company_id"],)).fetchone()
+    redirect_to = "/home" if (company and company["sds_done"]) else "/discovery"
+    return jsonify({"success": True, "data": {"redirect": redirect_to}})
+
+
+@app.route("/discovery")
+def discovery():
+    """جلسة الاكتشاف SDS-001 — تُعرض مرة واحدة فقط بعد تسجيل الحساب الجديد."""
+    # مسار معاينة للمطوّر (admin_key فقط — يُعيّن جلسة مؤقتة للشركة المحددة)
+    admin_key = request.args.get("admin_key", "")
+    company_id_param = request.args.get("company_id", "")
+    if admin_key and admin_key == os.environ.get("ADMIN_PREVIEW_KEY", ""):
+        if company_id_param:
+            db = get_db()
+            acc = db.execute(
+                "SELECT * FROM user_accounts WHERE company_id=?", (company_id_param,)
+            ).fetchone()
+            if acc:
+                session["account_id"] = acc["account_id"]
+                session["company_id"] = acc["company_id"]
+                session["email"]      = acc["email"]
+                return render_template("06-sana-discovery.html")
+
+    account = current_account()
+    if not account:
+        return redirect(url_for("login"))
+    db = get_db()
+    company = db.execute("SELECT sds_done FROM companies WHERE company_id=?",
+                         (account["company_id"],)).fetchone()
+    if company and company["sds_done"]:
+        return redirect(url_for("ceo_home"))
+    return render_template("06-sana-discovery.html")
+
+
+@app.route("/api/discovery/save", methods=["POST"])
+def discovery_save():
+    """يحفظ إجابات SDS-001 ويُنشئ أول قضية تلقائيًا."""
+    account = current_account()
+    if not account:
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+
+    company_id = account["company_id"]
+    db = get_db()
+
+    # ضمان عدم التكرار — إذا اكتملت الجلسة من قبل
+    company = db.execute("SELECT sds_done FROM companies WHERE company_id=?", (company_id,)).fetchone()
+    if company and company["sds_done"]:
+        case = db.execute(
+            "SELECT case_id FROM cases WHERE company_id=? ORDER BY opened_at ASC LIMIT 1",
+            (company_id,)
+        ).fetchone()
+        return jsonify({"success": True, "data": {
+            "case_id": case["case_id"] if case else None,
+            "already_done": True
+        }})
+
+    body = request.get_json(silent=True) or {}
+    q1        = (body.get("q1")       or "").strip()
+    q2        = (body.get("q2")       or "").strip()
+    q2_text   = (body.get("q2_text")  or "").strip()
+    q3        = (body.get("q3")       or "").strip()
+    q4        = (body.get("q4")       or "").strip()
+    q4_fu     = (body.get("q4_fu")    or "").strip()
+    q5        = (body.get("q5")       or "").strip()
+    q5_text   = (body.get("q5_text")  or "").strip()
+    q6        = (body.get("q6")       or "").strip()
+    q7        = (body.get("q7")       or "").strip()
+    q7_text   = (body.get("q7_text")  or "").strip()
+    q8        = body.get("q8") or []
+
+    # 1. تحديث الشركة
+    vision = "، ".join(q8) if q8 else None
+    db.execute(
+        "UPDATE companies SET main_goal=?, vision=? WHERE company_id=?",
+        (q1 or None, vision, company_id)
+    )
+
+    # 2. إنشاء أول قضية من إجابة Q2
+    case_id = "CASE" + uuid.uuid4().hex[:8].upper()
+    case_title    = f"أول قضية: {q2}" if q2 else "أول قضية من جلسة الاكتشاف"
+    real_question = (f"أي قرار سيكون الأكثر تأثيرًا على {q2}؟" if q2
+                     else "ما القرار الأكثر تأثيرًا في الشركة الآن؟")
+    db.execute(
+        """INSERT INTO cases
+           (case_id, company_id, case_title, case_type, case_status, real_question, opened_at)
+           VALUES (?,?,?,?,?,?,?)""",
+        (case_id, company_id, case_title, "تشخيص", "مفتوح",
+         real_question, datetime.utcnow().isoformat())
+    )
+
+    # خريطة الأصول حسب النوع
+    assets_by_type = {
+        a["asset_type"]: a["asset_id"]
+        for a in db.execute(
+            "SELECT asset_id, asset_type FROM assets WHERE company_id=?", (company_id,)
+        ).fetchall()
+    }
+
+    def add_ev(title, asset_type=None):
+        ev_id = "EV" + uuid.uuid4().hex[:8].upper()
+        db.execute(
+            """INSERT INTO evidence
+               (evidence_id, company_id, case_id, asset_id, title,
+                source_type, confidence, date_collected)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (ev_id, company_id, case_id,
+             assets_by_type.get(asset_type) if asset_type else None,
+             title, "اكتشاف_ذاتي", 0.5, datetime.utcnow().isoformat())
+        )
+
+    # Q2 — نص حر
+    if q2_text:
+        add_ev(f"سبب الأولوية: {q2_text}")
+
+    # Q3 — الأصل الأهم → دليل على الأصل المطابق
+    q3_asset = {
+        "سمعة الشركة": "Brand", "العلاقات": "Brand", "البراند": "Brand",
+        "المؤسس": "Independence", "الفريق": "Independence",
+        "المنتج أو الخدمة": "Knowledge", "الخبرة والمعرفة": "Knowledge",
+        "السعر": "Operations",
+    }.get(q3)
+    if q3:
+        add_ev(f"أهم أصل في الشركة اليوم: {q3}", q3_asset)
+
+    # Q4 — مصدر الاكتساب + متابعة
+    if q4:
+        add_ev(f"مصدر اكتساب العملاء: {q4}", "Operations")
+    if q4_fu:
+        risk = " [تنبيه: خطر الاعتماد على قناة واحدة]" if q4_fu in ("لا", "إلى حد ما") else ""
+        add_ev(f"هل المصدر الحالي كافٍ للنمو؟ {q4_fu}{risk}", "Operations")
+
+    # Q5 — اعتماد المؤسس
+    if q5:
+        add_ev(f"مستوى اعتماد الشركة على المؤسس: {q5}", "Independence")
+    if q5_text:
+        add_ev(f"ما يقلق المؤسس عند غيابه: {q5_text}", "Independence")
+
+    # Q6 — أسلوب القرار
+    if q6:
+        add_ev(f"أسلوب اتخاذ القرار: {q6}")
+
+    # Q7 — توقع القيمة (يُحفظ بصمت، بلا إشارة للمستخدم)
+    if q7:
+        add_ev(f"توقع المؤسس لقيمة الشركة: {q7}")
+    if q7_text:
+        add_ev(f"سبب التقدير: {q7_text}")
+
+    # تحديث علامة اكتمال الجلسة
+    db.execute("UPDATE companies SET sds_done=1 WHERE company_id=?", (company_id,))
+    db.commit()
+
+    return jsonify({"success": True, "data": {"case_id": case_id}})
 
 
 @app.route("/logout", methods=["GET", "POST"])
