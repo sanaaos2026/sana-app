@@ -199,7 +199,7 @@
 <!-- Progress bar -->
 <div id="progress-wrap">
   <div id="progress-track"><div id="progress-fill" style="width:0%"></div></div>
-  <div id="progress-label">بقي 8 أسئلة</div>
+  <div id="progress-label">بقي 7 أسئلة</div>
 </div>
 
 <!-- Stage -->
@@ -212,7 +212,7 @@
 
 <script>
 // ────────────────────────────────────────────────
-// SANA LOGO SVG (inline — same style as the app)
+// SANA LOGO SVG
 // ────────────────────────────────────────────────
 const LOGO_SVG = `<svg class="sana-logo" width="44" height="44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M76 20 H24 V80 H76 V64" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/>
@@ -227,12 +227,13 @@ const LOGO_LG = `<svg class="sana-logo" width="60" height="60" viewBox="0 0 100 
 </svg>`;
 
 // ────────────────────────────────────────────────
-// ICONS per question (navy frame + gold accent SVG)
+// ICONS per question
 // ────────────────────────────────────────────────
 function icon(inner) {
   return `<svg class="q-icon" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
 }
 const ICONS = {
+  // Q1 — هدف / radar
   q1: icon(`<circle cx="26" cy="26" r="22" stroke="rgba(255,255,255,.15)" stroke-width="2"/>
     <circle cx="26" cy="26" r="14" stroke="rgba(255,255,255,.25)" stroke-width="2"/>
     <rect x="22" y="22" width="8" height="8" fill="#F2B233"/>
@@ -241,22 +242,27 @@ const ICONS = {
     <line x1="4" y1="26" x2="10" y2="26" stroke="white" stroke-width="2" stroke-linecap="round"/>
     <line x1="42" y1="26" x2="48" y2="26" stroke="white" stroke-width="2" stroke-linecap="round"/>`),
 
-  q2: icon(`<path d="M26 8 L42 26 L26 44 L10 26 Z" stroke="white" stroke-width="2.2" stroke-linejoin="round" fill="none"/>
-    <rect x="22" y="22" width="8" height="8" fill="#F2B233"/>
-    <path d="M26 15 L33 26 L26 37 L19 26 Z" stroke="rgba(255,255,255,.2)" stroke-width="1.5" fill="none"/>`),
+  // Q2 — تحدٍّ / wrench
+  q2: icon(`<path d="M34 10 C38 14 38 22 34 26 L18 42 C16 44 13 44 11 42 C9 40 9 37 11 35 L27 19 C31 15 30 11 34 10 Z" stroke="white" stroke-width="2.2" stroke-linejoin="round" fill="none"/>
+    <rect x="22" y="28" width="8" height="8" fill="#F2B233" transform="rotate(45 26 32)"/>
+    <circle cx="14" cy="40" r="2.5" fill="rgba(255,255,255,.4)"/>`),
 
+  // Q3 — أصل / star
   q3: icon(`<polygon points="26,6 31.5,18.5 45,20 35,30 37.5,44 26,37 14.5,44 17,30 7,20 20.5,18.5" stroke="white" stroke-width="2" stroke-linejoin="round" fill="none"/>
     <rect x="22" y="21" width="8" height="8" fill="#F2B233"/>`),
 
+  // Q4 — اكتساب عملاء / people+arrow
   q4: icon(`<path d="M10 36 C10 28 18 24 26 24 C34 24 42 28 42 36" stroke="white" stroke-width="2.2" fill="none"/>
     <circle cx="18" cy="20" r="6" stroke="rgba(255,255,255,.5)" stroke-width="2" fill="none"/>
     <circle cx="34" cy="20" r="6" stroke="rgba(255,255,255,.5)" stroke-width="2" fill="none"/>
     <rect x="22" y="30" width="8" height="8" fill="#F2B233"/>`),
 
+  // Q5 — مؤسس / person badge
   q5: icon(`<rect x="16" y="6" width="20" height="24" rx="2" stroke="white" stroke-width="2" fill="none"/>
     <rect x="20" y="10" width="8" height="8" fill="#F2B233"/>
     <path d="M10 46 C10 40 16 36 26 36 C36 36 42 40 42 46" stroke="rgba(255,255,255,.6)" stroke-width="2" fill="none"/>`),
 
+  // Q6 — قرار / clock
   q6: icon(`<circle cx="26" cy="26" r="18" stroke="white" stroke-width="2.2" fill="none"/>
     <line x1="26" y1="14" x2="26" y2="18" stroke="rgba(255,255,255,.5)" stroke-width="2" stroke-linecap="round"/>
     <line x1="26" y1="34" x2="26" y2="38" stroke="rgba(255,255,255,.5)" stroke-width="2" stroke-linecap="round"/>
@@ -266,11 +272,8 @@ const ICONS = {
     <line x1="26" y1="26" x2="34" y2="22" stroke="#F2B233" stroke-width="2" stroke-linecap="round"/>
     <circle cx="26" cy="26" r="2.5" fill="#F2B233"/>`),
 
-  q7: icon(`<path d="M26 8 L38 20 L38 32 L26 44 L14 32 L14 20 Z" stroke="white" stroke-width="2.2" stroke-linejoin="round" fill="none"/>
-    <path d="M26 16 L33 23 L26 36 L19 23 Z" stroke="rgba(255,255,255,.25)" stroke-width="1.5" fill="none"/>
-    <rect x="22" y="22" width="8" height="8" fill="#F2B233"/>`),
-
-  q8: icon(`<path d="M26 44 L26 26" stroke="#F2B233" stroke-width="2.5" stroke-linecap="round"/>
+  // Q7 — مستقبل / arrow up
+  q7: icon(`<path d="M26 44 L26 26" stroke="#F2B233" stroke-width="2.5" stroke-linecap="round"/>
     <path d="M14 34 L26 26 L38 34" stroke="#F2B233" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
     <path d="M20 14 L26 8 L32 14" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
     <line x1="26" y1="8" x2="26" y2="20" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
@@ -281,11 +284,12 @@ const ICONS = {
 };
 
 // ────────────────────────────────────────────────
-// QUESTION DATA
+// QUESTION DATA — v3 النهائية (7 أسئلة)
 // ────────────────────────────────────────────────
 const Q = [
-  // 0 = welcome (handled separately)
-  // idx 1–8 map to Q1–Q8
+  // idx 1–7 map to Q1–Q7
+
+  // Q1 — الوجهة
   {
     id: 'q1', icon: ICONS.q1,
     title: '🎯 لماذا جئت لسنع اليوم؟',
@@ -293,22 +297,40 @@ const Q = [
     type: 'single',
     key: 'q1',
     motivation: '🎯 تمام، صار عندنا وجهة واضحة.',
-    choices: ['زيادة الإيرادات','رفع الأرباح','رفع قيمة الشركة',
-              'التوسع وفتح فروع','بناء فريق قوي','تنظيم التشغيل',
-              'التحول الرقمي والذكاء الاصطناعي','الاستعداد للاستثمار أو البيع','شيء آخر']
+    choices: [
+      '🚀 زيادة الإيرادات',
+      '💰 رفع الأرباح',
+      '🏢 رفع قيمة الشركة',
+      '📈 التوسع وفتح فروع',
+      '👥 بناء فريق قوي',
+      '⚙️ تنظيم التشغيل',
+      '🤖 التحول الرقمي والذكاء الاصطناعي',
+      '💸 الاستعداد للاستثمار أو البيع',
+      '✨ شيء آخر...'
+    ]
   },
+
+  // Q2 — التحدي (لا "القرار")
   {
     id: 'q2', icon: ICONS.q2,
-    title: '🎯 لو ما تقدر تاخذ إلا قرار واحد هالأسبوع…',
-    sub: 'أي قرار بيكون الأكثر تأثيرًا على شركتك؟',
-    type: 'single+text',
-    key: 'q2', textKey: 'q2_text',
-    textLabel: 'لماذا؟ (اختياري)',
-    motivation: '🧠 هذا بالضبط نوع القرار اللي سنع تُبنى عشانه.',
-    choices: ['زيادة المبيعات','تحسين التسويق','تنظيم التشغيل',
-              'تطوير الفريق','تحسين الأرباح','التوسع',
-              'ما أعرف من وين أبدأ','شيء آخر']
+    title: 'لو قدرت تعالج تحديًا واحدًا الآن…',
+    sub: 'ما الأكثر تأثيرًا على شركتك؟',
+    type: 'single',
+    key: 'q2',
+    motivation: '🧠 وضّحت لنا أهم تحدٍّ نبدأ فيه.',
+    choices: [
+      '📉 المبيعات',
+      '📣 التسويق',
+      '⚙️ التشغيل',
+      '👥 الفريق',
+      '💵 الأرباح والسيولة',
+      '🚀 التوسع',
+      '🤔 ما أعرف من وين أبدأ',
+      '🔥 عدة تحديات مرتبطة'
+    ]
   },
+
+  // Q3 — الأصل الأهم (5 خيارات مطابقة للأصول + ما أعرف)
   {
     id: 'q3', icon: ICONS.q3,
     title: '⭐ أكثر شيء تعتمد عليه شركتك اليوم؟',
@@ -316,69 +338,104 @@ const Q = [
     type: 'single',
     key: 'q3',
     motivation: '⭐ بدأنا نشوف وين قوتك الحقيقية.',
-    choices: ['سمعة الشركة','العلاقات','المؤسس','الفريق','البراند',
-              'المنتج أو الخدمة','الخبرة والمعرفة','السعر','ما أعرف']
+    choices: [
+      '📚 الخبرة والمعرفة',
+      '⚙️ طريقة التشغيل والتنفيذ',
+      '🏷️ الاسم والسمعة والبراند',
+      '📊 البيانات والتقارير',
+      '👤 وجود المؤسس ومتابعته',
+      '❓ ما أعرف'
+    ]
   },
+
+  // Q4 — مصدر العملاء + هشاشته
   {
     id: 'q4', icon: ICONS.q4,
-    title: '🤝 كيف يجيك أغلب عملائك اليوم؟',
+    title: '🤝 من وين يجيك أغلب عملائك اليوم؟',
     type: 'single+followup-choice',
     key: 'q4', fuKey: 'q4_fu',
-    fuLabel: 'وهل هذا المصدر وحده يكفي لنمو الشركة؟',
-    motivation: '🤝 وضّحت لنا من وين يجيك عملاؤك، وهذا يكشف مستوى المخاطرة الحقيقي.',
-    choices: ['إحالات العملاء','البحث في Google','السوشيال ميديا',
-              'الإعلانات','المبيعات المباشرة','الفرع','المناقصات','ما أعرف'],
-    fuChoices: ['نعم','إلى حد ما','لا']
+    fuLabel: 'لو توقف هذا المصدر شهرًا كاملًا، هل تتأثر مبيعاتك؟',
+    motivation: '🤝 وهذا يكشف مستوى الهشاشة الحقيقي بمصدر عملائك.',
+    choices: [
+      '🌟 الإحالات',
+      '🔍 Google',
+      '📱 السوشيال ميديا',
+      '📢 الإعلانات',
+      '📞 المبيعات المباشرة',
+      '🏪 الفرع أو الزيارات',
+      '📋 المناقصات',
+      '🌐 الموقع',
+      '❓ ما أعرف'
+    ],
+    fuChoices: [
+      '😰 نعم، بشكل كبير',
+      '🙂 نعم، بدرجة متوسطة',
+      '😌 تأثير محدود',
+      '🤷 ما أعرف'
+    ]
   },
+
+  // Q5 — الاعتماد على المؤسس
   {
     id: 'q5', icon: ICONS.q5,
     title: '🏖️ تخيّل إنك سافرت شهرًا كاملًا بدون أي تواصل مع الشركة…',
     sub: 'ماذا تتوقع أن يحدث؟',
     type: 'single+text',
     key: 'q5', textKey: 'q5_text',
-    textLabel: 'ما أكثر شيء يقلقك لو حدث ذلك؟ (اختياري)',
+    textLabel: 'ما أكثر شيء سيتعطل؟ (اختياري)',
     motivation: '🏖️ سؤال يكشف الكثير — شكرًا على صراحتك.',
-    choices: ['😎 العمل يستمر بشكل طبيعي',
-              '🙂 بعض الأمور تحتاج مراجعة بسيطة',
-              '😐 تتوقف بعض العمليات المهمة',
-              '😟 أغلب العمل يعتمد على وجودي',
-              '💥 الشركة لا تستطيع العمل بدوني']
+    choices: [
+      '😎 العمل يستمر طبيعيًا',
+      '🙂 يحتاج الفريق مراجعات بسيطة',
+      '😐 تتوقف بعض العمليات المهمة',
+      '😟 يتعطل أغلب العمل',
+      '💥 الشركة لا تعمل بدوني'
+    ]
   },
+
+  // Q6 — أسلوب اتخاذ القرار
   {
     id: 'q6', icon: ICONS.q6,
-    title: '📊 لما تاخذ قرار مهم… غالبًا على شنو تعتمد؟',
+    title: '📊 لما تواجه قرارًا مهمًا…',
+    sub: 'غالبًا على شنو تعتمد؟',
     type: 'single',
     key: 'q6',
     motivation: '📈 صار عندنا فكرة عن أسلوبك بالقرار.',
-    choices: ['الأرقام والتقارير','رأي الفريق','خبرتي الشخصية',
-              'إحساسي','مستشار خارجي','حسب الظروف']
+    choices: [
+      '📈 الأرقام والتقارير',
+      '💡 خبرتي الشخصية',
+      '👥 رأي الفريق',
+      '📚 رأي مستشار',
+      '❤️ الحدس',
+      '😅 حسب الموقف، بلا طريقة ثابتة'
+    ]
   },
+
+  // Q7 — معايير النجاح (multi، max 3) — يُحفظ في success_criteria
   {
     id: 'q7', icon: ICONS.q7,
-    title: '💎 لو جاك مستثمر اليوم… كم تتوقع قيمة شركتك؟',
-    type: 'single+text',
-    key: 'q7', textKey: 'q7_text',
-    textLabel: 'ليش اخترت هذا الرقم؟ (اختياري)',
-    motivation: '💎 هذا الرقم بيصير مرجعًا مهمًا لاحقًا.',
-    choices: ['أقل من مليون','1-5 مليون','5-20 مليون','أكثر من 20 مليون','ما أعرف']
-  },
-  {
-    id: 'q8', icon: ICONS.q8,
-    title: '🚀 بعد سنة من اليوم، إذا نجحت سنع معك…',
-    sub: 'كيف بتكون شركتك؟ اختر أهم ثلاثة.',
+    title: '🚀 بعد 12 شهرًا من اليوم…',
+    sub: 'ما النتائج الثلاث اللي بتخليك تقول "سنع صنعت فرقًا"؟ اختر ثلاثة.',
     type: 'multi',
-    key: 'q8', maxSelect: 3,
+    key: 'q7', maxSelect: 3,
     motivation: '🚀 آخر سؤال، وأهمه — تخيّلنا المستقبل معك.',
-    choices: ['مبيعات أعلى','أرباح أفضل','قيمة سوقية أعلى',
-              'تشغيل أكثر انضباطًا','فريق أقوى','قرارات أسرع وأدق',
-              'وقت أكثر للمالك','جاهزية للتوسع','جاهزية للاستثمار']
+    choices: [
+      '📈 مبيعات أعلى',
+      '💰 أرباح وسيولة أفضل',
+      '⚙️ تشغيل أكثر انضباطًا',
+      '👥 فريق أقل اعتمادًا على المالك',
+      '🤖 قرارات أوضح',
+      '📊 بيانات وتقارير أفضل',
+      '🏷️ براند أقوى',
+      '🚀 جاهزية للتوسع'
+    ]
   }
 ];
 
 // ────────────────────────────────────────────────
 // STATE
+// step 0 = welcome, steps 1-7 = Q1-Q7, step 8 = outro
 // ────────────────────────────────────────────────
-// step 0 = welcome, steps 1-8 = Q1-Q8, step 9 = outro
 let step = 0;
 const ans = {};
 let firstCaseId = null;
@@ -393,12 +450,12 @@ const $label    = document.getElementById('progress-label');
 const $toast    = document.getElementById('motivation');
 
 function updateProgress(s) {
-  if (s === 0 || s === 9) { $progress.classList.remove('visible'); return; }
+  if (s === 0 || s === 8) { $progress.classList.remove('visible'); return; }
   $progress.classList.add('visible');
-  const pct = Math.round((s / 8) * 100);
+  const pct = Math.round((s / 7) * 100);
   $fill.style.width = pct + '%';
-  const rem = 8 - s;
-  $label.textContent = rem === 0 ? 'السؤال الأخير' : `بقي ${rem} ${rem === 1 ? 'سؤال' : 'أسئلة'}`;
+  const rem = 7 - s;
+  $label.textContent = rem === 0 ? 'السؤال الأخير' : `بقي ${rem === 1 ? 'سؤال واحد' : rem + ' أسئلة'}`;
 }
 
 let toastTimer;
@@ -429,7 +486,7 @@ function transitionTo(renderFn) {
 function render() {
   updateProgress(step);
   if (step === 0) return renderWelcome();
-  if (step === 9) return renderOutro();
+  if (step === 8) return renderOutro();
   renderQuestion(Q[step - 1]);
 }
 
@@ -438,7 +495,7 @@ function renderWelcome() {
     <div class="screen" style="align-items:center; padding-top:20px;">
       <div class="welcome-logo">${LOGO_LG}</div>
       <div class="welcome-title">أهلًا بك في سنع 👋</div>
-      <div class="welcome-sub">8 أسئلة بسيطة، وبعدها نبني معك أول تشخيص حقيقي لشركتك.</div>
+      <div class="welcome-sub">7 أسئلة بسيطة، وبعدها نبني معك أول تشخيص حقيقي لشركتك.</div>
       <button class="start-btn" onclick="goNext()">ابدأ ←</button>
     </div>`;
 }
@@ -481,24 +538,26 @@ function renderQuestion(q) {
 
   let body = '';
 
-  if (q.type === 'single' || q.type === 'single+text') {
+  if (q.type === 'single') {
     body += renderChoices(q.choices, q.key, 'single', chosen);
-    if (q.type === 'single+text') {
-      const textVal = ans[q.textKey] || '';
-      const showFu = !!chosen;
-      body += `
-        <div class="followup-wrap${showFu ? ' show' : ''}" id="fu-wrap">
-          <div class="followup-label">${q.textLabel}</div>
-          <input class="followup-input" type="text"
-            placeholder="اكتب هنا..."
-            value="${escHtml(textVal)}"
-            id="fu-input"
-            onchange="ans['${q.textKey}']=this.value"
-            oninput="ans['${q.textKey}']=this.value">
-        </div>
-        <button class="next-btn${showFu ? ' show' : ''}" id="next-btn"
-          onclick="afterFollowupText()">التالي ←</button>`;
-    }
+  }
+
+  if (q.type === 'single+text') {
+    body += renderChoices(q.choices, q.key, 'single', chosen);
+    const textVal = ans[q.textKey] || '';
+    const showFu = !!chosen;
+    body += `
+      <div class="followup-wrap${showFu ? ' show' : ''}" id="fu-wrap">
+        <div class="followup-label">${q.textLabel}</div>
+        <input class="followup-input" type="text"
+          placeholder="اكتب هنا..."
+          value="${escHtml(textVal)}"
+          id="fu-input"
+          onchange="ans['${q.textKey}']=this.value"
+          oninput="ans['${q.textKey}']=this.value">
+      </div>
+      <button class="next-btn${showFu ? ' show' : ''}" id="next-btn"
+        onclick="afterFollowupText()">التالي ←</button>`;
   }
 
   if (q.type === 'single+followup-choice') {
@@ -514,10 +573,10 @@ function renderQuestion(q) {
 
   if (q.type === 'multi') {
     const sel = ans[q.key] || [];
-    body += `<div class="multi-count" id="multi-count">${sel.length}/${q.maxSelect} مختار</div>`;
+    body += `<div class="multi-count" id="multi-count">مختار ${sel.length}/${q.maxSelect}</div>`;
     body += renderChoices(q.choices, q.key, 'multi', sel);
     body += `<button class="next-btn${sel.length > 0 ? ' show' : ''}" id="next-btn"
-      onclick="submitMulti()">التالي ←</button>`;
+      onclick="submitMulti()">إنهاء ←</button>`;
   }
 
   $screen.innerHTML = `
@@ -536,11 +595,11 @@ function renderChoices(choices, key, mode, current, inline = false) {
 
   const items = choices.map(c => {
     let selectedCls = '';
-    if (isMulti)     selectedCls = (sel || []).includes(c) ? ' sel-teal' : '';
-    else if (isFu)   selectedCls = current === c ? ' sel-teal' : '';
-    else             selectedCls = current === c ? ' selected' : '';
+    if (isMulti)   selectedCls = (sel || []).includes(c) ? ' sel-teal' : '';
+    else if (isFu) selectedCls = current === c ? ' sel-teal' : '';
+    else           selectedCls = current === c ? ' selected' : '';
     const clickFn = isMulti
-      ? `toggleMulti('${escJs(c)}', ${mode === 'multi' ? "'q8'" : "''" })`
+      ? `toggleMulti('${escJs(c)}')`
       : isFu
         ? `pickFuChoice('${escJs(key)}','${escJs(c)}')`
         : `pickChoice('${escJs(key)}','${escJs(c)}')`;
@@ -555,12 +614,11 @@ function renderChoices(choices, key, mode, current, inline = false) {
 // ────────────────────────────────────────────────
 function pickChoice(key, value) {
   ans[key] = value;
-  // re-render choices to update selection highlight
   const q = Q[step - 1];
   const choiceEls = document.getElementById('main-choices');
   if (choiceEls) {
     choiceEls.querySelectorAll('.choice').forEach(el => {
-      el.className = 'choice' + (el.textContent === value ? ' selected' : '');
+      el.className = 'choice' + (el.textContent.trim() === value ? ' selected' : '');
     });
   }
 
@@ -578,11 +636,10 @@ function pickChoice(key, value) {
 function pickFuChoice(fuKey, value) {
   ans[fuKey] = value;
   const q = Q[step - 1];
-  // update fu-choices highlight
   const fuEl = document.getElementById('fu-choices');
   if (fuEl) {
     fuEl.querySelectorAll('.choice').forEach(el => {
-      el.className = 'choice' + (el.textContent === value ? ' sel-teal' : '');
+      el.className = 'choice' + (el.textContent.trim() === value ? ' sel-teal' : '');
     });
   }
   showToast(q.motivation, goNext);
@@ -603,16 +660,14 @@ function toggleMulti(value) {
   } else if (arr.length < q.maxSelect) {
     arr.push(value);
   }
-  // update UI
   const cnt = document.getElementById('multi-count');
   const nb  = document.getElementById('next-btn');
-  if (cnt) cnt.textContent = `${arr.length}/${q.maxSelect} مختار`;
+  if (cnt) cnt.textContent = `مختار ${arr.length}/${q.maxSelect}`;
   if (nb) nb.classList.toggle('show', arr.length > 0);
-  // update card styles
   const mainCh = document.getElementById('main-choices');
   if (mainCh) {
     mainCh.querySelectorAll('.choice').forEach(el => {
-      el.className = 'choice' + (arr.includes(el.textContent) ? ' sel-teal' : '');
+      el.className = 'choice' + (arr.includes(el.textContent.trim()) ? ' sel-teal' : '');
     });
   }
 }
@@ -636,10 +691,10 @@ function escJs(str) { return (str||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")
 
 // ────────────────────────────────────────────────
 // INIT
-// ────────────────────────────────────────────────
 // dev: ?step=N يفتح سؤالًا محددًا مباشرة (للمعاينة فقط)
+// ────────────────────────────────────────────────
 const _devStep = parseInt(new URL(location.href).searchParams.get('step') || '0');
-if (_devStep > 0 && _devStep <= 9) step = _devStep;
+if (_devStep > 0 && _devStep <= 8) step = _devStep;
 render();
 </script>
 </body>
