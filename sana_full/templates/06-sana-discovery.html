@@ -189,6 +189,26 @@
   .outro-btn:active { transform: scale(.97); }
   .loading-dots { color: var(--muted); font-size: 22px; letter-spacing: 4px; }
 
+  /* ── Back button ── */
+  .back-btn {
+    margin-top: 12px; width: 100%;
+    background: transparent;
+    border: 1.5px solid rgba(255,255,255,.12);
+    border-radius: 12px; padding: 11px 24px;
+    font-family: 'IBM Plex Sans Arabic', sans-serif;
+    font-size: 13px; font-weight: 500; color: var(--muted);
+    cursor: pointer; transition: border-color .2s, color .2s;
+    direction: rtl;
+  }
+  .back-btn:hover { border-color: rgba(255,255,255,.3); color: var(--ink); }
+  .back-btn:active { opacity: .7; }
+
+  /* ── Reversed slide animations (for going back) ── */
+  @keyframes sldInBack  { from { opacity: 0; transform: translateX(-32px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes sldOutBack { from { opacity: 1; transform: translateX(0); }    to { opacity: 0; transform: translateX(32px); } }
+  .screen.entering-back { animation: sldInBack  .35s cubic-bezier(.25,.46,.45,.94) forwards; }
+  .screen.exiting-back  { animation: sldOutBack .3s  cubic-bezier(.55,0,1,.45)    forwards; }
+
   /* ── Multi-select badge ── */
   .multi-count {
     font-family: 'IBM Plex Mono', monospace; direction: ltr;
@@ -475,14 +495,14 @@ function showToast(msg, cb) {
   }, 1600);
 }
 
-function transitionTo(renderFn) {
+function transitionTo(renderFn, backward = false) {
   const cur = $screen;
-  cur.classList.add('exiting');
+  cur.classList.add(backward ? 'exiting-back' : 'exiting');
   setTimeout(() => {
     cur.className = 'screen';
     renderFn();
-    cur.classList.add('entering');
-    setTimeout(() => cur.classList.remove('entering'), 350);
+    cur.classList.add(backward ? 'entering-back' : 'entering');
+    setTimeout(() => cur.classList.remove('entering', 'entering-back'), 350);
   }, 290);
 }
 
@@ -676,6 +696,11 @@ function renderQuestion(q) {
       onclick="submitMulti()">إنهاء ←</button>`;
   }
 
+  // زر الرجوع — من السؤال 2 فصاعدًا
+  if (step >= 2) {
+    body += `<button class="back-btn" onclick="goBack()">← رجوع للسؤال السابق</button>`;
+  }
+
   $screen.innerHTML = `
     ${q.icon}
     <div class="q-title">${q.title}</div>
@@ -777,7 +802,12 @@ function submitMulti() {
 
 function goNext() {
   step++;
-  transitionTo(render);
+  transitionTo(render, false);
+}
+
+function goBack() {
+  step--;
+  transitionTo(render, true);
 }
 
 // ────────────────────────────────────────────────
