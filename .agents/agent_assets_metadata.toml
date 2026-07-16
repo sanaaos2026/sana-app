@@ -24,3 +24,9 @@ id = "bYYIGVf57PNrqbn2tB98v"
 uri = "file://sana_full/test-passport-C001.pdf"
 type = "pdf"
 title = "جواز الشركة — أثر مشرق (PDF)"
+
+[[outputs]]
+id = "rIoFZH9oph5CRr7JqiOKU"
+uri = "file://sana_full_PRODUCTION_2026-07-16.zip"
+type = "unspecified"
+title = "sana_full_PRODUCTION_2026-07-16.zip"
