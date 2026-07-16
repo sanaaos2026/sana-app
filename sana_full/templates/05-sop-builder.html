@@ -133,6 +133,76 @@
 
   #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; z-index:999; }
   #toast.show{ opacity:1; }
+
+  /* ── SOP-BUILDER-003: بناء الخطوات الهجين ── */
+  .step-builder-area{ display:flex; flex-direction:column; gap:10px; }
+
+  /* قائمة الخطوات المضافة */
+  .steps-done-list{ display:flex; flex-direction:column; gap:7px; margin-bottom:4px; }
+  .step-done-row{ background:#F0FAF9; border:1px solid #B2E3E3; border-radius:9px; padding:10px 14px; display:flex; align-items:flex-start; gap:10px; }
+  .step-done-num{ font-family:'Space Grotesk'; font-size:11px; font-weight:700; color:#0EA5A5; background:#D0F4F3; width:22px; height:22px; min-width:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .step-done-content{ flex:1; }
+  .step-done-title{ font-size:13px; font-weight:600; color:#0B132B; margin-bottom:4px; }
+  .step-done-items{ list-style:none; padding:0; margin:0; }
+  .step-done-items li{ font-size:12px; color:#6E7580; padding:2px 0; display:flex; align-items:flex-start; gap:5px; }
+  .step-done-items li::before{ content:'✓'; color:#0EA5A5; font-size:10px; flex-shrink:0; margin-top:2px; }
+  .step-done-del{ background:none; border:none; color:#C0C5CE; font-size:16px; cursor:pointer; padding:0 2px; line-height:1; flex-shrink:0; }
+  .step-done-del:hover{ color:#E55C3A; }
+
+  /* حقل الإدخال + الزرّان */
+  .step-input-block{ background:#F5F6FB; border:1.5px dashed #C8CEDD; border-radius:10px; padding:14px; }
+  .step-input-block input{ margin-bottom:10px; }
+  .step-action-btns{ display:flex; gap:8px; flex-wrap:wrap; }
+
+  /* زر "ساعدني يا سنع" — كحلي بحد ذهبي */
+  .btn-sana-assist{
+    display:inline-flex; align-items:center; gap:7px;
+    background:#080E1F; color:#F2B233;
+    border:1.5px solid #F2B233; border-radius:7px;
+    padding:9px 16px; font-size:13px; font-weight:600;
+    font-family:'IBM Plex Sans Arabic'; cursor:pointer;
+    transition:background .15s, color .15s;
+  }
+  .btn-sana-assist:hover{ background:#0F1A35; }
+  .btn-sana-assist:disabled{ opacity:0.55; cursor:not-allowed; }
+  .btn-sana-assist svg{ flex-shrink:0; }
+
+  /* زر "أكتبها بنفسي" */
+  .btn-self-write{
+    display:inline-flex; align-items:center; gap:6px;
+    background:#EBEDF5; color:#0B132B;
+    border:1.5px solid #DEE1EC; border-radius:7px;
+    padding:9px 16px; font-size:13px; font-weight:600;
+    font-family:'IBM Plex Sans Arabic'; cursor:pointer;
+    transition:background .15s;
+  }
+  .btn-self-write:hover{ background:#DDE0EE; }
+
+  /* منطقة اقتراحات الذكاء الاصطناعي */
+  .ai-suggestions-box{ background:#fff; border:1px solid #DEE1EC; border-radius:9px; padding:14px; margin-top:10px; display:none; }
+  .ai-suggestions-box.open{ display:block; }
+  .ai-suggestions-label{ font-family:'Space Grotesk'; font-size:10.5px; letter-spacing:1px; text-transform:uppercase; color:#0EA5A5; font-weight:700; margin-bottom:10px; }
+  .ai-suggestion-item{ display:flex; align-items:flex-start; gap:10px; padding:7px 0; border-bottom:1px solid #F0F1F7; cursor:pointer; }
+  .ai-suggestion-item:last-child{ border-bottom:none; }
+  .ai-suggestion-item input[type="checkbox"]{ width:16px; height:16px; accent-color:#0EA5A5; flex-shrink:0; margin-top:2px; cursor:pointer; }
+  .ai-suggestion-item label{ font-size:13px; color:#333940; cursor:pointer; line-height:1.5; }
+  .ai-add-manual-input{ margin-top:10px; display:flex; gap:8px; }
+  .ai-add-manual-input input{ flex:1; }
+  .ai-add-manual-input button{ white-space:nowrap; background:#EBEDF5; border:1px solid #DEE1EC; border-radius:6px; padding:8px 12px; font-size:12.5px; font-family:'IBM Plex Sans Arabic'; cursor:pointer; color:#0B132B; }
+  .ai-confirm-btn{ margin-top:12px; width:100%; padding:10px; background:#0EA5A5; color:#fff; border:none; border-radius:7px; font-size:13.5px; font-weight:600; font-family:'IBM Plex Sans Arabic'; cursor:pointer; }
+  .ai-confirm-btn:disabled{ opacity:0.5; cursor:not-allowed; }
+  .ai-loading{ display:flex; align-items:center; gap:8px; color:#0EA5A5; font-size:13px; padding:10px 0; }
+  .ai-loading-dot{ width:6px; height:6px; border-radius:50%; background:#0EA5A5; animation:aiPulse 1.2s ease-in-out infinite; }
+  .ai-loading-dot:nth-child(2){ animation-delay:.2s; }
+  .ai-loading-dot:nth-child(3){ animation-delay:.4s; }
+  @keyframes aiPulse{ 0%,80%,100%{opacity:.3} 40%{opacity:1} }
+
+  /* منطقة الكتابة اليدوية */
+  .manual-write-box{ background:#fff; border:1px solid #DEE1EC; border-radius:9px; padding:14px; margin-top:10px; display:none; }
+  .manual-write-box.open{ display:block; }
+  .manual-write-box textarea{ min-height:90px; margin-bottom:8px; }
+  .manual-confirm-btn{ background:#0B132B; color:#fff; border:none; border-radius:7px; padding:9px 18px; font-size:13.5px; font-weight:600; font-family:'IBM Plex Sans Arabic'; cursor:pointer; }
+  .manual-cancel-btn{ background:none; border:none; color:#9AA0AB; font-size:13px; font-family:'IBM Plex Sans Arabic'; cursor:pointer; padding:9px 12px; }
 </style>
 </head>
 <body>
@@ -232,15 +302,74 @@
       </div>
     </div>
 
-    <!-- ٥ الخطوات -->
+    <!-- ٥ الخطوات — SOP-BUILDER-003: هجين (ذكاء اصطناعي عند الطلب + كتابة حرة) -->
     <div class="field" data-q="5">
       <div class="field-label">
         <span class="step-num">٥</span>
         <span>الخطوات بالترتيب</span>
         <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
       </div>
-      <div class="why-hint">الخطوات هي قلب الإجراء — كل خطوة سطر مستقل. كتابة خطوتين على الأقل تضمن أن الإجراء قابل للتكرار والتدريب.</div>
-      <textarea class="lg" id="q5" placeholder="١. استلام الطلب من النظام&#10;٢. التحقق من المخزون&#10;٣. تجهيز الشحنة&#10;٤. إصدار فاتورة&#10;٥. التسليم لشركة الشحن وإرسال الرقم للعميل" oninput="updateProgress(); renderToolsPreview()"></textarea>
+      <div class="why-hint">الخطوات هي قلب الإجراء. أضف كل خطوة على حدة — يمكنك طلب مساعدة سنع لتفصيل الخطوة، أو كتابتها بنفسك مباشرة.</div>
+
+      <div class="step-builder-area">
+        <!-- قائمة الخطوات المكتملة -->
+        <div class="steps-done-list" id="stepsDoneList"></div>
+
+        <!-- بلوك إضافة خطوة جديدة -->
+        <div class="step-input-block" id="stepInputBlock">
+          <input type="text" id="stepDescInput"
+            placeholder="ماذا يحدث في هذي الخطوة؟ مثال: استلام طلب من العميل"
+            oninput="onStepDescInput()">
+          <div class="step-action-btns">
+            <!-- زر "ساعدني يا سنع" — كحلي + حد ذهبي + شعار SVG -->
+            <button type="button" class="btn-sana-assist" id="btnSanaAssist"
+                    onclick="askSanaStep()" disabled>
+              <!-- شعار سنع: إطار + مربع ذهبي -->
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="1.5" y="1.5" width="13" height="13" rx="2.5" stroke="#F2B233" stroke-width="1.5"/>
+                <rect x="5" y="5" width="6" height="6" rx="1.5" fill="#F2B233"/>
+              </svg>
+              ساعدني يا سنع
+            </button>
+            <button type="button" class="btn-self-write" id="btnSelfWrite"
+                    onclick="showManualMode()" disabled>
+              أكتبها بنفسي
+            </button>
+          </div>
+
+          <!-- منطقة اقتراحات AI -->
+          <div class="ai-suggestions-box" id="aiSuggestionsBox">
+            <div class="ai-suggestions-label">اقتراحات سنع — اختر ما يناسبك</div>
+            <div id="aiSuggestionsList"></div>
+            <!-- إضافة عنصر يدوي فوق اقتراحات AI -->
+            <div class="ai-add-manual-input">
+              <input type="text" id="aiManualItemInput" placeholder="أضف عنصرًا آخر يدويًا...">
+              <button type="button" onclick="addManualItemToAIList()">+ أضف</button>
+            </div>
+            <button type="button" class="ai-confirm-btn" id="aiConfirmBtn"
+                    onclick="confirmStepFromAI()">
+              ✓ أضف هذي الخطوة للإجراء
+            </button>
+          </div>
+
+          <!-- منطقة الكتابة اليدوية -->
+          <div class="manual-write-box" id="manualWriteBox">
+            <textarea id="manualStepText"
+              placeholder="اكتب عناصر الخطوة — سطر لكل عنصر&#10;مثال:&#10;تأكد من توافر المخزون&#10;طباعة بيان الشحن&#10;تسليم البضاعة لسائق التوصيل"></textarea>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button type="button" class="manual-confirm-btn" onclick="confirmStepManual()">
+                ✓ أضف هذي الخطوة
+              </button>
+              <button type="button" class="manual-cancel-btn" onclick="cancelManualMode()">
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- textarea مخفي — يُملأ تلقائيًا ويُقرأ من باقي الكود -->
+        <textarea id="q5" style="display:none;" oninput="updateProgress()"></textarea>
+      </div>
     </div>
 
     <!-- ٦ الأدوات — بطاقات -->
@@ -720,6 +849,10 @@ function resetForm(){
   document.getElementById('outputCard').classList.remove('visible');
   document.getElementById('saveBtn').classList.remove('visible');
   generatedText = '';
+  // إعادة ضبط منشئ الخطوات
+  sopSteps = [];
+  renderStepsList();
+  resetStepInput();
   updateProgress();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -743,6 +876,208 @@ function showAssetToast(){
   const t = document.getElementById('assetToast');
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ══════════════════════════════════════════════════════
+// SOP-BUILDER-003 — بناء الخطوات الهجين
+// ══════════════════════════════════════════════════════
+
+/* مصفوفة الخطوات المضافة: [{title, items:[string]}] */
+let sopSteps = [];
+
+/* الوضع الحالي لمنطقة الإدخال */
+let stepMode = null; // null | 'ai' | 'manual'
+
+/* تفعيل الأزرار فور كتابة أي حرف في حقل الخطوة */
+function onStepDescInput(){
+  const hasText = document.getElementById('stepDescInput').value.trim().length > 0;
+  document.getElementById('btnSanaAssist').disabled = !hasText;
+  document.getElementById('btnSelfWrite').disabled  = !hasText;
+}
+
+/* ── مسار 1: "ساعدني يا سنع" ── */
+async function askSanaStep(){
+  const desc = document.getElementById('stepDescInput').value.trim();
+  if(!desc) return;
+
+  // إغلاق منطقة اليدوي لو كانت مفتوحة
+  closeManualBox();
+
+  const box  = document.getElementById('aiSuggestionsBox');
+  const list = document.getElementById('aiSuggestionsList');
+  stepMode = 'ai';
+
+  // حالة التحميل
+  box.classList.add('open');
+  list.innerHTML = `
+    <div class="ai-loading">
+      <div class="ai-loading-dot"></div>
+      <div class="ai-loading-dot"></div>
+      <div class="ai-loading-dot"></div>
+      <span style="margin-right:4px;">سنع يفكّر…</span>
+    </div>`;
+  document.getElementById('aiConfirmBtn').disabled = true;
+  document.getElementById('btnSanaAssist').disabled = true;
+  document.getElementById('btnSelfWrite').disabled  = true;
+
+  try{
+    const sector = (companyAssets.length && companyAssets[0].sector) || 'تجارة عامة';
+    const res  = await fetch('/api/sop/suggest-step' + CQS, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step_description: desc, company_sector: sector })
+    });
+    const json = await res.json();
+
+    if(!json.success){
+      list.innerHTML = `<p style="color:#E55C3A;font-size:13px;">⚠️ ${json.error || 'تعذّر الحصول على اقتراحات — حاول مجددًا.'}</p>`;
+      document.getElementById('btnSanaAssist').disabled = false;
+      document.getElementById('btnSelfWrite').disabled  = false;
+      return;
+    }
+
+    renderAISuggestions(json.items || []);
+  } catch(e){
+    list.innerHTML = `<p style="color:#E55C3A;font-size:13px;">⚠️ تعذّر الاتصال بالخادم — تأكد من الاتصال وحاول مجددًا.</p>`;
+    document.getElementById('btnSanaAssist').disabled = false;
+    document.getElementById('btnSelfWrite').disabled  = false;
+  }
+}
+
+function renderAISuggestions(items){
+  const list = document.getElementById('aiSuggestionsList');
+  if(!items.length){
+    list.innerHTML = `<p style="font-size:13px;color:#6E7580;">لم يُقترح أي عناصر — أضف يدويًا باستخدام الحقل أدناه.</p>`;
+  } else {
+    list.innerHTML = items.map((item, i) => `
+      <div class="ai-suggestion-item">
+        <input type="checkbox" id="aiItem${i}" checked>
+        <label for="aiItem${i}">${item}</label>
+      </div>`).join('');
+  }
+  document.getElementById('aiConfirmBtn').disabled = false;
+  document.getElementById('btnSanaAssist').disabled = false;
+  document.getElementById('btnSelfWrite').disabled  = false;
+}
+
+function addManualItemToAIList(){
+  const input = document.getElementById('aiManualItemInput');
+  const text  = input.value.trim();
+  if(!text) return;
+  const list  = document.getElementById('aiSuggestionsList');
+  const i     = list.querySelectorAll('.ai-suggestion-item').length;
+  const div   = document.createElement('div');
+  div.className = 'ai-suggestion-item';
+  div.innerHTML = `<input type="checkbox" id="aiItem${i}" checked>
+                   <label for="aiItem${i}">${text}</label>`;
+  list.appendChild(div);
+  input.value = '';
+  document.getElementById('aiConfirmBtn').disabled = false;
+}
+
+function confirmStepFromAI(){
+  const desc    = document.getElementById('stepDescInput').value.trim();
+  const checked = [...document.querySelectorAll('#aiSuggestionsList .ai-suggestion-item input[type="checkbox"]:checked')]
+                    .map(cb => cb.nextElementSibling.textContent.trim())
+                    .filter(Boolean);
+  if(!desc) return;
+  addStepToList(desc, checked);
+  resetStepInput();
+}
+
+/* ── مسار 2: "أكتبها بنفسي" ── */
+function showManualMode(){
+  const desc = document.getElementById('stepDescInput').value.trim();
+  if(!desc) return;
+  // إغلاق AI box لو كان مفتوحًا
+  closeAIBox();
+  document.getElementById('manualWriteBox').classList.add('open');
+  document.getElementById('manualStepText').focus();
+  stepMode = 'manual';
+}
+
+function confirmStepManual(){
+  const desc  = document.getElementById('stepDescInput').value.trim();
+  const raw   = document.getElementById('manualStepText').value.trim();
+  const items = raw.split('\n').map(l => l.replace(/^[-•*\d١٢٣٤٥٦٧٨٩٠\.\)\s]+/,'').trim()).filter(Boolean);
+  if(!desc) return;
+  addStepToList(desc, items);
+  resetStepInput();
+}
+
+function cancelManualMode(){
+  closeManualBox();
+  stepMode = null;
+}
+
+/* ── إضافة خطوة للقائمة ── */
+function addStepToList(title, items){
+  sopSteps.push({ title, items });
+  renderStepsList();
+  syncQ5();
+  updateProgress();
+}
+
+function deleteStep(index){
+  sopSteps.splice(index, 1);
+  renderStepsList();
+  syncQ5();
+  updateProgress();
+}
+
+/* الأرقام العربية */
+const AR_NUMS = ['١','٢','٣','٤','٥','٦','٧','٨','٩','١٠','١١','١٢','١٣','١٤','١٥'];
+
+function renderStepsList(){
+  const container = document.getElementById('stepsDoneList');
+  if(!sopSteps.length){ container.innerHTML = ''; return; }
+  container.innerHTML = sopSteps.map((s, i) => `
+    <div class="step-done-row">
+      <span class="step-done-num">${AR_NUMS[i] || i+1}</span>
+      <div class="step-done-content">
+        <div class="step-done-title">${s.title}</div>
+        ${s.items.length ? `<ul class="step-done-items">
+          ${s.items.map(it => `<li>${it}</li>`).join('')}
+        </ul>` : ''}
+      </div>
+      <button type="button" class="step-done-del" onclick="deleteStep(${i})" title="حذف">×</button>
+    </div>`).join('');
+}
+
+/* مزامنة q5 المخفي — يُقرأ من buildSOP() وrunQualityCheck() */
+function syncQ5(){
+  const lines = [];
+  sopSteps.forEach((s, i) => {
+    lines.push(`${AR_NUMS[i] || i+1}. ${s.title}`);
+    s.items.forEach(it => lines.push(`   - ${it}`));
+  });
+  const ta = document.getElementById('q5');
+  ta.value = lines.join('\n');
+  // trigger listeners يدويًا (حقل مخفي لا يطلق oninput تلقائيًا)
+  ta.dispatchEvent(new Event('input'));
+}
+
+/* تنظيف حقل الإدخال بعد إضافة خطوة */
+function resetStepInput(){
+  document.getElementById('stepDescInput').value = '';
+  document.getElementById('aiManualItemInput').value = '';
+  closeAIBox();
+  closeManualBox();
+  document.getElementById('btnSanaAssist').disabled = true;
+  document.getElementById('btnSelfWrite').disabled  = true;
+  stepMode = null;
+}
+
+function closeAIBox(){
+  const box = document.getElementById('aiSuggestionsBox');
+  box.classList.remove('open');
+  document.getElementById('aiSuggestionsList').innerHTML = '';
+  document.getElementById('aiManualItemInput').value = '';
+}
+
+function closeManualBox(){
+  document.getElementById('manualWriteBox').classList.remove('open');
+  document.getElementById('manualStepText').value = '';
 }
 
 // ── ربط اختيار الـ risk بـ CSS ──

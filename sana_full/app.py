@@ -1712,6 +1712,44 @@ def analyze_case(case_id):
     return jsonify({"success": True, "data": parsed})
 
 
+@app.route("/api/sop/suggest-step", methods=["POST"])
+def sop_suggest_step():
+    """SOP-BUILDER-003 — يُستدعى فقط عند ضغط 'ساعدني يا سنع' صراحةً، لا تلقائيًا."""
+    import re as _re
+    body = request.get_json(force=True)
+    user_input     = (body.get("step_description") or "").strip()
+    company_sector = (body.get("company_sector")   or "تجارة عامة").strip()
+
+    if not user_input:
+        return jsonify({"success": False, "error": "أدخل وصف الخطوة أولاً"}), 400
+
+    system_prompt = """أنت مساعد يحوّل وصفًا حرًا لخطوة عمل واحدة إلى قائمة تحقق (Checklist)
+قصيرة وعملية. أعد 3 إلى 5 عناصر فرعية فقط، كل عنصر جملة قصيرة تبدأ بفعل إجرائي.
+لا تشرح، لا تُقدّم، أعد فقط قائمة مرقّمة بالعربية."""
+
+    user_prompt = (
+        f"سياق الشركة: {company_sector}\n"
+        f"الخطوة الموصوفة من المستخدم: \"{user_input}\"\n"
+        f"اقترح عناصر Checklist لهذي الخطوة تحديدًا."
+    )
+
+    result = ask_sana_ai(system_prompt, user_prompt)
+    if "error" in result:
+        return jsonify({"success": False, "error": result["error"]}), 502
+
+    raw = result.get("raw_text", "")
+    items = []
+    for line in raw.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        clean = _re.sub(r'^[\d١٢٣٤٥٦٧٨٩٠\.\-\)\s]+', '', line).strip()
+        if clean:
+            items.append(clean)
+
+    return jsonify({"success": True, "items": items, "raw": raw})
+
+
 @app.route("/api/system/health")
 def system_health():
     """فحص بدون أي نداء فعلي لـ Claude (لا تكلفة، لا إنترنت لازم لهذا الفحص نفسه) —
