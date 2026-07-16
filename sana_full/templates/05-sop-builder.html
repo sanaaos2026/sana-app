@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#F5F6FB">
-<title>سنع — بناء SOP</title>
+<title>سنع — Sana SOP Builder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -18,59 +18,118 @@
   .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
   .concept-nav a.active{ background:rgba(242,178,51,0.15); color:#F2B233; font-weight:600; }
 
+  /* ── شريط التقدم ── */
+  .progress-bar-wrap{ background:#fff; border-bottom:1px solid #DEE1EC; padding:10px 20px; position:sticky; top:0; z-index:90; }
+  .progress-meta{ display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#6E7580; margin-bottom:6px; }
+  .progress-meta strong{ color:#0B132B; }
+  .progress-track{ height:4px; background:#EBEDF5; border-radius:4px; overflow:hidden; }
+  .progress-fill{ height:100%; background:linear-gradient(90deg,#0EA5A5,#F2B233); border-radius:4px; transition:width .4s ease; }
+
   header{ background:#080E1F; padding:14px 28px; color:#fff; display:flex; align-items:center; gap:14px; }
   .back{ font-size:12.5px; color:rgba(255,255,255,0.6); }
   .page-title{ font-weight:600; font-size:15px; }
+  .page-badge{ margin-right:auto; background:rgba(14,165,165,0.18); color:#0EA5A5; font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:12px; letter-spacing:1px; font-family:'Space Grotesk'; }
 
-  main{ max-width:700px; margin:0 auto; padding:34px 20px 60px; }
+  main{ max-width:700px; margin:0 auto; padding:34px 20px 80px; }
   .eyebrow{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#0EA5A5; font-weight:600; margin-bottom:12px; display:block; }
   h1{ font-size:clamp(20px,3vw,26px); font-weight:600; color:#0B132B; margin-bottom:8px; }
   .sub{ color:#6E7580; font-size:13.5px; margin-bottom:28px; }
 
   .form-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:24px; margin-bottom:16px; }
-  .field{ margin-bottom:20px; }
+
+  .field{ margin-bottom:22px; }
   .field:last-child{ margin-bottom:0; }
-  label{ display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; color:#0B132B; margin-bottom:8px; }
-  .step-num{ display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; background:#EBEDF5; color:#6E7580; font-size:11px; font-weight:600; font-family:'Space Grotesk'; flex-shrink:0; }
-  input[type="text"], textarea{
+  .field-label{ display:flex; align-items:flex-start; gap:8px; font-size:13px; font-weight:600; color:#0B132B; margin-bottom:4px; line-height:1.4; }
+  .step-num{ display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; min-width:22px; border-radius:50%; background:#EBEDF5; color:#6E7580; font-size:11px; font-weight:700; font-family:'Space Grotesk'; flex-shrink:0; margin-top:1px; }
+
+  /* ── زر "ليش نسألك هذا؟" ── */
+  .why-btn{ font-size:11px; color:#9AA0AB; cursor:pointer; background:none; border:none; font-family:'IBM Plex Sans Arabic'; padding:0; margin-right:6px; white-space:nowrap; }
+  .why-btn:hover{ color:#0EA5A5; }
+  .why-hint{ font-size:12px; color:#6E7580; background:#F5F6FB; border-radius:7px; padding:9px 12px; margin-bottom:9px; line-height:1.7; display:none; border-right:3px solid #0EA5A5; }
+  .why-hint.open{ display:block; }
+
+  input[type="text"], textarea, select{
     width:100%; padding:11px 14px; border:1px solid #DEE1EC; border-radius:8px;
     font-family:'IBM Plex Sans Arabic'; font-size:13.5px; color:#333940; background:#F5F6FB;
   }
-  input[type="text"]:focus, textarea:focus{ outline:none; border-color:#0EA5A5; background:#fff; }
+  input[type="text"]:focus, textarea:focus, select:focus{ outline:none; border-color:#0EA5A5; background:#fff; }
   textarea{ resize:vertical; }
   textarea.sm{ min-height:72px; }
   textarea.lg{ min-height:140px; }
 
+  .two-col{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media(max-width:560px){ .two-col{ grid-template-columns:1fr; } }
+
+  /* ── اختيار الأصول ── */
+  .asset-checks{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  @media(max-width:480px){ .asset-checks{ grid-template-columns:1fr; } }
+  .asset-check-item{ display:flex; align-items:center; gap:9px; background:#F5F6FB; border:1.5px solid #DEE1EC; border-radius:9px; padding:10px 14px; cursor:pointer; transition:border-color .15s, background .15s; }
+  .asset-check-item input[type="checkbox"]{ width:16px; height:16px; accent-color:#0EA5A5; flex-shrink:0; cursor:pointer; }
+  .asset-check-item.checked{ background:#EEF9F9; border-color:#0EA5A5; }
+  .asset-check-item .asset-label{ font-size:12.5px; font-weight:600; color:#0B132B; }
+  .asset-check-item .asset-type{ font-size:10.5px; color:#9AA0AB; margin-top:1px; }
+
+  /* ── قائمة Risk ── */
+  .risk-options{ display:flex; flex-direction:column; gap:7px; }
+  .risk-opt{ display:flex; align-items:center; gap:9px; background:#F5F6FB; border:1.5px solid #DEE1EC; border-radius:8px; padding:10px 14px; cursor:pointer; transition:border-color .15s, background .15s; }
+  .risk-opt input[type="radio"]{ width:15px; height:15px; accent-color:#E55C3A; flex-shrink:0; cursor:pointer; }
+  .risk-opt.selected{ background:#FEF4EF; border-color:#E55C3A; }
+  .risk-opt span{ font-size:13px; color:#333940; }
+
+  /* ── بطاقات العرض (أدوات/معيار/أخطاء) ── */
+  .cards-preview{ display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; min-height:0; }
+  .chip{ background:#EBEDF5; border-radius:20px; padding:5px 12px; font-size:12px; color:#333940; }
+  .checklist-item{ display:flex; align-items:flex-start; gap:7px; font-size:13px; color:#333940; padding:5px 0; border-bottom:1px solid #F0F1F7; }
+  .checklist-item:last-child{ border-bottom:none; }
+  .checklist-item .chk{ flex-shrink:0; color:#0EA5A5; }
+  .error-card{ background:#FFF5F5; border:1px solid #FCC; border-radius:8px; padding:10px 14px; font-size:12.5px; margin-bottom:6px; }
+  .error-card .err-row{ display:flex; align-items:flex-start; gap:6px; margin-bottom:3px; }
+  .error-card .err-row:last-child{ margin-bottom:0; }
+  .error-card .err-label{ font-size:10.5px; font-weight:700; color:#9AA0AB; width:52px; flex-shrink:0; font-family:'Space Grotesk'; }
+
+  /* ── فحص الجودة (تحليل بعد المعاينة) ── */
+  .quality-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:20px 22px; margin-bottom:16px; display:none; }
+  .quality-card.visible{ display:block; }
+  .quality-card .qc-label{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#6E7580; margin-bottom:12px; }
+  .qc-item{ display:flex; align-items:flex-start; gap:10px; padding:9px 0; border-bottom:1px solid #EBEDF5; font-size:13px; }
+  .qc-item:last-child{ border-bottom:none; }
+  .qc-item .qc-icon{ font-size:15px; flex-shrink:0; width:20px; text-align:center; }
+  .qc-item .qc-text .qc-title{ font-weight:600; color:#0B132B; margin-bottom:2px; }
+  .qc-item .qc-text .qc-detail{ color:#6E7580; font-size:12px; line-height:1.5; }
+
+  /* ── معاينة الوثيقة ── */
+  .output-card{ background:#0B132B; color:#fff; border-radius:12px; padding:24px; margin-bottom:16px; display:none; }
+  .output-card.visible{ display:block; }
+  .output-card .out-label{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:rgba(255,255,255,0.45); margin-bottom:14px; }
+  .output-card pre{ font-family:'IBM Plex Sans Arabic',sans-serif; font-size:13px; white-space:pre-wrap; word-break:break-word; line-height:1.9; color:#E8EAF0; }
+
+  /* ── أزرار ── */
   .btn{ padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; border:none; font-family:'IBM Plex Sans Arabic'; }
   .btn-primary{ background:#0B132B; color:#fff; }
   .btn-primary:disabled{ opacity:0.5; cursor:not-allowed; }
   .btn-secondary{ background:#EBEDF5; color:#0B132B; }
   .btn-row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
-
-  .output-card{ background:#0B132B; color:#fff; border-radius:12px; padding:24px; margin-bottom:16px; display:none; }
-  .output-card.visible{ display:block; }
-  .output-card .out-label{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:rgba(255,255,255,0.45); margin-bottom:14px; }
-  .output-card pre{ font-family:'IBM Plex Sans Arabic',sans-serif; font-size:13px; white-space:pre-wrap; word-break:break-word; line-height:1.9; color:#E8EAF0; }
+  .btn-save{ background:#0EA5A5; color:#fff; width:100%; display:none; margin-top:6px; }
+  .btn-save.visible{ display:block; }
+  .btn-save:disabled{ opacity:0.6; cursor:not-allowed; }
 
   .status-bar{ display:none; align-items:center; gap:8px; background:#E1F5F5; border:1px solid #A8DEDD; border-radius:8px; padding:10px 14px; font-size:12.5px; color:#0B132B; margin-top:12px; }
   .status-bar.visible{ display:flex; }
   .status-bar.err{ background:#FDECEA; border-color:#F5BFBB; color:#8B0000; }
   .status-bar .icon{ font-size:15px; flex-shrink:0; }
 
-  .quality-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:20px 22px; margin-bottom:16px; display:none; }
-  .quality-card.visible{ display:block; }
-  .quality-card .qc-label{ font-family:'Space Grotesk'; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#6E7580; margin-bottom:12px; }
-  .qc-item{ display:flex; align-items:flex-start; gap:10px; padding:8px 0; border-bottom:1px solid #EBEDF5; font-size:13px; }
-  .qc-item:last-child{ border-bottom:none; }
-  .qc-item .qc-icon{ font-size:15px; flex-shrink:0; width:18px; text-align:center; }
-  .qc-item.pass .qc-icon{ color:#0EA5A5; }
-  .qc-item.fail .qc-icon{ color:#B23A2E; }
-  .qc-item .qc-text .qc-title{ font-weight:600; color:#0B132B; margin-bottom:2px; }
-  .qc-item .qc-text .qc-detail{ color:#6E7580; font-size:12px; }
+  /* ── شاشة الختام ── */
+  .outro-card{ background:#0B132B; color:#fff; border-radius:14px; padding:36px 28px; margin-bottom:16px; text-align:center; display:none; }
+  .outro-card.visible{ display:block; }
+  .outro-card .outro-icon{ font-size:44px; margin-bottom:14px; }
+  .outro-card .outro-title{ font-size:20px; font-weight:700; margin-bottom:10px; font-family:'Space Grotesk'; }
+  .outro-card .outro-sub{ color:rgba(255,255,255,0.65); font-size:13.5px; line-height:1.7; max-width:400px; margin:0 auto 22px; }
+  .outro-assets{ display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin-bottom:18px; }
+  .outro-asset-chip{ background:rgba(14,165,165,0.22); color:#7EEAEA; border-radius:20px; padding:5px 13px; font-size:12px; font-weight:600; }
 
-  .btn-save{ background:#0EA5A5; color:#fff; width:100%; display:none; margin-top:6px; }
-  .btn-save.visible{ display:block; }
-  .btn-save:disabled{ opacity:0.6; cursor:not-allowed; }
+  /* ── رسالة انسيابية "تم توثيق أصل" ── */
+  .asset-toast{ position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:#0EA5A5; color:#fff; padding:12px 22px; border-radius:8px; font-size:13px; font-weight:600; opacity:0; transition:opacity .35s; pointer-events:none; z-index:999; white-space:nowrap; }
+  .asset-toast.show{ opacity:1; }
 
   #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; z-index:999; }
   #toast.show{ opacity:1; }
@@ -83,7 +142,7 @@
   <a href="/home">② CEO Home</a>
   <a href="/case/new" id="caseNavLink">③ القضية</a>
   <a href="/passport">④ جواز الشركة</a>
-  <a href="/sop-builder" class="active">📄 SOP</a>
+  <a href="/sop-builder" class="active">📄 SOP Builder</a>
 </div>
 <script>
 (function(){
@@ -102,172 +161,420 @@
 })();
 </script>
 
+<!-- شريط التقدم -->
+<div class="progress-bar-wrap">
+  <div class="progress-meta">
+    <span>Sana SOP Builder</span>
+    <strong id="progressLabel">القسم 0 من 9</strong>
+  </div>
+  <div class="progress-track">
+    <div class="progress-fill" id="progressFill" style="width:0%"></div>
+  </div>
+</div>
+
 <header>
   <a href="/home" class="back">← الرئيسية</a>
-  <div class="page-title">بناء SOP</div>
+  <div class="page-title">بناء إجراء موثّق</div>
+  <div class="page-badge">SOP BUILDER</div>
 </header>
 
 <main>
   <span class="eyebrow">توثيق العمليات</span>
-  <h1>حوّل ما يعرفه الفريق إلى وثيقة يمكن تكرارها</h1>
-  <p class="sub">أجب على التسعة أسئلة وسيُولّد سنع وثيقة SOP جاهزة تُحفظ تلقائيًا كدليل داعم في ملف الشركة.</p>
+  <h1>حوّل ما يعرفه الفريق إلى إجراء يمكن تكراره</h1>
+  <p class="sub">أجب على التسعة أسئلة وسيُحفظ هذا الإجراء كدليل داعم مرتبط بأصول شركتك.</p>
 
-  <div class="form-card">
-    <div class="field">
-      <label><span class="step-num">١</span> اسم العملية</label>
-      <input type="text" id="q1" placeholder="مثال: عملية تسليم طلبات العملاء">
-    </div>
-    <div class="field">
-      <label><span class="step-num">٢</span> لماذا هذه العملية مهمة؟</label>
-      <textarea class="sm" id="q2" placeholder="مثال: تضمن وصول المنتج للعميل في الوقت المحدد وتقليل الشكاوى"></textarea>
-    </div>
-    <div class="field">
-      <label><span class="step-num">٣</span> من المسؤول عن تنفيذها؟</label>
-      <input type="text" id="q3" placeholder="مثال: مدير العمليات / فريق اللوجستيات">
-    </div>
-    <div class="field">
-      <label><span class="step-num">٤</span> متى ودورية التنفيذ؟</label>
-      <input type="text" id="q4" placeholder="مثال: عند كل طلب جديد — خلال 24 ساعة من الاستلام">
-    </div>
-    <div class="field">
-      <label><span class="step-num">٥</span> الخطوات بالترتيب</label>
-      <textarea class="lg" id="q5" placeholder="١. استلام الطلب من النظام&#10;٢. التحقق من المخزون&#10;٣. تجهيز الشحنة&#10;٤. إصدار فاتورة&#10;٥. تسليم لشركة الشحن وإرسال الرقم للعميل"></textarea>
-    </div>
-    <div class="field">
-      <label><span class="step-num">٦</span> الأدوات والأنظمة المطلوبة</label>
-      <textarea class="sm" id="q6" placeholder="مثال: نظام المخزون، فاتورة إلكترونية، واتساب للتواصل مع العميل"></textarea>
-    </div>
-    <div class="field">
-      <label><span class="step-num">٧</span> معيار قبول التنفيذ الصحيح</label>
-      <textarea class="sm" id="q7" placeholder="مثال: يُعتبر التنفيذ ناجحًا إذا وصلت الشحنة خلال 48 ساعة ووصل رقم التتبع للعميل قبل الشحن"></textarea>
-    </div>
-    <div class="field">
-      <label><span class="step-num">٨</span> الأخطاء الشائعة وكيف تتجنبها</label>
-      <textarea class="sm" id="q8" placeholder="مثال: نسيان إرسال رقم التتبع — الحل: خطوة تلقائية في النظام قبل الإغلاق"></textarea>
-    </div>
-    <div class="field">
-      <label><span class="step-num">٩</span> جهة الإبلاغ عند وجود مشكلة</label>
-      <input type="text" id="q9" placeholder="مثال: مدير العمليات مباشرة — واتساب أو إيميل خلال ساعة">
+  <div class="form-card" id="formCard">
+
+    <!-- ١ الهدف -->
+    <div class="field" data-q="1">
+      <div class="field-label">
+        <span class="step-num">١</span>
+        <span>🎯 ما النتيجة التي يجب أن يحققها هذا الإجراء؟</span>
+        <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
+      </div>
+      <div class="why-hint">الاسم التقليدي للعملية يصف "ماذا نفعل"، لكن الهدف يصف "لماذا نفعله" — هذا ما يجعل الإجراء مفهومًا لأي موظف جديد.</div>
+      <input type="text" id="q1" placeholder="مثال: ضمان وصول الطلب للعميل خلال 48 ساعة بلا أخطاء" oninput="updateProgress()">
     </div>
 
-    <button class="btn btn-primary" id="previewBtn" onclick="previewSOP()">👁 معاينة الوثيقة</button>
-  </div>
+    <!-- ٢ الأهمية -->
+    <div class="field" data-q="2">
+      <div class="field-label">
+        <span class="step-num">٢</span>
+        <span>لماذا هذا الإجراء مهم للشركة؟</span>
+        <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
+      </div>
+      <div class="why-hint">هذا السؤال يربط الإجراء بالقيمة الفعلية — يجيب على "هل يستحق التوقف لو لم يُنفَّذ؟" ويساعد الفريق على الأولوية.</div>
+      <textarea class="sm" id="q2" placeholder="مثال: تقليل الشكاوى وبناء ثقة العملاء بالالتزام بالمواعيد" oninput="updateProgress()"></textarea>
+    </div>
 
+    <!-- ٣ المسؤول (دور) -->
+    <div class="field" data-q="3">
+      <div class="field-label">
+        <span class="step-num">٣</span>
+        <span>👤 ما الدور المسؤول عن هذا الإجراء؟ (ومن يكون بديله؟)</span>
+        <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
+      </div>
+      <div class="why-hint">الدور أهم من الاسم — لو كتبت "أحمد" ولم يكن موجودًا غدًا، يتوقف الإجراء. الدور يضمن الاستمرارية. ذكر البديل يحمي الشركة من الاعتماد على شخص واحد.</div>
+      <input type="text" id="q3" placeholder="مثال: موظف خدمة عملاء — بديله مشرف المبيعات عند غيابه" oninput="updateProgress()">
+    </div>
+
+    <!-- ٤ حدث البداية + علامة الانتهاء -->
+    <div class="field" data-q="4">
+      <div class="field-label">
+        <span class="step-num">٤</span>
+        <span>⏱️ ما الحدث الذي يبدأ هذا الإجراء؟ وما علامة انتهائه بنجاح؟</span>
+        <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
+      </div>
+      <div class="why-hint">المدة الزمنية وحدها لا تكفي — الإجراء يبدأ بحدث محدد (ورود طلب، إشعار نظام، مكالمة عميل) وينتهي بعلامة مرئية. بدون هاتين النقطتين يصعب متابعة التنفيذ.</div>
+      <div class="two-col">
+        <input type="text" id="q4a" placeholder="🚀 حدث البداية: مثال: وصول إشعار طلب جديد" oninput="updateProgress()">
+        <input type="text" id="q4b" placeholder="✅ علامة الانتهاء: مثال: إرسال رقم التتبع للعميل" oninput="updateProgress()">
+      </div>
+    </div>
+
+    <!-- ٥ الخطوات -->
+    <div class="field" data-q="5">
+      <div class="field-label">
+        <span class="step-num">٥</span>
+        <span>الخطوات بالترتيب</span>
+        <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
+      </div>
+      <div class="why-hint">الخطوات هي قلب الإجراء — كل خطوة سطر مستقل. كتابة خطوتين على الأقل تضمن أن الإجراء قابل للتكرار والتدريب.</div>
+      <textarea class="lg" id="q5" placeholder="١. استلام الطلب من النظام&#10;٢. التحقق من المخزون&#10;٣. تجهيز الشحنة&#10;٤. إصدار فاتورة&#10;٥. التسليم لشركة الشحن وإرسال الرقم للعميل" oninput="updateProgress(); renderToolsPreview()"></textarea>
+    </div>
+
+    <!-- ٦ الأدوات — بطاقات -->
+    <div class="field" data-q="6">
+      <div class="field-label">
+        <span class="step-num">٦</span>
+        <span>الأدوات والأنظمة المطلوبة</span>
+        <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
+      </div>
+      <div class="why-hint">قائمة الأدوات تُسرّع تجهيز الموظف الجديد — بدلًا من اكتشافها بالتجربة، يعرفها مسبقًا. افصل بين الأدوات بفاصلة (،) أو (,).</div>
+      <input type="text" id="q6" placeholder="مثال: نظام المخزون، فاتورة إلكترونية، واتساب للعميل" oninput="updateProgress(); renderToolsPreview()">
+      <div class="cards-preview" id="toolsPreview"></div>
+    </div>
+
+    <!-- ٧ معيار القبول — checklist -->
+    <div class="field" data-q="7">
+      <div class="field-label">
+        <span class="step-num">٧</span>
+        <span>معيار القبول — متى يعتبر التنفيذ ناجحًا؟</span>
+        <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
+      </div>
+      <div class="why-hint">معيار قابل للقياس يمنع النقاش بعد التنفيذ — "اشتغلنا صح" غامض، "وصل رقم التتبع خلال 30 دقيقة" واضح. اكتب كل معيار سطرًا مستقلًا.</div>
+      <textarea class="sm" id="q7" placeholder="مثال:&#10;- وصلت الشحنة خلال 48 ساعة&#10;- وصل رقم التتبع قبل الشحن&#10;- لا شكاوى خلال 24 ساعة" oninput="updateProgress(); renderAcceptancePreview()"></textarea>
+      <div id="acceptancePreview"></div>
+    </div>
+
+    <!-- ٨ الأخطاء الشائعة — بطاقة ثلاثية -->
+    <div class="field" data-q="8">
+      <div class="field-label">
+        <span class="step-num">٨</span>
+        <span>الأخطاء الشائعة — صيغة: الخطأ ← الأثر ← الحل</span>
+        <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
+      </div>
+      <div class="why-hint">كل سطر = خطأ واحد. استخدم الفاصل ← بين الخطأ وأثره وحله. هذا يتحوّل إلى بطاقة منظمة في الوثيقة النهائية.</div>
+      <textarea class="sm" id="q8" placeholder="مثال:&#10;نسيان التتبع ← عميل يتصل ساخط ← خطوة تلقائية في النظام&#10;خطأ في العنوان ← إعادة شحن ← تأكيد العنوان خطوة ١" oninput="updateProgress(); renderErrorsPreview()"></textarea>
+      <div id="errorsPreview"></div>
+    </div>
+
+    <!-- ٩ جهة الإبلاغ -->
+    <div class="field" data-q="9">
+      <div class="field-label">
+        <span class="step-num">٩</span>
+        <span>جهة الإبلاغ عند وجود مشكلة</span>
+        <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
+      </div>
+      <div class="why-hint">بدون جهة تصعيد محددة، يتوقف الفريق أو يُشغل الشخص الخطأ. حدّد الجهة وطريقة التواصل ووقت الاستجابة المتوقع.</div>
+      <input type="text" id="q9" placeholder="مثال: مدير العمليات — واتساب أو إيميل خلال ساعة" oninput="updateProgress()">
+    </div>
+
+    <hr style="border:none; border-top:1px solid #EBEDF5; margin:24px 0;">
+
+    <!-- أي أصل يحمي هذا الإجراء؟ -->
+    <div class="field" data-q="assets">
+      <div class="field-label" style="margin-bottom:10px;">
+        <span>🏢 أي أصل يحمي هذا الإجراء؟</span>
+        <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
+      </div>
+      <div class="why-hint">ربط الإجراء بالأصل يُظهر قيمته في جواز الشركة — كل SOP موثّق يرفع درجة الأصل المرتبط به ويقلل مخاطر الاعتماد على الأشخاص بدل الأنظمة.</div>
+      <div class="asset-checks" id="assetChecks">
+        <div style="color:#9AA0AB; font-size:12.5px; padding:8px;">جارٍ تحميل الأصول…</div>
+      </div>
+    </div>
+
+    <!-- ماذا يحدث لو لم يُنفَّذ؟ -->
+    <div class="field" data-q="risk">
+      <div class="field-label" style="margin-bottom:10px;">
+        <span>⚠️ ما أكبر أثر سلبي إذا غاب هذا الإجراء؟</span>
+        <button class="why-btn" onclick="toggleWhy(this)">🧠 ليش؟</button>
+      </div>
+      <div class="why-hint">هذا لا يُقيَّم آليًا بالدرجات — فقط يُحفظ كملاحظة مرتبطة بالإجراء. يساعد الإدارة لاحقًا على تحديد الإجراءات الحرجة التي تستحق المتابعة أولًا.</div>
+      <div class="risk-options" id="riskOptions">
+        <label class="risk-opt"><input type="radio" name="risk" value="تأخير الطلبات"><span>⏳ تأخير الطلبات</span></label>
+        <label class="risk-opt"><input type="radio" name="risk" value="فقدان عملاء"><span>😤 فقدان عملاء</span></label>
+        <label class="risk-opt"><input type="radio" name="risk" value="زيادة أخطاء"><span>⚡ زيادة أخطاء تشغيلية</span></label>
+        <label class="risk-opt"><input type="radio" name="risk" value="خسائر مالية"><span>💸 خسائر مالية مباشرة</span></label>
+        <label class="risk-opt"><input type="radio" name="risk" value="توقف العمل"><span>🛑 توقف العمل كليًا</span></label>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="previewBtn" onclick="previewSOP()">👁 معاينة الوثيقة</button>
+    </div>
+  </div><!-- /form-card -->
+
+  <!-- فحص الجودة -->
   <div class="quality-card" id="qualityCard">
-    <div class="qc-label">فحص جودة الوثيقة</div>
+    <div class="qc-label">تحليل سنع — فحوصات بسيطة</div>
     <div id="qualityList"></div>
   </div>
 
+  <!-- معاينة الوثيقة -->
   <div class="output-card" id="outputCard">
     <div class="out-label">وثيقة SOP — معاينة</div>
     <pre id="sopOutput"></pre>
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="downloadTxt()">⬇ تحميل كملف نصي (.txt)</button>
     </div>
-    <button class="btn btn-save" id="saveBtn" onclick="saveFinal()">💾 حفظ هذه النسخة في القضية (نهائي)</button>
+    <button class="btn btn-save" id="saveBtn" onclick="saveFinal()">📚 حفظ هذا الإجراء في ملف الشركة</button>
     <div class="status-bar" id="statusBar">
       <span class="icon" id="statusIcon"></span>
       <span id="statusMsg"></span>
     </div>
   </div>
+
+  <!-- شاشة الختام -->
+  <div class="outro-card" id="outroCard">
+    <div class="outro-icon">📚</div>
+    <div class="outro-title">أضفت أصلًا معرفيًا جديدًا إلى شركتك</div>
+    <p class="outro-sub">هذا الإجراء أصبح الآن جزءًا من الذاكرة المؤسسية لشركتك — يحمي الأصول المرتبطة ويقلل الاعتماد على الأشخاص.</p>
+    <div class="outro-assets" id="outroAssets"></div>
+    <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+      <a id="outroPassportLink" href="/passport" class="btn btn-secondary" style="background:rgba(255,255,255,0.15); color:#fff; font-size:13px;">📊 اطلع على جواز الشركة</a>
+      <button class="btn" onclick="resetForm()" style="background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.75); font-size:13px;">➕ أضف إجراءً آخر</button>
+    </div>
+  </div>
+
 </main>
 
+<div class="asset-toast" id="assetToast">✅ تم توثيق أصل جديد</div>
 <div id="toast"></div>
 
 <script>
 const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "{{ default_company_id }}";
-const SAVE_CASE_ID = "CS001";
-const SAVE_ASSET_ID = "A001";
+const ADMIN_KEY  = new URLSearchParams(window.location.search).get('admin_key') || "";
+const CQS = (() => {
+  const p = new URLSearchParams();
+  if(ADMIN_KEY) p.set('admin_key', ADMIN_KEY);
+  if(COMPANY_ID) p.set('company_id', COMPANY_ID);
+  const s = p.toString(); return s ? `?${s}` : '';
+})();
+
+// تحديث روابط الناف بـ CQS
+document.querySelectorAll('.concept-nav a, #outroPassportLink').forEach(a => {
+  const href = a.getAttribute('href');
+  if(!href || href === '/') return;
+  const url = new URL(href, window.location.origin);
+  if(ADMIN_KEY) url.searchParams.set('admin_key', ADMIN_KEY);
+  if(COMPANY_ID) url.searchParams.set('company_id', COMPANY_ID);
+  a.setAttribute('href', url.pathname + url.search);
+});
+
+let companyAssets = [];
 let generatedText = "";
 
-function val(id){ return document.getElementById(id).value.trim(); }
+// ── تحميل الأصول ──
+async function loadAssets(){
+  try{
+    const res  = await fetch(`/api/companies/${COMPANY_ID}/passport${CQS}`);
+    const json = await res.json();
+    if(json.success && json.data.assets){
+      companyAssets = json.data.assets;
+      renderAssetChecks(companyAssets);
+    }
+  } catch(e){ /* تجاهل */ }
+}
 
+function renderAssetChecks(assets){
+  const ICONS = { Brand:'🏷️', Data:'📊', Independence:'🔒', Knowledge:'📖', Operations:'⚙️' };
+  const el = document.getElementById('assetChecks');
+  el.innerHTML = assets.map(a => `
+    <label class="asset-check-item" onclick="this.classList.toggle('checked')">
+      <input type="checkbox" value="${a.asset_id}" data-name="${a.asset_name}">
+      <div>
+        <div class="asset-label">${ICONS[a.asset_type]||'◎'} ${a.asset_name}</div>
+        <div class="asset-type">${a.asset_type}</div>
+      </div>
+    </label>
+  `).join('');
+}
+
+// ── شريط التقدم ──
+const TOTAL_Q = 9;
+function updateProgress(){
+  const fields = [
+    val('q1'), val('q2'), val('q3'), val('q4a')||val('q4b'),
+    val('q5'), val('q6'), val('q7'), val('q8'), val('q9')
+  ];
+  const filled = fields.filter(Boolean).length;
+  const pct = Math.round((filled / TOTAL_Q) * 100);
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressLabel').textContent = `القسم ${filled} من ${TOTAL_Q}`;
+}
+
+// ── تلميحات "ليش نسألك؟" ──
+function toggleWhy(btn){
+  const hint = btn.closest('.field-label').nextElementSibling;
+  hint.classList.toggle('open');
+}
+
+// ── بطاقات الأدوات (frontend فقط) ──
+function renderToolsPreview(){
+  const raw = val('q6');
+  const el  = document.getElementById('toolsPreview');
+  if(!raw){ el.innerHTML = ''; return; }
+  const tools = raw.split(/[،,،]/).map(t => t.trim()).filter(Boolean);
+  el.innerHTML = tools.map(t => `<span class="chip">${t}</span>`).join('');
+}
+
+// ── checklist معيار القبول (frontend فقط) ──
+function renderAcceptancePreview(){
+  const raw = val('q7');
+  const el  = document.getElementById('acceptancePreview');
+  if(!raw){ el.innerHTML = ''; return; }
+  const lines = raw.split('\n').map(l => l.replace(/^[-•*]\s*/,'')).filter(Boolean);
+  el.innerHTML = '<div style="margin-top:8px;">' +
+    lines.map(l => `<div class="checklist-item"><span class="chk">☑</span><span>${l}</span></div>`).join('') +
+    '</div>';
+}
+
+// ── بطاقات الأخطاء الشائعة (frontend فقط) ──
+function renderErrorsPreview(){
+  const raw = val('q8');
+  const el  = document.getElementById('errorsPreview');
+  if(!raw){ el.innerHTML = ''; return; }
+  const lines = raw.split('\n').filter(Boolean);
+  el.innerHTML = '<div style="margin-top:8px;">' + lines.map(line => {
+    const parts = line.split('←').map(p => p.trim());
+    if(parts.length >= 3){
+      return `<div class="error-card">
+        <div class="err-row"><span class="err-label">الخطأ</span><span>${parts[0]}</span></div>
+        <div class="err-row"><span class="err-label">الأثر</span><span>${parts[1]}</span></div>
+        <div class="err-row"><span class="err-label">الحل</span><span>${parts[2]}</span></div>
+      </div>`;
+    }
+    return `<div class="error-card"><div class="err-row"><span>${line}</span></div></div>`;
+  }).join('') + '</div>';
+}
+
+function val(id){ const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+
+// ── بناء نص الوثيقة ──
 function buildSOP(){
-  const name = val('q1') || "عملية غير مسماة";
+  const name   = val('q1') || "إجراء غير مسمى";
+  const trigger = val('q4a') || '—';
+  const done    = val('q4b') || '—';
   const lines = [
     `══════════════════════════════════════════`,
     `وثيقة SOP — ${name}`,
     `══════════════════════════════════════════`,
     ``,
-    `❶  اسم العملية`,
+    `❶  الهدف`,
     `   ${name}`,
     ``,
-    `❷  الأهمية`,
+    `❷  لماذا مهم؟`,
     `   ${val('q2') || '—'}`,
     ``,
-    `❸  المسؤول`,
+    `❸  الدور المسؤول`,
     `   ${val('q3') || '—'}`,
     ``,
-    `❹  التوقيت والدورية`,
-    `   ${val('q4') || '—'}`,
+    `❹  حدث البداية`,
+    `   ${trigger}`,
+    ``,
+    `   علامة الانتهاء بنجاح`,
+    `   ${done}`,
     ``,
     `❺  الخطوات بالترتيب`,
     ...( val('q5') || '—' ).split('\n').map(l => `   ${l}`),
     ``,
-    `❻  الأدوات والأنظمة`,
+    `❻  الأدوات المطلوبة`,
     `   ${val('q6') || '—'}`,
     ``,
     `❼  معيار القبول`,
-    `   ${val('q7') || '—'}`,
+    ...( val('q7') || '—' ).split('\n').map(l => `   ${l}`),
     ``,
     `❽  الأخطاء الشائعة`,
-    `   ${val('q8') || '—'}`,
+    ...( val('q8') || '—' ).split('\n').map(l => `   ${l}`),
     ``,
     `❾  جهة الإبلاغ عند مشكلة`,
     `   ${val('q9') || '—'}`,
     ``,
     `══════════════════════════════════════════`,
-    `أُنشئت بواسطة سنع — ${new Date().toLocaleDateString('ar-SA')}`,
+    `أُنشئت بواسطة Sana SOP Builder — ${new Date().toLocaleDateString('ar-SA')}`,
     `══════════════════════════════════════════`,
   ];
   return lines.join('\n');
 }
 
-// ── فحص جودة مبني على قواعد بسيطة (لا ذكاء اصطناعي) ──────
-const VAGUE_WORDS = ['جيد', 'مناسب', 'تمام'];
-
+// ── فحص الجودة (If/Else ثابتة — لا ذكاء اصطناعي) ──
 function runQualityCheck(){
-  const stepsLines = (val('q5') || '').split('\n').map(l => l.trim()).filter(Boolean);
-  const stepsOk = stepsLines.length >= 2;
+  const checks = [];
+  const VAGUE  = ['جيد','مناسب','تمام','طبيعي','عادي'];
 
-  const acceptanceText = val('q7') || '';
-  const foundVague = VAGUE_WORDS.filter(w => acceptanceText.includes(w));
-  const acceptanceOk = acceptanceText.length > 0 && foundVague.length === 0;
+  // معيار القبول
+  const acc = val('q7');
+  const foundVague = VAGUE.filter(w => acc.includes(w));
+  const accOk = acc.length > 0 && foundVague.length === 0;
+  if(!acc.length){
+    checks.push({ icon:'🔴', title:'ينقص: معيار قبول واضح', detail:'اكتب كيف يبدو التنفيذ الناجح — سطر واحد يكفي.' });
+  } else if(foundVague.length){
+    checks.push({ icon:'🟡', title:'معيار القبول غامض', detail:`يحتوي كلمات غير قابلة للقياس: ${foundVague.join('، ')}. استبدلها بأرقام أو أحداث واضحة.` });
+  } else {
+    checks.push({ icon:'🟢', title:'معيار القبول محدد', detail:'معيار القبول خالٍ من الكلمات الغامضة.' });
+  }
 
-  const reportOk = !!val('q9');
-  const timingOk = !!val('q4');
+  // جهة الإبلاغ
+  const rep = val('q9');
+  if(!rep){
+    checks.push({ icon:'🔴', title:'ينقص: جهة تصعيد محددة', detail:'من يتصل به الفريق إذا حدثت مشكلة؟ حدّد الشخص وطريقة التواصل.' });
+  } else {
+    checks.push({ icon:'🟢', title:'جهة الإبلاغ محددة', detail:'يعرف الفريق من يتواصل معه عند أي إشكالية.' });
+  }
 
-  return [
-    {
-      pass: stepsOk,
-      title: 'الخطوات بالترتيب',
-      detail: stepsOk ? `يوجد ${stepsLines.length} خطوات محدَّدة.` : 'يلزم كتابة خطوتين على الأقل بالترتيب.'
-    },
-    {
-      pass: acceptanceOk,
-      title: 'معيار قبول واضح',
-      detail: !acceptanceText.length ? 'لم يُكتب معيار قبول.' :
-              foundVague.length ? `يحتوي كلمات غامضة: ${foundVague.join('، ')} — استخدم وصفًا قابلًا للقياس.` :
-              'معيار القبول محدَّد وخالٍ من الكلمات الغامضة.'
-    },
-    {
-      pass: reportOk,
-      title: 'جهة إبلاغ محدَّدة',
-      detail: reportOk ? 'جهة الإبلاغ عند وجود مشكلة محدَّدة.' : 'يلزم تحديد جهة إبلاغ واضحة عند وجود مشكلة.'
-    },
-    {
-      pass: timingOk,
-      title: 'توقيت ودورية محدَّدة',
-      detail: timingOk ? 'التوقيت والدورية محدَّدان.' : 'يلزم تحديد متى وبأي دورية تُنفَّذ العملية.'
-    },
-  ];
+  // المسؤول — هل يُشير لبديل؟
+  const resp = val('q3');
+  const hasFallback = /بديل|نائب|غياب|خلافه|عوضًا|يغطي|يحل/.test(resp);
+  if(resp && !hasFallback){
+    checks.push({ icon:'🟡', title:'خطر: لا بديل معروف للمسؤول', detail:'النص لا يشير لمن يتولى الدور عند الغياب — أضف إشارة لبديل أو نائب.' });
+  } else if(resp && hasFallback){
+    checks.push({ icon:'🟢', title:'يوجد بديل للمسؤول', detail:'الإجراء محمي في حالة غياب الدور الأساسي.' });
+  }
+
+  // الخطوات
+  const steps = (val('q5')||'').split('\n').filter(Boolean);
+  if(steps.length < 2){
+    checks.push({ icon:'🟡', title:'الخطوات قليلة', detail:'يلزم كتابة خطوتين على الأقل لضمان قابلية التكرار.' });
+  } else {
+    checks.push({ icon:'🟢', title:`الخطوات محددة (${steps.length})`, detail:'عدد كافٍ من الخطوات لضمان قابلية التكرار والتدريب.' });
+  }
+
+  // الأصول المحمية
+  const selected = getSelectedAssets();
+  if(selected.length > 0){
+    checks.push({ icon:'🟢', title:`يحمي: ${selected.map(a=>a.name).join('، ')}`, detail:'هذا الإجراء مرتبط بأصول شركتك ويظهر في جواز الشركة.' });
+  } else {
+    checks.push({ icon:'🟡', title:'لم تُحدَّد الأصول المحمية', detail:'اختر أصلًا واحدًا على الأقل لربط هذا الإجراء بجواز الشركة.' });
+  }
+
+  return checks;
 }
 
 function renderQualityCheck(checks){
-  const list = document.getElementById('qualityList');
-  list.innerHTML = checks.map(c => `
-    <div class="qc-item ${c.pass ? 'pass' : 'fail'}">
-      <span class="qc-icon">${c.pass ? '✓' : '!'}</span>
+  document.getElementById('qualityList').innerHTML = checks.map(c => `
+    <div class="qc-item">
+      <span class="qc-icon">${c.icon}</span>
       <div class="qc-text">
         <div class="qc-title">${c.title}</div>
         <div class="qc-detail">${c.detail}</div>
@@ -277,85 +584,147 @@ function renderQualityCheck(checks){
   document.getElementById('qualityCard').classList.add('visible');
 }
 
-// ── معاينة فقط — لا تحفظ أي دليل، يمكن تكرارها بلا قيود ──
+// ── تحديد الأصول المختارة ──
+function getSelectedAssets(){
+  return [...document.querySelectorAll('#assetChecks input[type="checkbox"]:checked')]
+    .map(cb => ({ id: cb.value, name: cb.dataset.name }));
+}
+
+// ── الخيار المحدد للـ risk ──
+function getSelectedRisk(){
+  const r = document.querySelector('#riskOptions input[type="radio"]:checked');
+  return r ? r.value : null;
+}
+
+// ── معاينة فقط ──
 function previewSOP(){
   const name = val('q1');
-  if(!name){
-    showStatus('يرجى كتابة اسم العملية أولاً.', true);
-    return;
-  }
-
+  if(!name){ showStatus('يرجى كتابة الهدف من الإجراء أولاً (السؤال ١).', true); return; }
   generatedText = buildSOP();
   document.getElementById('sopOutput').textContent = generatedText;
   document.getElementById('outputCard').classList.add('visible');
   document.getElementById('statusBar').classList.remove('visible','err');
-
   renderQualityCheck(runQualityCheck());
-
-  // زر الحفظ النهائي يظهر فقط بعد أول معاينة
   document.getElementById('saveBtn').classList.add('visible');
-
   document.getElementById('qualityCard').scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
-// ── حفظ نهائي — الوحيد الذي يستدعي API، محمي من التكرار من الخادم ──
-function simpleHash(str){
-  let h = 0;
-  for(let i = 0; i < str.length; i++){ h = (h * 31 + str.charCodeAt(i)) >>> 0; }
-  return h.toString(36);
-}
+// ── حفظ نهائي — يُنشئ evidence لكل أصل مُختار + evidence للـ risk ──
+function simpleHash(str){ let h=0; for(let i=0;i<str.length;i++){ h=(h*31+str.charCodeAt(i))>>>0; } return h.toString(36); }
 
 async function saveFinal(){
-  if(!generatedText){ return; }
-  const name = val('q1') || 'عملية غير مسماة';
-  const btn = document.getElementById('saveBtn');
-  btn.disabled = true;
+  if(!generatedText) return;
+  const name     = val('q1') || 'إجراء غير مسمى';
+  const selected = getSelectedAssets();
+  const risk     = getSelectedRisk();
+  const btn      = document.getElementById('saveBtn');
+  btn.disabled   = true;
   btn.textContent = 'جارٍ الحفظ...';
 
-  try{
-    const res = await fetch(`/api/companies/${COMPANY_ID}/evidence`, {
+  const saves = [];
+
+  // 1) evidence لكل أصل مُختار
+  if(selected.length > 0){
+    for(const asset of selected){
+      saves.push(fetch(`/api/companies/${COMPANY_ID}/evidence${CQS}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title:       `SOP موثّق: ${name} — يحمي ${asset.name} | #${simpleHash(generatedText+asset.id)}`,
+          asset_id:    asset.id,
+          source_type: 'SOP sop_protects',
+          confidence:  80
+        })
+      }));
+    }
+  } else {
+    // إذا لم يختر أصلًا: حفظ واحد بأول أصل عمليات (Operations) أو بدون asset_id
+    const opsAsset = companyAssets.find(a => a.asset_type === 'Operations');
+    saves.push(fetch(`/api/companies/${COMPANY_ID}/evidence${CQS}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: `SOP موثّق: ${name} — نسخة #${simpleHash(generatedText)}`,
-        case_id: SAVE_CASE_ID,
-        asset_id: SAVE_ASSET_ID,
-        source_type: 'وثيقة SOP',
-        confidence: 75
+        title:       `SOP موثّق: ${name} | #${simpleHash(generatedText)}`,
+        asset_id:    opsAsset ? opsAsset.asset_id : null,
+        source_type: 'SOP sop_protects',
+        confidence:  75
       })
-    });
-    const json = await res.json();
-    if(res.ok && json.success){
-      if(json.meta && json.meta.duplicate){
-        showStatus('هذه النسخة محفوظة مسبقًا في ملف الشركة — لم يُنشأ سجل مكرر.', false);
-        showToast('هذه النسخة محفوظة مسبقًا');
-      } else {
-        showStatus('✓ حُفظت هذه النسخة كدليل نهائي في ملف الشركة (ثقة ٧٥٪)', false);
-        showToast('تم الحفظ في ملف الشركة');
-      }
-    } else {
-      showStatus('تعذر حفظ الوثيقة — حاول مجددًا.', true);
-    }
-  } catch(e){
-    showStatus('تعذر الاتصال بالخادم للحفظ.', true);
+    }));
   }
 
-  btn.disabled = false;
-  btn.textContent = '💾 حفظ هذه النسخة في القضية (نهائي)';
+  // 2) evidence للـ risk (إن حُدِّد)
+  if(risk){
+    const firstAsset = selected[0] || companyAssets.find(a => a.asset_type === 'Operations');
+    saves.push(fetch(`/api/companies/${COMPANY_ID}/evidence${CQS}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title:       `SOP ${name} — خطر إذا غاب: ${risk}`,
+        asset_id:    firstAsset ? firstAsset.id || firstAsset.asset_id : null,
+        source_type: 'SOP risk_if_skipped',
+        confidence:  70
+      })
+    }));
+  }
+
+  try{
+    const results = await Promise.all(saves);
+    const jsons   = await Promise.all(results.map(r => r.json()));
+    const ok      = jsons.every(j => j.success);
+
+    if(ok){
+      // إظهار الختام
+      const chips = selected.map(a =>
+        `<span class="outro-asset-chip">${a.name}</span>`
+      ).join('');
+      document.getElementById('outroAssets').innerHTML = chips;
+      document.getElementById('outroCard').classList.add('visible');
+      document.getElementById('outputCard').style.display = 'none';
+      document.getElementById('qualityCard').style.display = 'none';
+      document.getElementById('formCard').style.display = 'none';
+      showAssetToast();
+      showToast('📚 أضفت أصلًا معرفيًا جديدًا');
+    } else {
+      showStatus('تعذر حفظ بعض السجلات — حاول مجددًا.', true);
+      btn.disabled = false;
+      btn.textContent = '📚 حفظ هذا الإجراء في ملف الشركة';
+    }
+  } catch(e){
+    showStatus('تعذر الاتصال بالخادم.', true);
+    btn.disabled = false;
+    btn.textContent = '📚 حفظ هذا الإجراء في ملف الشركة';
+  }
 }
 
 function downloadTxt(){
   if(!generatedText) return;
-  const name = val('q1') || 'SOP';
-  const blob = new Blob([generatedText], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `SOP - ${name}.txt`;
-  a.click();
+  const blob = new Blob([generatedText], { type:'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `SOP - ${val('q1')||'إجراء'}.txt`; a.click();
   URL.revokeObjectURL(url);
 }
 
+function resetForm(){
+  document.querySelectorAll('input[type="text"], textarea').forEach(el => el.value = '');
+  document.querySelectorAll('input[type="checkbox"], input[type="radio"]').forEach(el => el.checked = false);
+  document.querySelectorAll('.asset-check-item').forEach(el => el.classList.remove('checked'));
+  document.getElementById('toolsPreview').innerHTML = '';
+  document.getElementById('acceptancePreview').innerHTML = '';
+  document.getElementById('errorsPreview').innerHTML = '';
+  document.getElementById('outroCard').classList.remove('visible');
+  document.getElementById('formCard').style.display = '';
+  document.getElementById('qualityCard').style.display = '';
+  document.getElementById('qualityCard').classList.remove('visible');
+  document.getElementById('outputCard').style.display = '';
+  document.getElementById('outputCard').classList.remove('visible');
+  document.getElementById('saveBtn').classList.remove('visible');
+  generatedText = '';
+  updateProgress();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── رسائل القضبان والـ Toast ──
 function showStatus(msg, isErr){
   const bar = document.getElementById('statusBar');
   bar.classList.toggle('err', isErr);
@@ -367,8 +736,26 @@ function showStatus(msg, isErr){
 function showToast(msg){
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 2500);
+  setTimeout(() => t.classList.remove('show'), 2800);
 }
+
+function showAssetToast(){
+  const t = document.getElementById('assetToast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ── ربط اختيار الـ risk بـ CSS ──
+document.querySelectorAll('#riskOptions input[type="radio"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    document.querySelectorAll('.risk-opt').forEach(l => l.classList.remove('selected'));
+    radio.closest('.risk-opt').classList.add('selected');
+  });
+});
+
+// ── التهيئة ──
+loadAssets();
+updateProgress();
 </script>
 
 </body>
