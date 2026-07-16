@@ -293,6 +293,7 @@ function render(d){
         </div>`;
     });
   });
+  html += `<a href="https://lawyeroffice-jkcjqayg.manus.space" target="_blank" rel="noopener noreferrer" class="link-out" style="display:block; margin-bottom:10px;">📋 خطة العمل التنفيذية (90 يومًا) ↗</a>`;
   html += `<a href="/passport${qs(CASE_COMPANY_ID)}" class="link-out">← بعد تنفيذ القرارات، شاهد أثرها على قيمة الشركة الكاملة</a></section>`;
 
   const requiredTasks = (d.tasks || []).filter(t => t.status !== 'منجزة');
