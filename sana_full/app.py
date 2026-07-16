@@ -18,6 +18,24 @@ from flask import Flask, jsonify, request, render_template, g, session, redirect
 from werkzeug.security import generate_password_hash, check_password_hash
 # weasyprint يُستورد داخل الدالة فقط لتفادي crash عند غياب libpango وقت التشغيل
 
+# ------------------------------------------------------------------
+# قائمة القطاعات الثابتة — مرجع مشترك بين الخادم والعميل
+# ------------------------------------------------------------------
+SECTORS = [
+    {"key": "legal",          "label": "قانوني / محاماة",   "icon": "⚖️"},
+    {"key": "food",           "label": "مطاعم وضيافة",       "icon": "🍽️"},
+    {"key": "manufacturing",  "label": "تصنيع وعطور",        "icon": "🏭"},
+    {"key": "retail",         "label": "تجارة تجزئة",        "icon": "🛒"},
+    {"key": "construction",   "label": "مقاولات وبناء",      "icon": "🏗️"},
+    {"key": "tech",           "label": "تقنية وبرمجيات",     "icon": "💻"},
+    {"key": "consulting",     "label": "استشارات إدارية",    "icon": "📊"},
+    {"key": "realestate",     "label": "عقارات",              "icon": "🏢"},
+    {"key": "health",         "label": "صحة وطب",            "icon": "🏥"},
+    {"key": "education",      "label": "تعليم وتدريب",       "icon": "📚"},
+    {"key": "other",          "label": "أخرى",                "icon": "⚡"},
+]
+SECTOR_KEYS = {s["key"] for s in SECTORS}
+
 
 def ask_sana_ai(system_prompt, user_prompt):
     """
@@ -73,6 +91,7 @@ PUBLIC_ENDPOINTS = {
     "entry", "login", "signup", "logout", "api_session",
     "methodology_page", "methodology_detail",
     "system_health", "static", "guide_page",
+    "sectors_list",   # قائمة القطاعات — عامة بلا مصادقة
 }
 # ملاحظة: "companies_list" أُزيل عمداً من القائمة العامة (P0-1)
 # المسار /api/companies مقيَّد الآن بـ admin_key فقط
@@ -278,6 +297,8 @@ def init_db(force=False):
             conn.execute("ALTER TABLE methodology_docs ADD COLUMN version TEXT DEFAULT 'v1.0'")
         if "bos_id" not in methodology_cols:
             conn.execute("ALTER TABLE methodology_docs ADD COLUMN bos_id TEXT")
+        if "sector_tags" not in methodology_cols:
+            conn.execute("ALTER TABLE methodology_docs ADD COLUMN sector_tags TEXT")
         # أعمدة تحليل الذكاء الاصطناعي — دليل مفرد وقضية كاملة (بدون كسر قواعد بيانات قديمة)
         evidence_cols = _columns_of(conn, "evidence")
         if "ai_analysis" not in evidence_cols:
@@ -435,6 +456,14 @@ def entry():
 
 @app.route("/home")
 def ceo_home():
+    account = current_account()
+    if account:
+        db = get_db()
+        company = db.execute(
+            "SELECT sector FROM companies WHERE company_id=?", (account["company_id"],)
+        ).fetchone()
+        if company and not company["sector"]:
+            return redirect(url_for("sector_select"))
     return render_template("01-ceo-home.html", default_company_id=default_company_id())
 
 
@@ -466,6 +495,22 @@ def business_passport():
 @app.route("/services")
 def services_page():
     return render_template("07-services.html", default_company_id=default_company_id())
+
+
+@app.route("/sector-select")
+def sector_select():
+    """شاشة اختيار القطاع — تُعرض للشركات الموجودة التي لم تُحدِّد قطاعها بعد."""
+    account = current_account()
+    if not account:
+        return redirect(url_for("login"))
+    db = get_db()
+    company = db.execute(
+        "SELECT sector, sds_done FROM companies WHERE company_id=?", (account["company_id"],)
+    ).fetchone()
+    # لو القطاع موجود فعلاً → وجّه حسب حالة SDS
+    if company and company["sector"]:
+        return redirect(url_for("ceo_home") if company["sds_done"] else url_for("discovery"))
+    return render_template("14-sector-select.html")
 
 
 # ------------------------------------------------------------------
@@ -550,6 +595,8 @@ def onboarding():
 
     if not name:
         return jsonify({"success": False, "error": "MISSING_NAME", "message": "اسم الشركة مطلوب."}), 400
+    if not sector:
+        return jsonify({"success": False, "error": "MISSING_SECTOR", "message": "تحديد القطاع إلزامي قبل المتابعة."}), 400
 
     db = get_db()
     db.execute(
@@ -642,10 +689,16 @@ def login():
     session["company_id"] = account["company_id"]
     session["email"] = account["email"]
 
-    # إذا لم تكتمل جلسة الاكتشاف بعد → وجّه إليها أولًا
-    company = db.execute("SELECT sds_done FROM companies WHERE company_id=?",
-                         (account["company_id"],)).fetchone()
-    redirect_to = "/home" if (company and company["sds_done"]) else "/discovery"
+    # تحقق من القطاع وحالة SDS لتحديد الوجهة
+    company = db.execute(
+        "SELECT sds_done, sector FROM companies WHERE company_id=?", (account["company_id"],)
+    ).fetchone()
+    if company and not company["sector"]:
+        redirect_to = "/sector-select"
+    elif company and company["sds_done"]:
+        redirect_to = "/home"
+    else:
+        redirect_to = "/discovery"
     return jsonify({"success": True, "data": {"redirect": redirect_to}})
 
 
@@ -671,8 +724,11 @@ def discovery():
     if not account:
         return redirect(url_for("login"))
     db = get_db()
-    company = db.execute("SELECT sds_done FROM companies WHERE company_id=?",
-                         (account["company_id"],)).fetchone()
+    company = db.execute(
+        "SELECT sds_done, sector FROM companies WHERE company_id=?", (account["company_id"],)
+    ).fetchone()
+    if company and not company["sector"]:
+        return redirect(url_for("sector_select"))
     if company and company["sds_done"]:
         return redirect(url_for("ceo_home"))
     return render_template("06-sana-discovery.html")
@@ -854,6 +910,85 @@ def methodology_page(slug):
 # API — Companies
 # ------------------------------------------------------------------
 
+@app.route("/api/sectors")
+def sectors_list():
+    """قائمة القطاعات الثابتة — تُستخدم في الـ frontend لبناء شاشة الاختيار."""
+    return jsonify({"success": True, "data": SECTORS})
+
+
+@app.route("/api/company/set-sector", methods=["POST"])
+def set_sector():
+    """تعيين قطاع الشركة — يُستدعى من شاشة /sector-select للشركات الموجودة."""
+    account = current_account()
+    if not account:
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+
+    body = request.get_json(silent=True) or {}
+    sector_key = (body.get("sector") or "").strip()
+    sector_custom = (body.get("sector_custom") or "").strip()  # نص حر عند اختيار "أخرى"
+
+    if not sector_key:
+        return jsonify({"success": False, "error": "MISSING_SECTOR",
+                        "message": "يرجى اختيار قطاع الشركة."}), 400
+
+    # دمج "أخرى" مع النص الحر إن وُجد
+    if sector_key == "other" and sector_custom:
+        final_sector = f"other:{sector_custom}"
+    else:
+        final_sector = sector_key
+
+    db = get_db()
+    db.execute("UPDATE companies SET sector=? WHERE company_id=?",
+               (final_sector, account["company_id"]))
+    db.commit()
+
+    company = db.execute("SELECT sds_done FROM companies WHERE company_id=?",
+                         (account["company_id"],)).fetchone()
+    redirect_to = "/home" if (company and company["sds_done"]) else "/discovery"
+    return jsonify({"success": True, "data": {"redirect": redirect_to}})
+
+
+@app.route("/api/companies/<company_id>/methodologies")
+def company_methodologies(company_id):
+    """وثائق منهجية مُصفَّاة حسب قطاع الشركة — NULL sector_tags = تنطبق على الكل."""
+    db = get_db()
+    company = db.execute("SELECT sector FROM companies WHERE company_id=?", (company_id,)).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+
+    sector_key = (company["sector"] or "").split(":")[0]  # استخرج المفتاح من "other:نص"
+    docs = db.execute(
+        "SELECT doc_id, slug, title, subtitle, doc_type, version, bos_id, sector_tags FROM methodology_docs ORDER BY created_at"
+    ).fetchall()
+
+    result = []
+    for doc in docs:
+        tags = doc["sector_tags"]
+        if tags:
+            try:
+                tag_list = json.loads(tags)
+            except (json.JSONDecodeError, TypeError):
+                tag_list = [t.strip() for t in tags.split(",")]
+            # أظهر الوثيقة فقط لو القطاع مطابق أو المفتاح "other"
+            if sector_key and sector_key not in tag_list:
+                continue
+        result.append({
+            "doc_id": doc["doc_id"],
+            "slug": doc["slug"],
+            "title": doc["title"],
+            "subtitle": doc["subtitle"],
+            "doc_type": doc["doc_type"],
+            "version": doc["version"],
+            "bos_id": doc["bos_id"],
+            "sector_tags": tags,
+        })
+    return jsonify({"success": True, "data": result})
+
+
 @app.route("/api/companies")
 def companies_list():
     """قائمة الشركات — مقيَّدة بمفتاح المشرف فقط (P0-1: إغلاق التسريب)."""
@@ -938,6 +1073,7 @@ def methodology_detail(slug):
         "data": {
             "doc_id": doc["doc_id"],
             "slug": doc["slug"],
+            "sector_tags": doc_dict.get("sector_tags"),
             "title": doc["title"],
             "subtitle": doc["subtitle"],
             "doc_type": doc_dict.get("doc_type"),

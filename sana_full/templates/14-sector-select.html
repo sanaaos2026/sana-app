@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>سنع — اختر قطاع شركتك</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme: light; background:#F5F6FB; }
+  :root{
+    --navy:#0B132B; --teal:#0EA5A5; --gold:#F2B233; --paper:#F5F6FB;
+    --ink:#333940; --slate:#6E7580; --line:#DEE1EC; --red:#B23A2E;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:'IBM Plex Sans Arabic', sans-serif;
+    min-height:100vh; display:flex; flex-direction:column;
+    align-items:center; justify-content:flex-start;
+    padding:48px 20px 60px;
+  }
+  .mark{ width:36px; height:36px; margin-bottom:22px; }
+
+  .heading{ font-size:22px; font-weight:700; color:var(--navy); text-align:center; margin-bottom:8px; }
+  .sub{
+    font-size:13px; color:var(--slate); text-align:center;
+    line-height:1.8; max-width:460px; margin-bottom:32px;
+  }
+  .notice{
+    background:#FFF8E6; border:1px solid #F2B233;
+    border-radius:10px; padding:12px 16px; font-size:12.5px;
+    color:#7A5A00; max-width:520px; width:100%; text-align:center;
+    margin-bottom:28px; line-height:1.7;
+  }
+
+  /* شبكة القطاعات */
+  .grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap:12px; max-width:560px; width:100%; margin-bottom:24px;
+  }
+  .sector-card{
+    background:#fff; border:2px solid var(--line); border-radius:12px;
+    padding:18px 12px 14px; text-align:center; cursor:pointer;
+    transition:border-color .15s, box-shadow .15s, background .15s;
+    user-select:none;
+  }
+  .sector-card:hover{ border-color:var(--teal); box-shadow:0 2px 10px rgba(14,165,165,.12); }
+  .sector-card.selected{
+    border-color:var(--teal); background:#E6F7F7;
+    box-shadow:0 0 0 3px rgba(14,165,165,.18);
+  }
+  .sector-card .icon{ font-size:28px; margin-bottom:8px; display:block; }
+  .sector-card .lbl{
+    font-size:12px; font-weight:600; color:var(--navy); line-height:1.4;
+  }
+
+  /* حقل "أخرى" */
+  .other-field{
+    display:none; max-width:560px; width:100%; margin-bottom:20px;
+  }
+  .other-field.show{ display:block; }
+  .other-field input{
+    width:100%; padding:11px 14px; border:1.5px solid var(--teal);
+    border-radius:8px; font-family:inherit; font-size:13.5px;
+    background:#fff; outline:none;
+  }
+  .other-field label{
+    display:block; font-size:12.5px; font-weight:600; color:var(--navy);
+    margin-bottom:6px;
+  }
+
+  .error{
+    display:none; background:#FCEBEA; color:var(--red); font-size:12.5px;
+    padding:10px 14px; border-radius:8px; margin-bottom:16px;
+    max-width:560px; width:100%; text-align:center;
+  }
+  .error.show{ display:block; }
+
+  .btn{
+    width:100%; max-width:560px; padding:13px; border:none; border-radius:10px;
+    background:var(--navy); color:#fff; font-family:inherit; font-size:14.5px;
+    font-weight:700; cursor:pointer; transition:opacity .15s;
+  }
+  .btn:hover{ opacity:.9; }
+  .btn:disabled{ opacity:.55; cursor:not-allowed; }
+</style>
+</head>
+<body>
+
+<svg class="mark" viewBox="0 0 100 100">
+  <path d="M78,32 L78,17 L19,17 L19,83 L78,83 L78,68" fill="none" stroke="#0B132B" stroke-width="9" stroke-linecap="square"/>
+  <rect x="44" y="41" width="19" height="19" fill="#F2B233"/>
+</svg>
+
+<h1 class="heading">ما قطاع شركتك؟</h1>
+<p class="sub">
+  هذا الاختيار يحدد القوالب والأسئلة والوثائق المنهجية التي تظهر في مساحة شركتك.<br>
+  <strong>لا يبدأ أي تشخيص أو تقرير قبل تحديد القطاع.</strong>
+</p>
+
+<div class="notice">
+  ⚠️ شركتك مسجَّلة لكن قطاعها لم يُحدَّد بعد. حدِّده الآن لمواصلة العمل.
+</div>
+
+<div class="error" id="errorMsg"></div>
+
+<div class="grid" id="sectorGrid"><!-- تُبنى بالـ JS --></div>
+
+<div class="other-field" id="otherField">
+  <label for="otherInput">صف قطاعك بكلمة أو جملة قصيرة</label>
+  <input type="text" id="otherInput" placeholder="مثال: عيادات أسنان، شركة شحن دولي...">
+</div>
+
+<button class="btn" id="submitBtn" onclick="submit()" disabled>تأكيد القطاع والمتابعة</button>
+
+<script>
+const SECTORS = [
+  {key:"legal",         label:"قانوني / محاماة",   icon:"⚖️"},
+  {key:"food",          label:"مطاعم وضيافة",       icon:"🍽️"},
+  {key:"manufacturing", label:"تصنيع وعطور",        icon:"🏭"},
+  {key:"retail",        label:"تجارة تجزئة",        icon:"🛒"},
+  {key:"construction",  label:"مقاولات وبناء",      icon:"🏗️"},
+  {key:"tech",          label:"تقنية وبرمجيات",     icon:"💻"},
+  {key:"consulting",    label:"استشارات إدارية",    icon:"📊"},
+  {key:"realestate",    label:"عقارات",              icon:"🏢"},
+  {key:"health",        label:"صحة وطب",            icon:"🏥"},
+  {key:"education",     label:"تعليم وتدريب",       icon:"📚"},
+  {key:"other",         label:"أخرى",                icon:"⚡"},
+];
+
+let selected = null;
+
+// بناء الشبكة
+const grid = document.getElementById('sectorGrid');
+SECTORS.forEach(s => {
+  const card = document.createElement('div');
+  card.className = 'sector-card';
+  card.dataset.key = s.key;
+  card.innerHTML = `<span class="icon">${s.icon}</span><span class="lbl">${s.label}</span>`;
+  card.addEventListener('click', () => selectSector(s.key));
+  grid.appendChild(card);
+});
+
+// عرض الإشعار إذا كان المستخدم موجوداً مسبقاً
+
+function selectSector(key){
+  selected = key;
+  document.querySelectorAll('.sector-card').forEach(c => {
+    c.classList.toggle('selected', c.dataset.key === key);
+  });
+  const otherField = document.getElementById('otherField');
+  otherField.classList.toggle('show', key === 'other');
+  document.getElementById('submitBtn').disabled = false;
+  document.getElementById('errorMsg').classList.remove('show');
+}
+
+async function submit(){
+  if(!selected) return;
+  const errorMsg = document.getElementById('errorMsg');
+  const btn = document.getElementById('submitBtn');
+  const otherText = document.getElementById('otherInput').value.trim();
+
+  if(selected === 'other' && !otherText){
+    errorMsg.textContent = 'يرجى كتابة وصف قصير للقطاع في حقل "أخرى".';
+    errorMsg.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'جارٍ الحفظ...';
+  errorMsg.classList.remove('show');
+
+  try{
+    const res = await fetch('/api/company/set-sector', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ sector: selected, sector_custom: otherText })
+    });
+    const json = await res.json();
+    if(res.ok && json.success){
+      window.location.href = json.data.redirect || '/home';
+    } else {
+      errorMsg.textContent = json.message || 'تعذّر الحفظ، حاول مرة أخرى.';
+      errorMsg.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = 'تأكيد القطاع والمتابعة';
+    }
+  } catch(e) {
+    errorMsg.textContent = 'تعذّر الاتصال بالخادم.';
+    errorMsg.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'تأكيد القطاع والمتابعة';
+  }
+}
+</script>
+</body>
+</html>
