@@ -81,7 +81,7 @@
 <div class="concept-nav">
   <a href="/">① الدخول</a>
   <a href="/home" class="active">② CEO Home</a>
-  <a href="/case/CS001">③ القضية</a>
+  <a href="/case/new" id="caseNavLink">③ القضية</a>
   <a href="/passport">④ جواز الشركة</a>
 </div>
 <script>
@@ -198,6 +198,13 @@ function render(d){
   document.getElementById('companyName').textContent = `${c.name} — ${c.sector}`;
   const topDecision = d.top_decision;
 
+  // تحديث رابط القضية في شريط التنقل بأول قضية حقيقية للشركة، أو صفحة إنشاء قضية إن لم توجد
+  const caseNavLink = document.getElementById('caseNavLink');
+  if(caseNavLink){
+    const firstCase = d.cases && d.cases[0];
+    caseNavLink.href = firstCase ? `/case/${firstCase.case_id}${CQS}` : `/case/new${CQS}`;
+  }
+
   let html = '';
 
   // ⚠ جلسة أولى: كل الأصول صفر ولا يوجد أي نشاط بعد — رسالة ترحيبية بدل أرقام مربكة بلا سياق
@@ -220,7 +227,7 @@ function render(d){
 
   html += `
     <span class="eyebrow">الملخص التنفيذي</span>
-    <h1>أكبر فرصة اليوم في <span class="hl">${d.weakest_asset ? d.weakest_asset.asset_name : ''}</span>. قرار واحد ينتظر اعتمادك.</h1>
+    <h1>أكبر فرصة اليوم في <span class="hl">${d.weakest_asset ? d.weakest_asset.asset_name : ''}</span>.${topDecision ? ' قرار واحد ينتظر اعتمادك.' : ''}</h1>
 
     <div class="grid5">
       <div class="cell gold"><div class="label">الدرجة</div><div class="val num">${d.quality_score}<span style="font-size:11px;">/100</span></div></div>
@@ -261,6 +268,14 @@ function render(d){
       </button>
       ${topDecision.case_id ? `<a href="/case/${topDecision.case_id}${CQS}" class="link-out" style="display:block; margin-top:12px;">← افتح القضية الكاملة لرؤية التفاصيل والأدلة</a>` : ''}
     </section>`;
+  } else {
+    // Section 17: لا يوجد قرار مقترح أو قيد التنفيذ
+    html += `
+    <section style="background:#F5F6FB; border:1px solid #DEE1EC; border-radius:12px; padding:20px 18px; text-align:center;">
+      <div style="font-size:14px; font-weight:600; color:#0B132B; margin-bottom:8px;">لم نحدد فرصة التحسين الأولى بعد.</div>
+      <div style="font-size:13px; color:#6E7580; margin-bottom:14px; line-height:1.7;">صف مشكلة حقيقية في شركتك وسنع يحوّلها إلى قرار مدعوم بدليل.</div>
+      <a href="/case/new${CQS}" class="btn btn-primary" style="display:inline-block; padding:10px 22px;">ابدأ التشخيص</a>
+    </section>`;
   }
 
   // ⚠ هذي القيم خاصة بأثر مشرق (C001) فقط منذ البداية — لا تُطبَّق على أي شركة أخرى
@@ -296,7 +311,7 @@ function render(d){
       </div>`;
     });
   } else {
-    html += `<div class="decision-reason">لا توجد مهام حاليًا.</div>`;
+    html += `<div class="decision-reason" style="text-align:center; padding:12px 0;">اعتمد قرارًا وسيحوّله سنع إلى خطوات. <a href="/case/new${CQS}" style="color:#0EA5A5; font-weight:600; text-decoration:none;">ابدأ التشخيص ←</a></div>`;
   }
   html += `</section>`;
 

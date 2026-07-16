@@ -278,7 +278,9 @@ async function openCase(){
     });
     const json = await res.json();
     if(res.ok && json.success){
-      window.location.href = `/case/${json.data.case_id}${CQS}`;
+      const newCaseId = json.data && json.data.case_id;
+      if(!newCaseId){ errorMsg.textContent = 'تعذر الحصول على معرّف القضية — حاول مرة أخرى.'; errorMsg.classList.add('show'); btn.disabled = false; btn.textContent = 'فتح القضية'; return; }
+      window.location.href = `/case/${newCaseId}${CQS}`;
     } else {
       errorMsg.textContent = 'تعذر فتح القضية، حاول مرة أخرى.';
       errorMsg.classList.add('show');

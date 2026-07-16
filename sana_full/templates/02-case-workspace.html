@@ -307,13 +307,13 @@ async function analyzeEvidence(evidenceId){
     const res = await fetch(`/api/evidence/${evidenceId}/analyze`, {method:'POST'});
     const json = await res.json();
     if(!json.success){
-      if(box) box.innerHTML = `<div class="ai-error">تعذّر التحليل: ${json.message || json.error}</div>`;
+      if(box) box.innerHTML = `<div class="ai-error">تعذر التحليل الآن. بياناتك محفوظة ويمكنك المتابعة يدويًا.</div>`;
       return;
     }
     showToast('تم تحليل الدليل بالذكاء الاصطناعي');
     loadCase();
   }catch(e){
-    if(box) box.innerHTML = `<div class="ai-error">تعذّر الاتصال بالخادم أثناء التحليل.</div>`;
+    if(box) box.innerHTML = `<div class="ai-error">تعذر التحليل الآن. بياناتك محفوظة ويمكنك المتابعة يدويًا.</div>`;
   }
 }
 
@@ -325,13 +325,13 @@ async function analyzeCase(){
     const res = await fetch(`/api/cases/${CASE_ID}/analyze`, {method:'POST'});
     const json = await res.json();
     if(!json.success){
-      if(box) box.innerHTML = `<div class="ai-error">تعذّر التحليل: ${json.message || json.error}</div>`;
+      if(box) box.innerHTML = `<div class="ai-error">تعذر التحليل الآن. بياناتك محفوظة ويمكنك المتابعة يدويًا.</div>`;
       return;
     }
     showToast('تم تحليل القضية كاملة بالذكاء الاصطناعي');
     loadCase();
   }catch(e){
-    if(box) box.innerHTML = `<div class="ai-error">تعذّر الاتصال بالخادم أثناء التحليل.</div>`;
+    if(box) box.innerHTML = `<div class="ai-error">تعذر التحليل الآن. بياناتك محفوظة ويمكنك المتابعة يدويًا.</div>`;
   }
 }
 
