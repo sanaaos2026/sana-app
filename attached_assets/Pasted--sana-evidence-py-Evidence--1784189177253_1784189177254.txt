@@ -1,0 +1,93 @@
+"""
+sana_evidence.py — الدالة الموحّدة الوحيدة لحفظ الأدلة (Evidence) في سنع.
+
+المشكلة اللي يحلّها هذا الملف:
+كل ميزة (Discovery، SOP Builder، تقييم سريع، SDS-002) كتبت نسخة خاصة بها
+من "احفظ دليل مرتبط بأصل وقضية" — بصيغ مختلفة شوي كل مرة. هذا التشتت هو
+السبب الأرجح لعطل صفحة assessment ("حُفظ 0 وفشل 10") بعد الانتقال لـ Postgres:
+نسخة واحدة من الكود انكسرت بالترجمة، والبقية لأ.
+
+الحل: دالة واحدة فقط، تُستدعى من كل مكان، فيها تحقق صريح قبل الحفظ،
+وتُرجع سبب الفشل الحقيقي بدل فشل صامت.
+
+يعمل فوق أي اتصال (sqlite3 أو wrapper psycopg2) طالما الاتصال يدعم
+placeholders بنمط %s (نمط psycopg2 القياسي — استخدمه لأن التطبيق
+الحالي يعمل فوق PostgreSQL فعليًا حسب تأكيد الوكيل).
+
+إذا كان الـwrapper الحالي يستخدم نمط ? بدل %s، استبدل PLACEHOLDER أدناه.
+"""
+
+import uuid
+
+
+PLACEHOLDER = "%s"  # غيّرها لـ "?" فقط لو الـwrapper يتطلب نمط sqlite3 القديم حرفيًا
+
+
+def asset_exists(db, company_id: str, asset_id: str) -> bool:
+    """تحقق حقيقي أن الأصل موجود فعليًا لهذي الشركة قبل أي محاولة حفظ.
+    هذا التحقق تحديدًا هو الأرجح غائب في النسخة المكسورة حاليًا —
+    لو asset_id يوصل بصيغة خاطئة (مثلًا 'A001' بدل '{company_id}-A001')،
+    المحاولة تفشل بصمت بدل ما تعطي خطأ واضح."""
+    query = f"SELECT 1 FROM assets WHERE company_id={PLACEHOLDER} AND asset_id={PLACEHOLDER}"
+    row = db.execute(query, (company_id, asset_id)).fetchone()
+    return row is not None
+
+
+def save_evidence(db, *, company_id: str, case_id: str, asset_id: str,
+                   title: str, tag: str, source_type: str = "sana_discovery",
+                   confidence: int = 50) -> dict:
+    """
+    الدالة الوحيدة المعتمدة لحفظ أي دليل بسنع — من أي ميزة كانت.
+
+    المعاملات:
+        db: كائن الاتصال الحالي (get_db())
+        company_id: معرّف الشركة (نفس معرّف الجلسة)
+        case_id: معرّف القضية المرتبطة
+        asset_id: معرّف الأصل الحقيقي (بصيغة "{company_id}-A00X")
+        title: نص الدليل نفسه
+        tag: وسم يوضح مصدر الدليل (مثال: "sop_protects", "risk_if_skipped",
+             "decision_style", "acquisition_source")
+        source_type: مصدر الإدخال (افتراضي: sana_discovery)
+        confidence: درجة ثقة أولية (افتراضي 50 لأي دليل من استبيان)
+
+    يُرجع dict فيها:
+        success: True/False
+        evidence_id: المعرّف الجديد إن نجح
+        error: نص الخطأ الحقيقي إن فشل (لا فشل صامت أبدًا)
+    """
+    # الخطوة 1: تحقق الأصل موجود فعلًا — هذا يمنع الفشل الصامت
+    if not asset_exists(db, company_id, asset_id):
+        return {
+            "success": False,
+            "evidence_id": None,
+            "error": f"asset_id غير موجود: '{asset_id}' لشركة '{company_id}' — "
+                     f"تأكد الصيغة '{{company_id}}-A00X' مطابقة تمامًا لما هو مخزَّن.",
+        }
+
+    # الخطوة 2: تحقق القضية موجودة وتخص نفس الشركة
+    case_query = f"SELECT 1 FROM cases WHERE case_id={PLACEHOLDER} AND company_id={PLACEHOLDER}"
+    case_row = db.execute(case_query, (case_id, company_id)).fetchone()
+    if not case_row:
+        return {
+            "success": False,
+            "evidence_id": None,
+            "error": f"case_id غير موجود أو لا يخص هذي الشركة: '{case_id}'",
+        }
+
+    # الخطوة 3: الحفظ الفعلي
+    evidence_id = "E" + uuid.uuid4().hex[:8].upper()
+    try:
+        insert_query = f"""
+            INSERT INTO evidence
+                (evidence_id, company_id, case_id, asset_id, title, source_type, confidence)
+            VALUES ({PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER})
+        """
+        db.execute(insert_query, (
+            evidence_id, company_id, case_id, asset_id,
+            f"[{tag}] {title}", source_type, confidence,
+        ))
+        db.commit()
+        return {"success": True, "evidence_id": evidence_id, "error": None}
+    except Exception as e:
+        # لا فشل صامت أبدًا — الخطأ الحقيقي يوصل للمستدعي والـLogs
+        return {"success": False, "evidence_id": None, "error": str(e)}
