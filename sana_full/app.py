@@ -71,9 +71,11 @@ ADMIN_PREVIEW_KEY = os.environ.get("ADMIN_PREVIEW_KEY")
 # وليس فقط عبر صفحات HTML.
 PUBLIC_ENDPOINTS = {
     "entry", "login", "signup", "logout", "api_session",
-    "methodology_page", "methodology_detail", "companies_list",
+    "methodology_page", "methodology_detail",
     "system_health", "static", "guide_page",
 }
+# ملاحظة: "companies_list" أُزيل عمداً من القائمة العامة (P0-1)
+# المسار /api/companies مقيَّد الآن بـ admin_key فقط
 
 
 def is_admin_preview():
@@ -792,12 +794,12 @@ def methodology_page(slug):
 
 @app.route("/api/companies")
 def companies_list():
-    """قائمة كل الشركات المسجلة — أداة عرض داخلي للمشرف فقط، وليست جزءًا من تجربة العميل المسجَّل."""
-    if current_account():
+    """قائمة الشركات — مقيَّدة بمفتاح المشرف فقط (P0-1: إغلاق التسريب)."""
+    if not is_admin_preview():
         return jsonify({
-            "success": False, "error": "FORBIDDEN",
-            "message": "لا تملك صلاحية الوصول لدليل الشركات."
-        }), 403
+            "success": False, "error": "UNAUTHORIZED",
+            "message": "هذا المسار محمي — يلزم مفتاح المشرف.",
+        }), 401
     db = get_db()
     companies = db.execute(
         "SELECT company_id, name, sector, city FROM companies ORDER BY company_id ASC"
@@ -1452,7 +1454,7 @@ def passport_report_pdf(company_id):
     )
 
 
-@app.route("/decisions/<decision_id>/approve", methods=["POST"])
+@app.route("/api/decisions/<decision_id>/approve", methods=["POST"])
 def approve_decision(decision_id):
     db = get_db()
     decision = db.execute("SELECT * FROM decisions WHERE decision_id=?", (decision_id,)).fetchone()

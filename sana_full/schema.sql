@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS companies (
     vision TEXT,
     main_goal TEXT,
     signup_code TEXT UNIQUE,
-    created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS'))
+    created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
+    sds_done SMALLINT DEFAULT 0,
+    success_criteria TEXT
 );
 
 -- حسابات دخول حقيقية للعملاء — كل حساب مرتبط بشركة واحدة فقط، ولا يمكنه
@@ -99,6 +101,9 @@ CREATE TABLE IF NOT EXISTS decisions (
     created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
     phase_label TEXT,
     structured_data TEXT,
+    owner_name TEXT,
+    due_date TEXT,
+    success_metric TEXT,
     FOREIGN KEY (company_id) REFERENCES companies(company_id),
     FOREIGN KEY (case_id) REFERENCES cases(case_id),
     FOREIGN KEY (asset_id) REFERENCES assets(asset_id)
@@ -164,4 +169,15 @@ CREATE TABLE IF NOT EXISTS decision_asset_impacts (
     is_primary INTEGER DEFAULT 0,
     FOREIGN KEY (decision_id) REFERENCES decisions(decision_id),
     FOREIGN KEY (asset_id) REFERENCES assets(asset_id)
+);
+
+-- جدول ربط القضايا بأطر العمل المنهجية (يُنشأ تلقائياً عند Discovery)
+CREATE TABLE IF NOT EXISTS case_frameworks (
+    cf_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    company_id TEXT NOT NULL,
+    framework_id TEXT NOT NULL,
+    linked_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
+    FOREIGN KEY (case_id) REFERENCES cases(case_id),
+    FOREIGN KEY (company_id) REFERENCES companies(company_id)
 );
