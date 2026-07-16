@@ -164,6 +164,12 @@
 
   /* ── Outro screen ── */
   .outro-wrap { text-align: center; }
+  /* ── Passport rows ── */
+  .pp-row { display:flex; gap:12px; align-items:flex-start; }
+  .pp-icon { font-size:18px; min-width:26px; padding-top:1px; }
+  .pp-label { display:block; color:rgba(255,255,255,0.4); font-size:11px;
+              letter-spacing:.03em; margin-bottom:3px; }
+  .pp-val { display:block; color:#E8ECF4; font-size:14px; line-height:1.45; }
   .outro-logo { animation: logoIn .6s ease forwards; margin-bottom: 24px; }
   @keyframes logoIn { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: scale(1); } }
   .outro-title {
@@ -490,33 +496,77 @@ function render() {
   renderQuestion(Q[step - 1]);
 }
 
+let _welcomeTimer = null;
+
 function renderWelcome() {
   $screen.innerHTML = `
-    <div class="screen" style="align-items:center; padding-top:20px;">
+    <div style="display:flex; flex-direction:column; align-items:center; gap:0; width:100%; max-width:420px;">
       <div class="welcome-logo">${LOGO_LG}</div>
-      <div class="welcome-title">👋 أهلًا بك في سنع</div>
-      <div class="welcome-sub" style="margin-bottom:10px;">سنع ليس CRM، وليس ERP.</div>
-      <div class="welcome-sub">سنع يساعدك تشوف شركتك بوضوح وتاخذ قرارات أفضل.</div>
-      <button class="start-btn" onclick="goNext()">🚀 ابدأ</button>
+      <div class="welcome-title" style="margin-bottom:20px;">مرحبًا في سنع</div>
+
+      <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.10);
+                  border-radius:14px; padding:22px 22px; text-align:right; margin-bottom:24px;
+                  display:flex; flex-direction:column; gap:14px;">
+        <p style="color:#fff; font-size:15px; font-weight:600; line-height:1.6; margin:0;">
+          سنع ليس CRM، وليس ERP.
+        </p>
+        <p style="color:rgba(255,255,255,0.65); font-size:13.5px; line-height:1.75; margin:0;">
+          سنع هو نظام الوضوح الإداري لشركتك — يساعدك تشوف شركتك من الداخل بعيون موضوعية،
+          وتعرف أين القوة الحقيقية، وأين الخطر قبل ما يكبر.
+        </p>
+        <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:14px;
+                    display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; gap:10px; align-items:flex-start; color:rgba(255,255,255,0.7); font-size:13px;">
+            <span>📌</span><span>تشخيص واضح لأكبر تحدٍّ تواجهه اليوم</span>
+          </div>
+          <div style="display:flex; gap:10px; align-items:flex-start; color:rgba(255,255,255,0.7); font-size:13px;">
+            <span>📌</span><span>خريطة أصول شركتك الخمسة</span>
+          </div>
+          <div style="display:flex; gap:10px; align-items:flex-start; color:rgba(255,255,255,0.7); font-size:13px;">
+            <span>📌</span><span>أول توصية قابلة للتنفيذ هذا الأسبوع</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:14px; width:100%;">
+        <button class="start-btn" style="flex:1; margin:0;" onclick="skipWelcome()">
+          ابدأ الجلسة ←
+        </button>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:2px; min-width:44px;">
+          <div id="welcome-count" style="font-family:'IBM Plex Mono',monospace; font-size:20px;
+               font-weight:600; color:var(--gold);">30</div>
+          <div style="font-size:10px; color:var(--muted);">ثانية</div>
+        </div>
+      </div>
     </div>`;
+
+  // عدّاد 30 ثانية — يبدأ فور ظهور الشاشة
+  let count = 30;
+  _welcomeTimer = setInterval(() => {
+    count--;
+    const el = document.getElementById('welcome-count');
+    if (el) el.textContent = count;
+    if (count <= 0) { clearInterval(_welcomeTimer); _welcomeTimer = null; goNext(); }
+  }, 1000);
 }
 
+function skipWelcome() {
+  if (_welcomeTimer) { clearInterval(_welcomeTimer); _welcomeTimer = null; }
+  goNext();
+}
+
+// step 8 — شاشة انتظار مؤقتة بينما يحفظ سنع الجلسة في الخلفية
 function renderOutro() {
   $screen.innerHTML = `
-    <div class="outro-wrap">
+    <div class="outro-wrap" style="align-items:center;">
       <div class="outro-logo">${LOGO_LG}</div>
-      <div class="outro-title">✨ بداية جيدة…</div>
-      <div class="outro-body">
-        اليوم بدأنا بناء النسخة الرقمية لشركتك داخل سنع.<br>
-        كل إجابة أضفتها صارت دليلًا يساعدنا نفهم شركتك بدقة أكبر.<br>
-        كل ما تضيف معلومات أكثر، تصير القرارات أدق والتوصيات أذكى.
-      </div>
-      <div id="outro-action"><div class="loading-dots">· · ·</div></div>
+      <div class="loading-dots" style="margin:24px 0; font-size:28px; color:var(--gold);">· · ·</div>
+      <div style="color:rgba(255,255,255,0.5); font-size:13px;">يجمع سنع ملخص شركتك…</div>
     </div>`;
   saveAndFinish();
 }
 
-// شاشة جواز الشركة — تظهر مباشرة بعد حفظ الجلسة، قبل فتح القضية
+// شاشة جواز الشركة — تظهر مباشرة بعد اكتمال الحفظ (Step 8 النهائي)
 function renderPassport(data) {
   const topAssetLabel = {
     '📚 الخبرة والمعرفة':         'المعرفة والخبرة',
@@ -526,26 +576,37 @@ function renderPassport(data) {
     '👤 وجود المؤسس ومتابعته':   'الاستقلالية',
   };
   const dest = data.case_id ? `/case/${data.case_id}` : '/home';
+
+  const rows = [
+    data.sector        ? `<div class="pp-row"><span class="pp-icon">🏢</span><div><span class="pp-label">القطاع</span><span class="pp-val">${data.sector}</span></div></div>` : '',
+    data.employee_count? `<div class="pp-row"><span class="pp-icon">👥</span><div><span class="pp-label">الفريق</span><span class="pp-val">${data.employee_count} موظف</span></div></div>` : '',
+    data.main_goal     ? `<div class="pp-row"><span class="pp-icon">🎯</span><div><span class="pp-label">الهدف</span><span class="pp-val">${data.main_goal}</span></div></div>` : '',
+    (data.top_asset && data.top_asset !== '❓ ما أعرف')
+      ? `<div class="pp-row"><span class="pp-icon">⭐</span><div><span class="pp-label">تعتمد أكثر على</span><span class="pp-val" style="color:var(--gold);">${topAssetLabel[data.top_asset] || data.top_asset}</span></div></div>` : '',
+    data.declared_problem ? `<div class="pp-row"><span class="pp-icon">⚠️</span><div><span class="pp-label">أكبر تحدٍّ</span><span class="pp-val">${data.declared_problem}</span></div></div>` : '',
+  ].filter(Boolean).join('');
+
   $screen.innerHTML = `
-    <div class="outro-wrap" style="text-align:right; max-width:420px; width:100%;">
+    <div style="display:flex; flex-direction:column; align-items:center; width:100%; max-width:420px;">
       <div class="outro-logo">${LOGO_LG}</div>
-      <div class="outro-title" style="font-size:18px; margin-bottom:18px;">🏢 جواز شركتك</div>
-      <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
-                  border-radius:12px; padding:18px 20px; display:flex; flex-direction:column; gap:13px;">
-        ${data.sector       ? `<div style="display:flex; gap:10px; align-items:flex-start;"><span style="min-width:22px;">🏢</span><span style="color:rgba(255,255,255,0.6); font-size:13px;">${data.sector}</span></div>` : ''}
-        ${data.employee_count ? `<div style="display:flex; gap:10px; align-items:flex-start;"><span style="min-width:22px;">👥</span><span style="color:rgba(255,255,255,0.6); font-size:13px;">${data.employee_count} موظف</span></div>` : ''}
-        ${data.main_goal    ? `<div style="display:flex; gap:10px; align-items:flex-start;"><span style="min-width:22px;">🎯</span><div><span style="color:rgba(255,255,255,0.45); font-size:11px; display:block; margin-bottom:2px;">هدف الشركة</span><span style="color:#fff; font-size:13.5px;">${data.main_goal}</span></div></div>` : ''}
-        ${data.top_asset && data.top_asset !== '❓ ما أعرف' ? `<div style="display:flex; gap:10px; align-items:flex-start;"><span style="min-width:22px;">⭐</span><div><span style="color:rgba(255,255,255,0.45); font-size:11px; display:block; margin-bottom:2px;">تعتمد أكثر على</span><span style="color:#F2B233; font-size:13.5px;">${topAssetLabel[data.top_asset] || data.top_asset}</span></div></div>` : ''}
-        ${data.declared_problem ? `<div style="display:flex; gap:10px; align-items:flex-start;"><span style="min-width:22px;">⚠️</span><div><span style="color:rgba(255,255,255,0.45); font-size:11px; display:block; margin-bottom:2px;">أكبر تحدٍّ</span><span style="color:#fff; font-size:13.5px;">${data.declared_problem}</span></div></div>` : ''}
+      <div class="outro-title" style="font-size:17px; margin-bottom:6px;">🏢 جواز شركتك</div>
+      <div style="color:rgba(255,255,255,0.45); font-size:12px; margin-bottom:20px;">
+        ملخص ما رصده سنع من جلسة الاكتشاف
       </div>
-      <button class="outro-btn" style="margin-top:22px;" onclick="location.href='${dest}'">
+      <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10);
+                  border-radius:14px; padding:18px 20px; width:100%;
+                  display:flex; flex-direction:column; gap:14px;">
+        ${rows || '<div style="color:var(--muted);font-size:13px;">جاري تحميل البيانات…</div>'}
+      </div>
+      <button class="outro-btn" style="margin-top:22px; width:100%;"
+              onclick="location.href='${dest}'">
         ابدأ أول تشخيص ←
       </button>
     </div>`;
 }
 
 async function saveAndFinish() {
-  let saveData = {};
+  let saveData = { case_id: null };
   try {
     const res = await fetch('/api/discovery/save', {
       method: 'POST',
@@ -553,23 +614,20 @@ async function saveAndFinish() {
       body: JSON.stringify(ans)
     });
     const json = await res.json();
-    if (json.success) {
-      saveData     = json.data;
-      firstCaseId  = json.data.case_id;
+    if (json.success && json.data) {
+      saveData    = json.data;
+      firstCaseId = json.data.case_id;
     }
-  } catch(e) { /* silently continue */ }
+  } catch(e) { /* silently continue — passport يظهر بإجابات الجلسة */ }
 
-  // شاشة جواز الشركة — بدل الزر المباشر
-  if (firstCaseId) {
-    // إثراء الـ saveData بإجابات الجلسة الحالية التي قد لا ترجع من الـ API
-    saveData.main_goal        = saveData.main_goal        || ans.q1 || null;
-    saveData.top_asset        = saveData.top_asset        || ans.q3 || null;
-    saveData.declared_problem = saveData.declared_problem || ans.q2 || null;
-    transitionTo(() => renderPassport(saveData));
-  } else {
-    document.getElementById('outro-action').innerHTML =
-      `<button class="outro-btn" onclick="location.href='/home'">🏠 الرئيسية</button>`;
-  }
+  // إثراء البيانات بإجابات الجلسة الحالية (تكون موجودة حتى لو فشل الـ API)
+  saveData.main_goal        = saveData.main_goal        || ans.q1  || null;
+  saveData.top_asset        = saveData.top_asset        || ans.q3  || null;
+  saveData.declared_problem = saveData.declared_problem || ans.q2  || null;
+  if (!saveData.case_id && firstCaseId) saveData.case_id = firstCaseId;
+
+  // الانتقال لشاشة الجواز مباشرة (بغض النظر عن نجاح الـ API أو فشله)
+  transitionTo(() => renderPassport(saveData));
 }
 
 function renderQuestion(q) {
