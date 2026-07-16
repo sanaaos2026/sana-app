@@ -2,4 +2,5 @@
 - [Sana auth & tenant isolation](sana-auth-isolation.md) — real login (session-based) + a separate secret-gated admin-preview mode replaced the old public `?company_id=` bypass; guard covers API calls too, not just pages.
 - [Sana SQLite → PostgreSQL migration](sana-postgres-migration.md) — compatibility-wrapper pattern (auto `?`→`%s`, DictCursor, information_schema instead of PRAGMA) avoided rewriting every call site.
 - [Sana uploaded zip drift](sana-uploaded-zip-drift.md) — user-provided app.py/schema.sql in feature zips are often stale forks missing later migrations; diff against current before applying, merge additively.
-- [Sana SDS-001 discovery session](sana-sds001-discovery.md) — 8-question onboarding flow; sds_done column guards idempotency; Q7 stored silently; no score in outro (SCORE-03).
+- [Sana SDS-001 discovery session](sana-sds001-discovery.md) — 7-question onboarding flow (v3); sds_done guards idempotency; success_criteria not vision; no score in outro (SCORE-03).
+- [GOVERNANCE-001](sana-governance-001.md) — قانون نافذ: كل ميزة جديدة تحتاج 5 خانات حقيقية قبل البناء؛ لا كيانات وهمية، لا رؤية تتحول لكود مباشرة.
