@@ -172,6 +172,44 @@ async function loadCase(){
   render(json.data);
 }
 
+function buildInsightCounter(evidence, assets) {
+  // قواعد If/Else ثابتة — بلا AI
+  const risks = evidence.filter(e =>
+    (e.source_type || '').includes('risk_if_skipped') ||
+    (e.title || '').includes('[founder_dependency]') ||
+    ((e.title || '').includes('مستوى اعتماد') &&
+      (['يتعطل','لا تعمل','تتوقف'].some(w => (e.title||'').includes(w))))
+  );
+  // أصول بلا دليل مرتبط بهذي القضية
+  const assetIdsWithEvidence = new Set(evidence.map(e => e.asset_id).filter(Boolean));
+  const needsAttention = (assets || []).filter(a => !assetIdsWithEvidence.has(a.asset_id));
+  const opportunities  = evidence.filter(e => !risks.includes(e));
+
+  if (evidence.length === 0 && (assets||[]).length === 0) return '';
+  return `
+    <div style="background:#0B132B; border-radius:10px; padding:14px 18px; margin-bottom:16px;
+                display:flex; gap:20px; flex-wrap:wrap; align-items:center;">
+      <span style="font-size:11px; color:rgba(255,255,255,0.5); font-weight:600;
+                   letter-spacing:1px; text-transform:uppercase; flex:0 0 100%; margin-bottom:-4px;">
+        🧠 ماذا اكتشف سنع؟
+      </span>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <span style="color:#0EA5A5; font-size:19px; font-weight:700; font-family:'Space Grotesk';">${opportunities.length}</span>
+        <span style="color:rgba(255,255,255,0.55); font-size:13px;">فرص</span>
+      </div>
+      <span style="color:rgba(255,255,255,0.15);">·</span>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <span style="color:#B23A2E; font-size:19px; font-weight:700; font-family:'Space Grotesk';">${risks.length}</span>
+        <span style="color:rgba(255,255,255,0.55); font-size:13px;">مخاطر</span>
+      </div>
+      <span style="color:rgba(255,255,255,0.15);">·</span>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <span style="color:#F2B233; font-size:19px; font-weight:700; font-family:'Space Grotesk';">${needsAttention.length}</span>
+        <span style="color:rgba(255,255,255,0.55); font-size:13px;">أصل يحتاج اهتمامًا</span>
+      </div>
+    </div>`;
+}
+
 function render(d){
   const c = d.case;
   CASE_COMPANY_ID = c.company_id;
@@ -179,7 +217,16 @@ function render(d){
   document.getElementById('caseTitle').textContent = c.case_title;
   document.getElementById('caseType').textContent = c.case_type || '';
 
-  let html = `
+  // نجلب الأصول لحساب "أصل يحتاج اهتمام" ثم نعيد البناء إن وُجدت
+  fetch(`/api/companies/${CASE_COMPANY_ID}/summary${ADMIN_KEY ? '?admin_key='+encodeURIComponent(ADMIN_KEY) : ''}`)
+    .then(r => r.json())
+    .then(j => {
+      const assets = (j.data || {}).assets || [];
+      const counterEl = document.getElementById('insight-counter');
+      if (counterEl) counterEl.outerHTML = buildInsightCounter(d.evidence, assets);
+    }).catch(() => {});
+
+  let html = `<div id="insight-counter">${buildInsightCounter(d.evidence, [])}</div>
     <div class="qbox">
       <div class="lbl">Real Question</div>
       <div class="declared">المشكلة كما وصفها المالك: "${c.declared_problem || ''}"</div>
@@ -378,6 +425,13 @@ async function sdsAnswer(choice, btn){
   document.querySelectorAll('.sds-opt').forEach(b => b.classList.remove('saving'));
 }
 
+function showScoreToast(assetName, newScore) {
+  const t = document.getElementById('toast');
+  t.textContent = `🎉 تم إضافة أصل معرفي جديد — ${assetName} ⬆ ${newScore}`;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
 async function addEvidence(){
   const input = document.getElementById('newEvidence');
   const title = input.value.trim();
@@ -387,7 +441,15 @@ async function addEvidence(){
     body: JSON.stringify({title, case_id: CASE_ID, source_type:'ملاحظة مباشرة', confidence:50})
   });
   const json = await res.json();
-  if(json.success){ showToast('تمت إضافة الدليل'); input.value=''; loadCase(); }
+  if(json.success){
+    const d = json.data || {};
+    if(d.asset_name && d.new_score != null){
+      showScoreToast(d.asset_name, d.new_score);
+    } else {
+      showToast('تمت إضافة الدليل');
+    }
+    input.value=''; loadCase();
+  }
 }
 
 // DEC-01: modal اعتماد القرار بثلاثة حقول إلزامية

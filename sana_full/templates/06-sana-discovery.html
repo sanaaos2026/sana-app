@@ -494,9 +494,10 @@ function renderWelcome() {
   $screen.innerHTML = `
     <div class="screen" style="align-items:center; padding-top:20px;">
       <div class="welcome-logo">${LOGO_LG}</div>
-      <div class="welcome-title">أهلًا بك في سنع 👋</div>
-      <div class="welcome-sub">7 أسئلة بسيطة، وبعدها نبني معك أول تشخيص حقيقي لشركتك.</div>
-      <button class="start-btn" onclick="goNext()">ابدأ ←</button>
+      <div class="welcome-title">👋 أهلًا بك في سنع</div>
+      <div class="welcome-sub" style="margin-bottom:10px;">سنع ليس CRM، وليس ERP.</div>
+      <div class="welcome-sub">سنع يساعدك تشوف شركتك بوضوح وتاخذ قرارات أفضل.</div>
+      <button class="start-btn" onclick="goNext()">🚀 ابدأ</button>
     </div>`;
 }
 
@@ -515,7 +516,36 @@ function renderOutro() {
   saveAndFinish();
 }
 
+// شاشة جواز الشركة — تظهر مباشرة بعد حفظ الجلسة، قبل فتح القضية
+function renderPassport(data) {
+  const topAssetLabel = {
+    '📚 الخبرة والمعرفة':         'المعرفة والخبرة',
+    '⚙️ طريقة التشغيل والتنفيذ': 'التشغيل',
+    '🏷️ الاسم والسمعة والبراند': 'البراند',
+    '📊 البيانات والتقارير':      'البيانات',
+    '👤 وجود المؤسس ومتابعته':   'الاستقلالية',
+  };
+  const dest = data.case_id ? `/case/${data.case_id}` : '/home';
+  $screen.innerHTML = `
+    <div class="outro-wrap" style="text-align:right; max-width:420px; width:100%;">
+      <div class="outro-logo">${LOGO_LG}</div>
+      <div class="outro-title" style="font-size:18px; margin-bottom:18px;">🏢 جواز شركتك</div>
+      <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
+                  border-radius:12px; padding:18px 20px; display:flex; flex-direction:column; gap:13px;">
+        ${data.sector       ? `<div style="display:flex; gap:10px; align-items:flex-start;"><span style="min-width:22px;">🏢</span><span style="color:rgba(255,255,255,0.6); font-size:13px;">${data.sector}</span></div>` : ''}
+        ${data.employee_count ? `<div style="display:flex; gap:10px; align-items:flex-start;"><span style="min-width:22px;">👥</span><span style="color:rgba(255,255,255,0.6); font-size:13px;">${data.employee_count} موظف</span></div>` : ''}
+        ${data.main_goal    ? `<div style="display:flex; gap:10px; align-items:flex-start;"><span style="min-width:22px;">🎯</span><div><span style="color:rgba(255,255,255,0.45); font-size:11px; display:block; margin-bottom:2px;">هدف الشركة</span><span style="color:#fff; font-size:13.5px;">${data.main_goal}</span></div></div>` : ''}
+        ${data.top_asset && data.top_asset !== '❓ ما أعرف' ? `<div style="display:flex; gap:10px; align-items:flex-start;"><span style="min-width:22px;">⭐</span><div><span style="color:rgba(255,255,255,0.45); font-size:11px; display:block; margin-bottom:2px;">تعتمد أكثر على</span><span style="color:#F2B233; font-size:13.5px;">${topAssetLabel[data.top_asset] || data.top_asset}</span></div></div>` : ''}
+        ${data.declared_problem ? `<div style="display:flex; gap:10px; align-items:flex-start;"><span style="min-width:22px;">⚠️</span><div><span style="color:rgba(255,255,255,0.45); font-size:11px; display:block; margin-bottom:2px;">أكبر تحدٍّ</span><span style="color:#fff; font-size:13.5px;">${data.declared_problem}</span></div></div>` : ''}
+      </div>
+      <button class="outro-btn" style="margin-top:22px;" onclick="location.href='${dest}'">
+        ابدأ أول تشخيص ←
+      </button>
+    </div>`;
+}
+
 async function saveAndFinish() {
+  let saveData = {};
   try {
     const res = await fetch('/api/discovery/save', {
       method: 'POST',
@@ -524,13 +554,22 @@ async function saveAndFinish() {
     });
     const json = await res.json();
     if (json.success) {
-      firstCaseId = json.data.case_id;
+      saveData     = json.data;
+      firstCaseId  = json.data.case_id;
     }
   } catch(e) { /* silently continue */ }
 
-  const dest = firstCaseId ? `/case/${firstCaseId}` : '/home';
-  document.getElementById('outro-action').innerHTML =
-    `<button class="outro-btn" onclick="location.href='${dest}'">🚀 افتح أول قضية</button>`;
+  // شاشة جواز الشركة — بدل الزر المباشر
+  if (firstCaseId) {
+    // إثراء الـ saveData بإجابات الجلسة الحالية التي قد لا ترجع من الـ API
+    saveData.main_goal        = saveData.main_goal        || ans.q1 || null;
+    saveData.top_asset        = saveData.top_asset        || ans.q3 || null;
+    saveData.declared_problem = saveData.declared_problem || ans.q2 || null;
+    transitionTo(() => renderPassport(saveData));
+  } else {
+    document.getElementById('outro-action').innerHTML =
+      `<button class="outro-btn" onclick="location.href='/home'">🏠 الرئيسية</button>`;
+  }
 }
 
 function renderQuestion(q) {

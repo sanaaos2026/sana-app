@@ -514,6 +514,18 @@ document.querySelectorAll('.concept-nav a, #outroPassportLink').forEach(a => {
 let companyAssets = [];
 let generatedText = "";
 
+// Feature 4 — تعبئة حقل q1 من ?rec= عند القدوم من زر توصية
+(function prefillFromRec() {
+  const rec = new URLSearchParams(window.location.search).get('rec');
+  if (!rec) return;
+  const el = document.getElementById('q1');
+  if (el) {
+    el.value = decodeURIComponent(rec);
+    // أطلق updateProgress لو كانت موجودة
+    if (typeof updateProgress === 'function') updateProgress();
+  }
+})();
+
 // ── تحميل الأصول ──
 async function loadAssets(){
   try{

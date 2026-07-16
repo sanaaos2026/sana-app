@@ -732,7 +732,20 @@ def discovery_save():
     db.execute("UPDATE companies SET sds_done=1 WHERE company_id=?", (company_id,))
     db.commit()
 
-    return jsonify({"success": True, "data": {"case_id": case_id}})
+    # إرجاع بيانات الشركة لشاشة الجواز (Company Passport) بعد الجلسة
+    company_row = db.execute(
+        "SELECT sector, employee_count FROM companies WHERE company_id=?", (company_id,)
+    ).fetchone()
+
+    return jsonify({"success": True, "data": {
+        "case_id":        case_id,
+        "company_id":     company_id,
+        "sector":         company_row["sector"] if company_row else None,
+        "employee_count": company_row["employee_count"] if company_row else None,
+        "main_goal":      q1 or None,
+        "top_asset":      q3 or None,
+        "declared_problem": q2 or None,
+    }})
 
 
 @app.route("/logout", methods=["GET", "POST"])
@@ -1593,7 +1606,12 @@ def add_evidence(company_id):
 
     return jsonify({
         "success": True,
-        "data": {"evidence_id": result["evidence_id"]},
+        "data": {
+            "evidence_id": result["evidence_id"],
+            "asset_id":    result.get("asset_id"),
+            "asset_name":  result.get("asset_name"),
+            "new_score":   result.get("new_score"),
+        },
         "meta": {"duplicate": False}
     }), 201
 

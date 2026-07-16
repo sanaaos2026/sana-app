@@ -94,8 +94,37 @@ def save_evidence(
             (evidence_id, company_id, case_id, asset_id,
              final_title, source_type, confidence),
         )
+
+        # 5) تحديث درجة الأصل (+2، بحد أقصى 100) — رقم حقيقي من القاعدة
+        new_score = None
+        asset_name = None
+        if asset_id:
+            db.execute(
+                f"""UPDATE assets
+                    SET current_score = CASE
+                        WHEN current_score + 2 > 100 THEN 100
+                        ELSE current_score + 2
+                    END
+                    WHERE asset_id={PLACEHOLDER} AND company_id={PLACEHOLDER}""",
+                (asset_id, company_id),
+            )
+            row = db.execute(
+                f"SELECT current_score, asset_name FROM assets WHERE asset_id={PLACEHOLDER}",
+                (asset_id,),
+            ).fetchone()
+            if row:
+                new_score  = row[0]
+                asset_name = row[1]
+
         db.commit()
-        return {"success": True, "evidence_id": evidence_id, "error": None}
+        return {
+            "success": True,
+            "evidence_id": evidence_id,
+            "error": None,
+            "asset_id": asset_id,
+            "asset_name": asset_name,
+            "new_score": new_score,
+        }
     except Exception as exc:
         # لا فشل صامت أبدًا — الخطأ الحقيقي يصل للمستدعي
         return {"success": False, "evidence_id": None, "error": str(exc)}
