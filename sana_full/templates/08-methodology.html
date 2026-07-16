@@ -169,8 +169,78 @@ async function load(){
   render(json.data);
 }
 
+/* ── محوّل Markdown → HTML بسيط (بدون مكتبات خارجية) ── */
+function mdToHtml(md){
+  if(!md) return '';
+  const lines = md.split('\n');
+  let out = '';
+  let inTable = false, inList = false;
+  for(let i = 0; i < lines.length; i++){
+    let l = lines[i];
+    // جدول: سطر يبدأ وينتهي بـ |
+    if(l.trim().startsWith('|') && l.trim().endsWith('|')){
+      const cells = l.split('|').slice(1,-1).map(c=>c.trim());
+      const isSep = cells.every(c => /^[-:]+$/.test(c));
+      if(isSep){ continue; }
+      if(!inTable){ out += '<table class="cat-table" style="margin-bottom:14px;"><tbody>'; inTable=true; }
+      // رأس الجدول (السطر الأول قبل السطر الفاصل)
+      const nextLine = lines[i+1] || '';
+      const isHeader = nextLine.split('|').slice(1,-1).every(c=>/^[-:]+$/.test(c.trim()));
+      if(isHeader){
+        out += `<thead><tr>${cells.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
+      } else {
+        out += `<tr>${cells.map(c=>`<td>${c}</td>`).join('')}</tr>`;
+      }
+      continue;
+    } else if(inTable){ out += '</tbody></table>'; inTable=false; }
+    // قوائم
+    if(/^[\*\-] /.test(l.trim())){
+      if(!inList){ out += '<ul class="ai-list" style="margin-bottom:10px;">'; inList=true; }
+      out += `<li>${inlineMd(l.trim().slice(2))}</li>`;
+      continue;
+    } else if(inList){ out += '</ul>'; inList=false; }
+    // عناوين
+    if(l.startsWith('### ')){ out += `<h3 style="font-size:14px;font-weight:700;color:#0B132B;margin:18px 0 8px;">${inlineMd(l.slice(4))}</h3>`; }
+    else if(l.startsWith('## ')){ out += `<div class="section-title" style="margin-top:24px;">${inlineMd(l.slice(3))}</div>`; }
+    else if(l.startsWith('# ')){ /* نتجاهل العنوان الرئيسي — يُعرض في hero */ }
+    else if(l.startsWith('---')){ out += '<hr style="border:none;border-top:1px solid #DEE1EC;margin:20px 0;">'; }
+    else if(l.trim() === ''){ out += '<br>'; }
+    else { out += `<p style="font-size:13.5px;color:#333940;line-height:1.75;margin-bottom:6px;">${inlineMd(l)}</p>`; }
+  }
+  if(inTable) out += '</tbody></table>';
+  if(inList) out += '</ul>';
+  return out;
+}
+function inlineMd(t){
+  return t
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/`(.+?)`/g,'<code style="background:#F5F6FB;padding:1px 5px;border-radius:4px;font-size:12.5px;">$1</code>');
+}
+
 function render(d){
-  document.getElementById('bosBadge').textContent = `${d.bos_id || 'BOS-001'} · ${d.version || ''}`;
+  // عنوان الصفحة وبادج BOS
+  document.title = `سنع — ${d.title}`;
+  document.querySelector('header .title').textContent = d.title;
+  document.getElementById('bosBadge').textContent = d.bos_id ? `${d.bos_id} · ${d.version || 'v1.0'}` : (d.doc_type || 'METHODOLOGY');
+
+  // ── وثائق markdown (LCOS وما شابهها) ──
+  if(d.content_format === 'markdown'){
+    const html = `
+      <div class="hero">
+        <span class="eyebrow">${d.doc_type || 'وثيقة منهجية مرجعية'}</span>
+        <h1>${d.title}</h1>
+        <div class="sub">${d.subtitle || ''}</div>
+        <div class="scope-note">📌 وثيقة مرجعية داخلية — تُستخدم لقياس كل قطعة محتوى مستقبلية قبل إنتاجها.</div>
+      </div>
+      <div class="section">${mdToHtml(d.markdown)}</div>
+      ${FROM_CASE ? `<a href="/case/${FROM_CASE}${CQS}" class="back-to-case">← رجوع لتقييم القضية على هذا الإطار</a>` : ''}
+    `;
+    document.getElementById('app').innerHTML = html;
+    return;
+  }
+
+  /* ── وثائق JSON (البنية الأصلية) ── */
 
   let html = `
     <div class="hero">

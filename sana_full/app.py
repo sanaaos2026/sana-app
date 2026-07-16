@@ -925,6 +925,14 @@ def methodology_detail(slug):
     if not doc:
         return jsonify({"success": False, "error": "DOC_NOT_FOUND"}), 404
     doc_dict = dict(doc)
+    raw_content = doc["content"] or ""
+    # محاولة تفسير المحتوى كـ JSON (البنية القديمة) أو إعادته كـ markdown (البنية الجديدة)
+    try:
+        content_data = json.loads(raw_content)
+        content_format = "json"
+    except (json.JSONDecodeError, TypeError):
+        content_data = {}
+        content_format = "markdown"
     return jsonify({
         "success": True,
         "data": {
@@ -935,7 +943,9 @@ def methodology_detail(slug):
             "doc_type": doc_dict.get("doc_type"),
             "version": doc_dict.get("version"),
             "bos_id": doc_dict.get("bos_id"),
-            **json.loads(doc["content"]),
+            "content_format": content_format,
+            "markdown": raw_content if content_format == "markdown" else None,
+            **content_data,
         }
     })
 

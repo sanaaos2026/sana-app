@@ -285,7 +285,7 @@ function render(d){
         <div class="decision-box" style="margin-bottom:10px;">
           <div class="t">${dec.title}</div>
           <div class="r">${dec.reason || ''} — ثقة ${dec.confidence_score}٪</div>
-          ${dec.structured_data ? `<a href="/services${qs(CASE_COMPANY_ID)}" class="link-out" style="margin:0 0 10px; display:inline-block;">عرض تفصيل ترتيب الخدمات ←</a><br>` : ''}
+          ${dec.structured_data ? (()=>{try{const sd=JSON.parse(dec.structured_data);if(sd.methodology_slug)return `<a href="/methodology/${sd.methodology_slug}${qs(CASE_COMPANY_ID)}" class="link-out" style="margin:0 0 10px; display:inline-block;">📋 فتح الوثيقة المنهجية ←</a><br>`;return `<a href="/services${qs(CASE_COMPANY_ID)}" class="link-out" style="margin:0 0 10px; display:inline-block;">عرض تفصيل ترتيب الخدمات ←</a><br>`;}catch(e){return '';}})() : ''}
           ${dec.status==='معتمد'
             ? `<div style="font-size:12px; color:#0EA5A5; font-weight:600; margin-top:6px;">✓ تم الاعتماد${dec.owner_name ? ` — ${dec.owner_name}` : ''}${dec.due_date ? ` · ${dec.due_date}` : ''}${dec.success_metric ? `<br><span style="color:#6E7580; font-weight:400;">المقياس: ${dec.success_metric}</span>` : ''}</div>`
             : `<button class="btn btn-primary" onclick="openApproveModal('${dec.decision_id}')">اعتماد القرار</button>`
