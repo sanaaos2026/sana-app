@@ -68,6 +68,28 @@
   .ai-case-btn:hover{ background:#131c3d; }
   #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; }
   #toast.show{ opacity:1; }
+
+  /* ── SDS-002 ── */
+  .sds-section{
+    background:#fff; border:1.5px solid #F2B233; border-radius:12px;
+    padding:20px; margin-bottom:16px;
+  }
+  .sds-eyebrow{ font-family:'Space Grotesk'; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:#F2B233; font-weight:600; margin-bottom:8px; }
+  .sds-q{ font-size:14.5px; font-weight:600; color:#0B132B; margin-bottom:14px; line-height:1.5; }
+  .sds-options{ display:flex; gap:8px; flex-wrap:wrap; }
+  .sds-opt{
+    flex:1; min-width:90px; padding:9px 12px; border:1.5px solid #DEE1EC;
+    border-radius:8px; text-align:center; font-size:12.5px; font-weight:600;
+    cursor:pointer; background:#F5F6FB; color:#6E7580; transition:all .15s;
+    font-family:'IBM Plex Sans Arabic';
+  }
+  .sds-opt:hover{ border-color:#F2B233; color:#0B132B; }
+  .sds-opt.selected{ background:#FFF8E6; border-color:#F2B233; color:#7A5C00; }
+  .sds-opt.saving{ opacity:.55; cursor:not-allowed; }
+  .sds-msg{ margin-top:12px; font-size:13px; color:#0B132B; display:none; }
+  .sds-msg.show{ display:block; }
+  .sds-suggestion{ margin-top:8px; font-size:12px; color:#6E7580; font-style:italic; display:none; }
+  .sds-suggestion.show{ display:block; }
 </style>
 </head>
 <body>
@@ -143,7 +165,8 @@ function qs(companyId, extra){
 }
 
 async function loadCase(){
-  const res = await fetch(`/api/cases/${CASE_ID}`);
+  const adminParam = ADMIN_KEY ? `?admin_key=${encodeURIComponent(ADMIN_KEY)}` : '';
+  const res = await fetch(`/api/cases/${CASE_ID}${adminParam}`);
   const json = await res.json();
   if(!json.success){ document.getElementById('app').innerHTML = '<p>تعذر تحميل القضية</p>'; return; }
   render(json.data);
@@ -281,6 +304,78 @@ function render(d){
   }
 
   document.getElementById('app').innerHTML = html;
+
+  // SDS-002: يُحمَّل بعد render لأن CASE_COMPANY_ID يُحدَّد هنا
+  loadSdsSection();
+}
+
+// ── SDS-002: تحميل وعرض سؤال الفجوة أسفل القضية ──
+async function loadSdsSection(){
+  if(!CASE_COMPANY_ID) return;
+  try{
+    const res  = await fetch(`/api/companies/${CASE_COMPANY_ID}/sds-question${qs(CASE_COMPANY_ID)}`);
+    const json = await res.json();
+    if(!json.success) return;
+    const sds = json.data;
+
+    const optHtml = sds.options.map(opt =>
+      `<button class="sds-opt" onclick="sdsAnswer('${opt.replace(/'/g,"\\'")}', this)">${opt}</button>`
+    ).join('');
+
+    const sec = document.createElement('div');
+    sec.className = 'sds-section';
+    sec.id = 'sdsSection';
+    sec.innerHTML = `
+      <div class="sds-eyebrow">🧩 بقيت فجوة واحدة…</div>
+      <div class="sds-q">${sds.question} <span style="font-size:11px; color:#9AA0AB; font-weight:400;">(${sds.asset_name})</span></div>
+      <div class="sds-options">${optHtml}</div>
+      <div class="sds-msg" id="sdsMsg">تمام، ارتفعت معرفتنا بهذا الأصل 🎯</div>
+      <div class="sds-suggestion" id="sdsSuggestion"></div>
+    `;
+    document.getElementById('app').appendChild(sec);
+    window._sdsMeta = sds;
+  } catch(e){ /* التجاهل — SDS اختياري */ }
+}
+
+async function sdsAnswer(choice, btn){
+  const sds = window._sdsMeta;
+  if(!sds || !CASE_COMPANY_ID) return;
+  document.querySelectorAll('.sds-opt').forEach(b => b.classList.add('saving'));
+  btn.classList.add('selected');
+
+  const title      = `${sds.question} — الإجابة: ${choice}`;
+  const confMap    = { 'نعم': 90, 'جزئيًا': 60, 'قيد الإعداد': 60, 'قليل (0-2)': 90, 'متوسط (3-6)': 60 };
+  const confidence = confMap[choice] || 30;
+
+  try{
+    const res  = await fetch(`/api/companies/${CASE_COMPANY_ID}/evidence`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        title,
+        case_id:     CASE_ID,
+        asset_id:    sds.asset_id,
+        source_type: 'SDS-002 تشخيص تراكمي',
+        confidence
+      })
+    });
+    const json = await res.json();
+    const msg  = document.getElementById('sdsMsg');
+    const sug  = document.getElementById('sdsSuggestion');
+    if(res.ok && json.success){
+      msg.classList.add('show');
+      showToast('تمام، ارتفعت معرفتنا بهذا الأصل 🎯');
+      const suggestion = (sds.suggestions || {})[choice];
+      if(suggestion){ sug.textContent = suggestion; sug.classList.add('show'); }
+    } else {
+      msg.textContent = '⚠️ تعذر الحفظ — حاول مرة أخرى.';
+      msg.classList.add('show');
+    }
+  } catch(e){
+    document.getElementById('sdsMsg').textContent = '⚠️ تعذر الاتصال بالخادم.';
+    document.getElementById('sdsMsg').classList.add('show');
+  }
+  document.querySelectorAll('.sds-opt').forEach(b => b.classList.remove('saving'));
 }
 
 async function addEvidence(){

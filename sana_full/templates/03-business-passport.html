@@ -38,9 +38,37 @@
 
   .disclaimer{ font-size:11px; color:#9AA0AB; margin-top:10px; font-style:italic; }
 
-  .asset-row{ display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid #DEE1EC; font-size:13px; }
+  .asset-row{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid #DEE1EC; font-size:13px; }
   .asset-row:last-child{ border-bottom:none; }
+  .asset-row .ar-name{ min-width:90px; }
+  .asset-row .ar-score{ font-family:'Space Grotesk'; font-weight:600; min-width:30px; text-align:left; }
+  .ev-bar{ flex:1; height:6px; background:#EBEDF5; border-radius:3px; overflow:hidden; }
+  .ev-bar-fill{ height:100%; background:#0EA5A5; border-radius:3px; transition:width .4s; }
+  .ev-count{ font-family:'Space Grotesk'; font-size:11px; color:#9AA0AB; min-width:28px; text-align:left; }
   .skeleton{ color:#9AA0AB; font-size:13px; padding:40px 0; text-align:center; }
+
+  /* ── SDS-002: قسم "بقيت فجوة واحدة" ── */
+  .sds-section{
+    background:#fff; border:1.5px solid #F2B233; border-radius:12px;
+    padding:22px; margin:0 20px 60px; max-width:900px;
+    margin-left:auto; margin-right:auto;
+  }
+  .sds-eyebrow{ font-family:'Space Grotesk'; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:#F2B233; font-weight:600; margin-bottom:10px; }
+  .sds-q{ font-size:15px; font-weight:600; color:#0B132B; margin-bottom:18px; line-height:1.5; }
+  .sds-options{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:0; }
+  .sds-opt{
+    flex:1; min-width:100px; padding:10px 14px; border:1.5px solid #DEE1EC;
+    border-radius:8px; text-align:center; font-size:13px; font-weight:600;
+    cursor:pointer; background:#F5F6FB; color:#6E7580; transition:all .15s;
+    font-family:'IBM Plex Sans Arabic';
+  }
+  .sds-opt:hover{ border-color:#F2B233; color:#0B132B; }
+  .sds-opt.selected{ background:#FFF8E6; border-color:#F2B233; color:#7A5C00; }
+  .sds-opt.saving{ opacity:.55; cursor:not-allowed; }
+  .sds-msg{ margin-top:14px; font-size:13px; color:#0B132B; display:none; }
+  .sds-msg.show{ display:block; }
+  .sds-suggestion{ margin-top:10px; font-size:12.5px; color:#6E7580; font-style:italic; display:none; }
+  .sds-suggestion.show{ display:block; }
 </style>
 </head>
 <body>
@@ -86,13 +114,17 @@ const CQS = (() => {
 })();
 
 async function loadPassport(){
-  const res = await fetch(`/api/companies/${COMPANY_ID}/passport`);
-  const json = await res.json();
-  if(!json.success){ document.getElementById('app').innerHTML = '<p>تعذر تحميل الجواز</p>'; return; }
-  render(json.data, json.meta);
+  const [passRes, sdsRes] = await Promise.all([
+    fetch(`/api/companies/${COMPANY_ID}/passport${CQS}`),
+    fetch(`/api/companies/${COMPANY_ID}/sds-question${CQS}`)
+  ]);
+  const passJson = await passRes.json();
+  const sdsJson  = await sdsRes.json();
+  if(!passJson.success){ document.getElementById('app').innerHTML = '<p>تعذر تحميل الجواز</p>'; return; }
+  render(passJson.data, passJson.meta, sdsJson.success ? sdsJson.data : null);
 }
 
-function render(d, meta){
+function render(d, meta, sds){
   const gapPct = Math.round((d.current_value / d.potential_value) * 100);
 
   let html = `
@@ -118,8 +150,17 @@ function render(d, meta){
       <section>
         <h2>الأصول (من الأضعف للأقوى)</h2>
   `;
+  // أشرطة تقدم الأدلة: عدد الأدلة الفعلي / 5 كحد أقصى للعرض (SDS-002)
+  const evPer = (sds && sds.evidence_per_asset) || {};
   d.assets.slice().sort((a,b)=>a.current_score-b.current_score).forEach(a=>{
-    html += `<div class="asset-row"><span>${a.asset_name}</span><span class="num" style="font-weight:600;">${a.current_score}</span></div>`;
+    const evCount = evPer[a.asset_type] || 0;
+    const evPct   = Math.min(evCount / 5, 1) * 100;
+    html += `<div class="asset-row">
+      <span class="ar-name">${a.asset_name}</span>
+      <div class="ev-bar"><div class="ev-bar-fill" style="width:${evPct}%"></div></div>
+      <span class="ev-count">${evCount}</span>
+      <span class="ar-score">${a.current_score}</span>
+    </div>`;
   });
   html += `</section>
       ${d.weakest_asset_case_id ? `
@@ -135,6 +176,68 @@ function render(d, meta){
     </main>
   `;
   document.getElementById('app').innerHTML = html;
+
+  // ── SDS-002: إلحاق قسم "بقيت فجوة واحدة" إذا توفر سؤال ──
+  if(sds && sds.question){
+    const optHtml = sds.options.map(opt =>
+      `<button class="sds-opt" onclick="sdsAnswer('${opt.replace(/'/g,"\\'")}', this)">${opt}</button>`
+    ).join('');
+    const sec = document.createElement('div');
+    sec.className = 'sds-section';
+    sec.id = 'sdsSection';
+    sec.innerHTML = `
+      <div class="sds-eyebrow">🧩 بقيت فجوة واحدة…</div>
+      <div class="sds-q">${sds.question} <span style="font-size:11px; color:#9AA0AB; font-weight:400;">(${sds.asset_name})</span></div>
+      <div class="sds-options">${optHtml}</div>
+      <div class="sds-msg" id="sdsMsg">تمام، ارتفعت معرفتنا بهذا الأصل 🎯</div>
+      <div class="sds-suggestion" id="sdsSuggestion"></div>
+    `;
+    document.getElementById('app').after(sec);
+    // حفظ البيانات لدالة الإجابة
+    window._sdsMeta = sds;
+  }
+}
+
+// ── SDS-002: حفظ الإجابة كـ evidence بنفس الـendpoint المستخدم في assessment ──
+async function sdsAnswer(choice, btn){
+  const sds = window._sdsMeta;
+  if(!sds) return;
+  // تعطيل كل الأزرار أثناء الحفظ
+  document.querySelectorAll('.sds-opt').forEach(b => b.classList.add('saving'));
+  btn.classList.add('selected');
+
+  const title = `${sds.question} — الإجابة: ${choice}`;
+  const confMap = { 'نعم': 90, 'جزئيًا': 60, 'قيد الإعداد': 60, 'قليل (0-2)': 90, 'متوسط (3-6)': 60 };
+  const confidence = confMap[choice] || 30;
+
+  try{
+    const res = await fetch(`/api/companies/${COMPANY_ID}/evidence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        asset_id:    sds.asset_id,
+        source_type: 'SDS-002 تشخيص تراكمي',
+        confidence
+      })
+    });
+    const json = await res.json();
+    const msg  = document.getElementById('sdsMsg');
+    const sug  = document.getElementById('sdsSuggestion');
+    if(res.ok && json.success){
+      msg.classList.add('show');
+      // اقتراح frontend فقط — لا يُنشأ أي صف في tasks/decisions
+      const suggestion = (sds.suggestions || {})[choice];
+      if(suggestion){ sug.textContent = suggestion; sug.classList.add('show'); }
+    } else {
+      msg.textContent = '⚠️ تعذر الحفظ — حاول مرة أخرى.';
+      msg.classList.add('show');
+    }
+  } catch(e){
+    document.getElementById('sdsMsg').textContent = '⚠️ تعذر الاتصال بالخادم.';
+    document.getElementById('sdsMsg').classList.add('show');
+  }
+  document.querySelectorAll('.sds-opt').forEach(b => b.classList.remove('saving'));
 }
 
 async function downloadReport(){

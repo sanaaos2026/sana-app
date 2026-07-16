@@ -998,6 +998,105 @@ def passport_summary(company_id):
 
 
 # ------------------------------------------------------------------
+# SDS-002 — Progressive Discovery MVP
+# مكتبة أسئلة ثابتة: سؤال واحد لكل أصل (5 أصول × سؤال)
+# لا جدول، لا عمود جديد — dict بسيط بالكود
+# ------------------------------------------------------------------
+SDS_QUESTIONS = {
+    "Knowledge": {
+        "text": "هل إجراءات العمل الأساسية عندكم موثقة؟",
+        "options": ["نعم", "جزئيًا", "لا"],
+        "suggestions": {
+            "لا":       "💡 يُنصح بالبدء بتوثيق إجراءات خدمة العملاء — حتى صفحة واحدة تحدث فرقًا.",
+            "جزئيًا":  "💡 وسّع التوثيق ليشمل الإجراءات التي تعتمد على شخص واحد.",
+        },
+    },
+    "Brand": {
+        "text": "هل يقدر أغلب عملائك يوصفون شركتك بجملة وحدة؟",
+        "options": ["نعم", "لا", "ما أعرف"],
+        "suggestions": {
+            "لا":       "💡 يُنصح بصياغة جملة تعريفية واحدة واضحة وتوحيدها عبر كل قنواتك.",
+            "ما أعرف": "💡 اسأل 3 عملاء فعليين: كيف يصفون شركتك؟ الإجابة ستفاجئك.",
+        },
+    },
+    "Operations": {
+        "text": "هل يوجد شخص يقدر يأدي عملك لو غبت أسبوعين؟",
+        "options": ["نعم", "جزئيًا", "لا"],
+        "suggestions": {
+            "لا":       "💡 يُنصح بتدريب شخص واحد على الأقل على المهام الأساسية بشكل موثق.",
+            "جزئيًا":  "💡 وسّع نطاق تفويض القرارات اليومية لتشمل أكثر من شخص.",
+        },
+    },
+    "Data": {
+        "text": "هل عندكم لوحة متابعة أسبوعية للمبيعات أو الأداء؟",
+        "options": ["نعم", "قيد الإعداد", "لا"],
+        "suggestions": {
+            "لا":           "💡 يُنصح بإنشاء تقرير أسبوعي بسيط يتضمن 3 أرقام أساسية على الأقل.",
+            "قيد الإعداد": "💡 حدد موعدًا لتفعيل لوحة المتابعة وأبلغ فريقك به.",
+        },
+    },
+    "Independence": {
+        "text": "كم قرار يحتاج موافقتك الشخصية تقريبًا كل يوم؟",
+        "options": ["قليل (0-2)", "متوسط (3-6)", "كثير (+7)"],
+        "suggestions": {
+            "كثير (+7)":    "💡 يُنصح بمراجعة القرارات اليومية وتحديد أيها يمكن تفويضه فورًا.",
+            "متوسط (3-6)": "💡 حدد قرارًا واحدًا يمكن تفويضه للفريق هذا الأسبوع.",
+        },
+    },
+}
+
+
+@app.route("/api/companies/<company_id>/sds-question")
+def sds_question(company_id):
+    """SDS-002 MVP: يختار الأصل الأقل أدلة ويعيد سؤاله — بلا جدول جديد."""
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    db = get_db()
+    assets = db.execute(
+        "SELECT * FROM assets WHERE company_id=?", (company_id,)
+    ).fetchall()
+    if not assets:
+        return jsonify({"success": False, "error": "NO_ASSETS"}), 404
+
+    # COUNT مباشر من evidence لكل أصل — بلا عمود confidence جديد
+    evidence_per_asset = {}
+    for a in assets:
+        cnt = db.execute(
+            "SELECT COUNT(*) as cnt FROM evidence WHERE company_id=? AND asset_id=?",
+            (company_id, a["asset_id"])
+        ).fetchone()["cnt"]
+        evidence_per_asset[a["asset_type"]] = {
+            "count":      cnt,
+            "asset_id":   a["asset_id"],
+            "asset_name": a["asset_name"],
+        }
+
+    # اختر الأصل صاحب أقل عدد أدلة — عشوائيًا عند التساوي
+    import random
+    valid = {k: v for k, v in evidence_per_asset.items() if k in SDS_QUESTIONS}
+    if not valid:
+        return jsonify({"success": False, "error": "NO_QUESTION"}), 404
+    min_count  = min(v["count"] for v in valid.values())
+    candidates = [k for k, v in valid.items() if v["count"] == min_count]
+    chosen     = random.choice(candidates)
+    q          = SDS_QUESTIONS[chosen]
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "asset_type":       chosen,
+            "asset_id":         evidence_per_asset[chosen]["asset_id"],
+            "asset_name":       evidence_per_asset[chosen]["asset_name"],
+            "question":         q["text"],
+            "options":          q["options"],
+            "suggestions":      q["suggestions"],
+            "evidence_per_asset": {k: v["count"] for k, v in evidence_per_asset.items()},
+        }
+    })
+
+
+# ------------------------------------------------------------------
 # API — Decisions
 # ------------------------------------------------------------------
 
