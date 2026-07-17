@@ -13,8 +13,10 @@ import os
 import json
 import uuid
 import secrets
-from datetime import datetime
+import decimal
+from datetime import datetime, date
 from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for, Response
+from flask.json.provider import DefaultJSONProvider
 from werkzeug.security import generate_password_hash, check_password_hash
 # weasyprint يُستورد داخل الدالة فقط لتفادي crash عند غياب libpango وقت التشغيل
 
@@ -75,7 +77,23 @@ def ask_sana_ai(system_prompt, user_prompt):
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE_URL = os.environ["DATABASE_URL"]
 
+class _SanaJSONProvider(DefaultJSONProvider):
+    """
+    يحوّل الأنواع التي لا يدعمها json القياسي:
+      • decimal.Decimal  → float  (عمود numeric في PostgreSQL)
+      • datetime / date  → ISO-8601 string
+    يُطبَّق تلقائياً على كل jsonify() و Response.json في التطبيق.
+    """
+    def default(self, obj):
+        if isinstance(obj, decimal.Decimal):
+            return float(obj)
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        return super().default(obj)
+
 app = Flask(__name__)
+app.json_provider_class = _SanaJSONProvider
+app.json = _SanaJSONProvider(app)
 app.secret_key = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
 
 # فلتر Jinja2: يحوّل JSON string → dict (يُستخدم في قوالب المقالات)
@@ -2712,9 +2730,9 @@ def sales_metrics(company_id):
         "SELECT * FROM opportunities WHERE company_id=? AND archived=0", (company_id,)
     ).fetchall()
 
-    pipeline_value = sum(float(o["amount"] or 0) for o in all_opps if o["stage"] in ACTIVE_STAGES)
+    pipeline_value = sum(decimal.Decimal(o["amount"] or 0) for o in all_opps if o["stage"] in ACTIVE_STAGES)
     weighted_value = sum(
-        float(o["amount"] or 0) * ((float(o["probability"] or 50)) / 100)
+        decimal.Decimal(o["amount"] or 0) * (decimal.Decimal(o["probability"] or 50) / 100)
         for o in all_opps if o["stage"] in ACTIVE_STAGES
     )
     # SALES-01: فرص بلا إجراء تالٍ أو تاريخ
@@ -2753,7 +2771,7 @@ def sales_metrics(company_id):
             "no_action_count": len(no_action),
             "no_action_opps": no_action,
             "conversion_rate": conversion_rate,
-            "avg_deal_value": round(sum((o["amount"] or 0) for o in wins) / len(wins)) if wins else None,
+            "avg_deal_value": float(sum(decimal.Decimal(o["amount"] or 0) for o in wins) / len(wins)) if wins else None,
             "loss_reasons": loss_reasons,
             "sources": sources,
             "stage_counts": {s: sum(1 for o in all_opps if o["stage"] == s) for s in SALES_STAGES},
