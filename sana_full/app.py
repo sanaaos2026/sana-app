@@ -583,6 +583,11 @@ def init_db(force=False):
         )""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_expert_projects_expert ON expert_projects(expert_id)")
 
+        # ── is_admin على user_accounts — يميّز حسابات المستشار عن حسابات الشركات ──
+        accts_cols = _columns_of(conn, "user_accounts")
+        if "is_admin" not in accts_cols:
+            conn.execute("ALTER TABLE user_accounts ADD COLUMN is_admin SMALLINT NOT NULL DEFAULT 0")
+
         conn.commit()
     # لكل شركة بلا رمز دعوة (سواء قاعدة بيانات جديدة أو قديمة) — ولّد رمزًا فريدًا
     for row in conn.execute("SELECT company_id FROM companies WHERE signup_code IS NULL").fetchall():
@@ -3471,6 +3476,125 @@ def sales_metrics(company_id):
             "stage_counts": {s: sum(1 for o in all_opps if o["stage"] == s) for s in SALES_STAGES},
         }
     })
+
+
+# ═══════════════════════════════════════════════════════════════════
+# سنع الخبير — لوحة تحكم إدارة الخبراء (الجزء 2)
+# ═══════════════════════════════════════════════════════════════════
+
+def is_expert_admin():
+    """صلاحية إدارة الخبراء: مفتاح المشرف الداخلي أو حساب مُعلَّم بـis_admin=1."""
+    if is_admin_preview():
+        return True
+    return bool(session.get("is_admin"))
+
+
+@app.route("/admin/experts")
+def admin_experts_page():
+    if not is_expert_admin():
+        return redirect(url_for("login", next=request.full_path))
+    return render_template("admin-experts.html")
+
+
+@app.route("/api/experts", methods=["GET"])
+def list_experts():
+    if not is_expert_admin():
+        return jsonify({"success": False, "error": "FORBIDDEN"}), 403
+    db = get_db()
+    rows = db.execute("""
+        SELECT
+            e.expert_id, e.name, e.domain_expertise, e.status,
+            e.access_link_slug, e.access_code, e.api_call_count,
+            to_char(e.created_at AT TIME ZONE 'Asia/Riyadh', 'YYYY-MM-DD') AS created_date,
+            to_char(e.last_session_at AT TIME ZONE 'Asia/Riyadh', 'YYYY-MM-DD') AS last_session_date,
+            COALESCE((
+                SELECT es.current_stage FROM expert_sessions es
+                WHERE es.expert_id = e.expert_id
+                ORDER BY es.started_at DESC LIMIT 1
+            ), 0) AS current_stage,
+            (SELECT COUNT(*) FROM expert_knowledge_assets ka WHERE ka.expert_id = e.expert_id) AS knowledge_count,
+            (SELECT COUNT(*) FROM expert_sessions   s  WHERE s.expert_id  = e.expert_id) AS session_count,
+            (SELECT COUNT(*) FROM expert_facts      f  WHERE f.expert_id  = e.expert_id) AS fact_count
+        FROM experts e
+        ORDER BY e.created_at DESC
+    """).fetchall()
+    return jsonify({"success": True, "experts": [dict(r) for r in rows]})
+
+
+@csrf.exempt   # يُستدعى بـ admin_key أو من واجهة المستشار — الواجهة ترسل الـCSRF عبر meta-interceptor
+@app.route("/api/experts", methods=["POST"])
+def create_expert():
+    if not is_expert_admin():
+        return jsonify({"success": False, "error": "FORBIDDEN"}), 403
+    body = request.get_json(silent=True) or {}
+    name   = (body.get("name") or "").strip()
+    domain = (body.get("domain_expertise") or "").strip()
+    if not name or not domain:
+        return jsonify({"success": False, "error": "الاسم والمجال مطلوبان"}), 400
+
+    db = get_db()
+    # توليد expert_id تسلسلي فريد (EXP-101, EXP-102, ...)
+    existing_ids = {r[0] for r in db.execute("SELECT expert_id FROM experts").fetchall()}
+    n = 101
+    while f"EXP-{n}" in existing_ids:
+        n += 1
+    expert_id = f"EXP-{n}"
+    slug      = f"exp-{n}"
+    uid       = str(uuid.uuid4())
+    code      = f"{secrets.randbelow(1_000_000):06d}"
+
+    db.execute("""
+        INSERT INTO experts
+            (expert_id, uuid, name, domain_expertise, phone, email,
+             notes, access_link_slug, access_code, status, api_call_count)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    """, (expert_id, uid, name,
+          domain,
+          (body.get("phone") or "").strip() or None,
+          (body.get("email") or "").strip() or None,
+          (body.get("notes") or "").strip() or None,
+          slug, code, "لم يبدأ", 0))
+    db.commit()
+
+    base = request.host_url.rstrip("/")
+    return jsonify({
+        "success":    True,
+        "expert_id":  expert_id,
+        "slug":       slug,
+        "access_code": code,
+        "access_link": f"{base}/e/{slug}",
+    }), 201
+
+
+@app.route("/api/experts/<expert_id>", methods=["GET"])
+def get_expert(expert_id):
+    if not is_expert_admin():
+        return jsonify({"success": False, "error": "FORBIDDEN"}), 403
+    db = get_db()
+    row = db.execute("""
+        SELECT e.*,
+            to_char(e.created_at AT TIME ZONE 'Asia/Riyadh', 'YYYY-MM-DD HH24:MI') AS created_fmt,
+            to_char(e.last_session_at AT TIME ZONE 'Asia/Riyadh', 'YYYY-MM-DD HH24:MI') AS last_session_fmt,
+            COALESCE((
+                SELECT es.current_stage FROM expert_sessions es
+                WHERE es.expert_id = e.expert_id
+                ORDER BY es.started_at DESC LIMIT 1
+            ), 0) AS current_stage,
+            (SELECT COUNT(*) FROM expert_knowledge_assets WHERE expert_id=e.expert_id) AS knowledge_count,
+            (SELECT COUNT(*) FROM expert_facts WHERE expert_id=e.expert_id AND fact_type='حقيقة') AS fact_count,
+            (SELECT COUNT(*) FROM expert_facts WHERE expert_id=e.expert_id AND fact_type='دليل')  AS evidence_count,
+            (SELECT COUNT(*) FROM expert_facts WHERE expert_id=e.expert_id AND fact_type='فرصة') AS opp_count,
+            (SELECT COUNT(*) FROM expert_facts WHERE expert_id=e.expert_id AND fact_type='قرار') AS decision_count,
+            (SELECT COUNT(*) FROM expert_facts WHERE expert_id=e.expert_id AND fact_type='افتراض') AS assumption_count,
+            (SELECT COUNT(*) FROM expert_projects WHERE expert_id=e.expert_id) AS project_count
+        FROM experts e WHERE e.expert_id=?
+    """, (expert_id,)).fetchone()
+    if not row:
+        return jsonify({"success": False, "error": "not found"}), 404
+    base = request.host_url.rstrip("/")
+    data = dict(row)
+    data["access_link"] = f"{base}/e/{row['access_link_slug']}"
+    return jsonify({"success": True, "expert": data})
 
 
 if __name__ == "__main__":
