@@ -884,17 +884,22 @@ def discovery_save():
         (q1 or None, success_criteria, company_id)
     )
 
-    # 2. إنشاء أول قضية من إجابة Q2 — يُحفظ في declared_problem
+    # 2. إنشاء أول قضية من إجابة Q2 — يُحفظ في declared_problem + real_question
     # لا يُنشأ أي صف بجدول decisions — القرار يأتي لاحقًا بعد تشخيص فعلي
     case_id = "CASE" + uuid.uuid4().hex[:8].upper()
     case_title = f"أول قضية: {q2}" if q2 else "أول قضية من جلسة الاكتشاف"
+    # real_question يُعيد صياغة التحدي كسؤال تشخيصي — يُعرض في صفحة القضية تحت "السؤال الحقيقي"
+    real_question = (
+        f'هل السبب الحقيقي وراء "{q2}" هو ما يبدو على السطح، أم يوجد سبب أعمق لم يُكتشف بعد؟'
+        if q2 else None
+    )
     db.execute(
         """INSERT INTO cases
            (case_id, company_id, case_title, case_type, case_status,
-            declared_problem, opened_at)
-           VALUES (?,?,?,?,?,?,?)""",
+            declared_problem, real_question, opened_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
         (case_id, company_id, case_title, "تشخيص", "مفتوح",
-         q2 or None, datetime.utcnow().isoformat())
+         q2 or None, real_question, datetime.utcnow().isoformat())
     )
 
     # خريطة الأصول حسب النوع (5 أصول معتمدة فقط)
