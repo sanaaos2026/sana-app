@@ -51,31 +51,6 @@
   }
   input:focus, select:focus{ outline:none; border-color:var(--teal); background:#fff; }
 
-  /* شبكة القطاعات */
-  .sector-label{
-    font-size:12.5px; font-weight:600; color:var(--navy); margin-bottom:10px;
-    display:flex; align-items:center; gap:4px;
-  }
-  .grid{
-    display:grid;
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    gap:10px; margin-bottom:18px;
-  }
-  .sector-card{
-    background:#F9FAFC; border:2px solid var(--line); border-radius:10px;
-    padding:14px 8px 11px; text-align:center; cursor:pointer;
-    transition:border-color .15s, background .15s, box-shadow .15s;
-    user-select:none;
-  }
-  .sector-card:hover{ border-color:var(--teal); }
-  .sector-card.selected{
-    border-color:var(--teal); background:#E6F7F7;
-    box-shadow:0 0 0 3px rgba(14,165,165,.18);
-  }
-  .sector-card .icon{ font-size:22px; display:block; margin-bottom:6px; }
-  .sector-card .lbl{ font-size:11px; font-weight:600; color:var(--navy); line-height:1.35; }
-  .sector-card.selected .lbl{ color:#077A7A; }
-
   .other-field{ display:none; margin-bottom:18px; }
   .other-field.show{ display:block; }
   .other-field input{ margin-bottom:0; }
@@ -116,14 +91,24 @@
   <label for="name">اسم الشركة <span class="req">*</span></label>
   <input type="text" id="name" placeholder="مثال: مؤسسة النجاح للتجارة">
 
-  <div class="sector-label">
-    القطاع <span class="req">*</span>
-    <span style="font-size:11px; color:var(--slate); font-weight:400; margin-right:4px;">— اختر واحداً</span>
-  </div>
-  <div class="grid" id="sectorGrid"></div>
+  <label for="sectorSelect">القطاع <span class="req">*</span></label>
+  <select id="sectorSelect" onchange="onSectorChange(this.value)">
+    <option value="">— اختر قطاع شركتك —</option>
+    <option value="legal">⚖️ قانوني / محاماة</option>
+    <option value="food">🍽️ مطاعم وضيافة</option>
+    <option value="manufacturing">🏭 تصنيع وعطور</option>
+    <option value="retail">🛒 تجارة تجزئة</option>
+    <option value="construction">🏗️ مقاولات وبناء</option>
+    <option value="tech">💻 تقنية وبرمجيات</option>
+    <option value="consulting">📊 استشارات إدارية</option>
+    <option value="realestate">🏢 عقارات</option>
+    <option value="health">🏥 صحة وطب</option>
+    <option value="education">📚 تعليم وتدريب</option>
+    <option value="other">⚡ أخرى</option>
+  </select>
 
   <div class="other-field" id="otherField">
-    <label for="otherInput">صف قطاعك بكلمة أو جملة قصيرة</label>
+    <label for="otherInput">صف قطاعك بكلمة أو جملة قصيرة <span class="req">*</span></label>
     <input type="text" id="otherInput" placeholder="مثال: عيادات أسنان، شركة شحن دولي...">
   </div>
 
@@ -134,47 +119,18 @@
 </div>
 
 <script>
-const SECTORS = [
-  {key:"legal",         label:"قانوني / محاماة",   icon:"⚖️"},
-  {key:"food",          label:"مطاعم وضيافة",       icon:"🍽️"},
-  {key:"manufacturing", label:"تصنيع وعطور",        icon:"🏭"},
-  {key:"retail",        label:"تجارة تجزئة",        icon:"🛒"},
-  {key:"construction",  label:"مقاولات وبناء",      icon:"🏗️"},
-  {key:"tech",          label:"تقنية وبرمجيات",     icon:"💻"},
-  {key:"consulting",    label:"استشارات إدارية",    icon:"📊"},
-  {key:"realestate",    label:"عقارات",              icon:"🏢"},
-  {key:"health",        label:"صحة وطب",            icon:"🏥"},
-  {key:"education",     label:"تعليم وتدريب",       icon:"📚"},
-  {key:"other",         label:"أخرى",                icon:"⚡"},
-];
-
-let selectedSector = null;
-
-const grid = document.getElementById('sectorGrid');
-SECTORS.forEach(s => {
-  const card = document.createElement('div');
-  card.className = 'sector-card';
-  card.dataset.key = s.key;
-  card.innerHTML = `<span class="icon">${s.icon}</span><span class="lbl">${s.label}</span>`;
-  card.addEventListener('click', () => pickSector(s.key));
-  grid.appendChild(card);
-});
-
-function pickSector(key){
-  selectedSector = key;
-  document.querySelectorAll('.sector-card').forEach(c =>
-    c.classList.toggle('selected', c.dataset.key === key)
-  );
-  document.getElementById('otherField').classList.toggle('show', key === 'other');
+function onSectorChange(val){
+  document.getElementById('otherField').classList.toggle('show', val === 'other');
   document.getElementById('errorMsg').classList.remove('show');
 }
 
 async function submitOnboarding(){
-  const name = document.getElementById('name').value.trim();
+  const name          = document.getElementById('name').value.trim();
   const employee_count = document.getElementById('employeeCount').value.trim();
-  const otherText = document.getElementById('otherInput').value.trim();
-  const errorMsg = document.getElementById('errorMsg');
-  const btn = document.getElementById('submitBtn');
+  const selectedSector = document.getElementById('sectorSelect').value;
+  const otherText     = document.getElementById('otherInput').value.trim();
+  const errorMsg      = document.getElementById('errorMsg');
+  const btn           = document.getElementById('submitBtn');
   errorMsg.classList.remove('show');
 
   if(!name){
@@ -185,24 +141,25 @@ async function submitOnboarding(){
   if(!selectedSector){
     errorMsg.textContent = 'يرجى اختيار قطاع الشركة — هذا الحقل إلزامي.';
     errorMsg.classList.add('show');
-    document.getElementById('sectorGrid').scrollIntoView({behavior:'smooth', block:'center'});
+    document.getElementById('sectorSelect').focus();
     return;
   }
   if(selectedSector === 'other' && !otherText){
     errorMsg.textContent = 'يرجى كتابة وصف قصير للقطاع في حقل "أخرى".';
     errorMsg.classList.add('show');
+    document.getElementById('otherInput').focus();
     return;
   }
 
-  // تجميع قيمة القطاع
+  // sector = key الأساسي دائمًا؛ other:نص يُحفظ بنفس الصيغة الموجودة في set-sector
   const sector = selectedSector === 'other' ? `other:${otherText}` : selectedSector;
 
   btn.disabled = true;
   btn.textContent = 'جارٍ الحفظ...';
-  try{
+  try {
     const res = await fetch('/onboarding', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ name, sector, employee_count })
     });
     const json = await res.json();
@@ -214,7 +171,7 @@ async function submitOnboarding(){
       btn.disabled = false;
       btn.textContent = 'متابعة ←';
     }
-  } catch(e) {
+  } catch(e){
     errorMsg.textContent = 'تعذّر الاتصال بالخادم، حاول مرة أخرى.';
     errorMsg.classList.add('show');
     btn.disabled = false;
