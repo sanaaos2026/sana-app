@@ -39,6 +39,7 @@
   .btn:disabled{ opacity:.6; cursor:not-allowed; }
   .error{ display:none; background:#FCEBEA; color:var(--red-risk); font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:16px; }
   .error.show{ display:block; }
+  .error a{ color:var(--red-risk); font-weight:700; text-decoration:underline; }
   .foot{ text-align:center; margin-top:20px; font-size:12.5px; color:var(--slate); }
   .foot a{ color:var(--teal); font-weight:600; text-decoration:none; }
 </style>
@@ -102,7 +103,11 @@ async function doSignup(){
     if(res.ok && json.success){
       window.location.href = json.data.redirect || '/home';
     } else {
-      errorMsg.textContent = json.message || 'تعذّر إنشاء الحساب.';
+      if(json.error === 'EMAIL_TAKEN'){
+        errorMsg.innerHTML = 'هذا البريد مسجَّل مسبقًا. <a href="/login">سجّل الدخول بدلًا من ذلك</a>';
+      } else {
+        errorMsg.textContent = json.message || 'تعذّر إنشاء الحساب.';
+      }
       errorMsg.classList.add('show');
       btn.disabled = false;
       btn.textContent = 'إنشاء الحساب';
