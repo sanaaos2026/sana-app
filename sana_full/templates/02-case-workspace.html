@@ -186,21 +186,101 @@ function buildInsightCounter(evidence, assets) {
 
   if (evidence.length === 0 && (assets||[]).length === 0) return '';
 
-  // بناء قائمة HTML لفئة معينة
-  function listHTML(items, type) {
-    if (!items.length) return `<p style="color:rgba(255,255,255,0.4);font-size:12px;margin:6px 0 0;">لا توجد عناصر في هذه الفئة.</p>`;
-    return items.map(item => {
-      const label = type === 'asset'
-        ? item.asset_name || item.asset_type
-        : item.title;
-      const sub   = type === 'asset'
-        ? `درجة ${item.current_score ?? '—'}/100`
-        : `${item.source_type || ''} — ثقة ${item.confidence ?? '—'}٪`;
-      return `<div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.07); display:flex; flex-direction:column; gap:2px;">
-        <span style="color:#fff; font-size:13px;">${label}</span>
-        <span style="color:rgba(255,255,255,0.4); font-size:11px;">${sub}</span>
+  // خريطة بحث سريع: asset_id → asset_name
+  const assetMap = {};
+  (assets || []).forEach(a => { assetMap[a.asset_id] = a.asset_name || a.asset_type || a.asset_id; });
+
+  // قوالب ثابتة لكل source_type
+  const WHY_MATTERS = {
+    'اكتشاف_ذاتي':              'رصدته بنفسك ومتكرر بما يكفي لتلاحظه — يستحق توثيقاً رسمياً',
+    'تقييم سريع':               'تقييم أولي يُظهر نقطة ضعف أو فرصة قبل أن تتفاقم',
+    'SDS-002 تشخيص تراكمي':     'نمط متراكم رصده سنع عبر أكثر من جلسة — يُشير لمشكلة بنيوية لا طارئة',
+    'SOP sop_protects':          'هذا الإجراء يحمي عملك من أخطاء متكررة — غيابه يعني خطر التكرار',
+    'SOP risk_if_skipped':       'تخطّي هذا الإجراء يُعرّض العمليات لخطأ مكلف — الالتزام به يحمي الوقت',
+    'وثيقة SOP':                 'إجراء موثَّق يُقلل الاعتماد على شخص واحد ويحمي الاستمرارية',
+    'بيانات مؤسس':              'معلومة مباشرة من صاحب القرار — تأثيرها على التشغيل عالٍ',
+    'ملاحظة مباشرة':            'ما شاهدته مباشرة أصدق من أي تقرير — يستحق معالجة فورية',
+    'دليل تأسيسي':              'وثيقة تُحدد هوية عملك أو ملكيتك — إهمالها يُضعف موقفك القانوني',
+    'sana_discovery':            'اكتشفه سنع خلال تحليل بياناتك — يستحق مراجعة قبل اتخاذ قرار',
+    'تحديث داخلي موثَّق':       'تغيير داخلي مسجَّل يُؤثر على سير العمل — مراجعته تمنع الالتباس',
+  };
+  const NEXT_STEP = {
+    'اكتشاف_ذاتي':              'وثّق هذه الملاحظة في SOP أو خطة تحسين',
+    'تقييم سريع':               'حدّد إن كان يحتاج تعمقاً أو إجراءً فورياً',
+    'SDS-002 تشخيص تراكمي':     'راجع هذا النمط مع فريقك وضع خطة معالجة واضحة',
+    'SOP sop_protects':          'تأكد أن الفريق يطبق هذا الإجراء ووثّق حالات الاستثناء',
+    'SOP risk_if_skipped':       'أضف تنبيهاً واضحاً لكل من يتجاوز هذا الإجراء',
+    'وثيقة SOP':                 'درّب الفريق على هذا الإجراء وحدد تواتر مراجعته',
+    'بيانات مؤسس':              'سجّل هذا القرار رسمياً حتى لا يبقى في رأس شخص واحد',
+    'ملاحظة مباشرة':            'حوّل هذه الملاحظة لإجراء أو قرار مكتوب',
+    'دليل تأسيسي':              'احتفظ بنسخة رقمية محمية وأخبر شخصاً ثانياً بمكانها',
+    'sana_discovery':            'راجع هذا الاكتشاف وقرر ما إذا كان يستدعي إجراءً',
+    'تحديث داخلي موثَّق':       'شارك هذا التحديث مع المعنيين وأكد الاستيعاب',
+  };
+  const DEFAULT_WHY  = 'دليل يستحق مراجعة لأثره على العمليات اليومية';
+  const DEFAULT_NEXT = 'قيّمه مع فريقك وحدد الإجراء المناسب';
+
+  // بطاقة تفصيلية لدليل (فرصة أو خطر)
+  function evidenceCard(item, icon, borderColor) {
+    const src      = item.source_type || '';
+    const why      = WHY_MATTERS[src]  || DEFAULT_WHY;
+    const next     = NEXT_STEP[src]    || DEFAULT_NEXT;
+    const body     = item.ai_analysis  || item.title || '—';
+    const assetLbl = item.asset_id ? (assetMap[item.asset_id] || item.asset_id) : '—';
+    return `
+      <div style="background:rgba(255,255,255,0.04); border-right:3px solid ${borderColor};
+                  border-radius:8px; padding:12px 14px; margin-bottom:10px;">
+        <div style="color:#fff; font-size:13px; font-weight:600; margin-bottom:10px; line-height:1.5;">
+          ${icon} ${item.title || '—'}
+        </div>
+        <div style="display:flex; flex-direction:column; gap:7px;">
+          <div style="font-size:12px; color:rgba(255,255,255,0.75); line-height:1.6;">
+            <span style="color:rgba(255,255,255,0.4);">🧠 لماذا اكتشفها سنع؟</span><br>
+            ${body}
+          </div>
+          <div style="font-size:12px; color:rgba(255,255,255,0.75); line-height:1.5;">
+            <span style="color:rgba(255,255,255,0.4);">🎯 لماذا تهمك؟</span><br>
+            ${why}
+          </div>
+          <div style="font-size:12px; color:rgba(255,255,255,0.6);">
+            ⭐ <span style="color:rgba(255,255,255,0.4);">الأصل المتأثر:</span> ${assetLbl}
+          </div>
+          <div style="font-size:12px; color:#0EA5A5; font-weight:500;">
+            👉 الخطوة التالية: ${next}
+          </div>
+        </div>
       </div>`;
-    }).join('');
+  }
+
+  // بطاقة مبسّطة للأصل بلا دليل
+  function assetCard(item) {
+    const name  = item.asset_name || item.asset_type || item.asset_id || '—';
+    const score = item.current_score != null ? `${item.current_score}/100` : '—';
+    return `
+      <div style="background:rgba(255,255,255,0.04); border-right:3px solid #F2B233;
+                  border-radius:8px; padding:12px 14px; margin-bottom:10px;">
+        <div style="color:#fff; font-size:13px; font-weight:600; margin-bottom:8px;">
+          🔍 ${name}
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px; font-size:12px;">
+          <div style="color:rgba(255,255,255,0.5);">
+            ⭐ <span style="color:rgba(255,255,255,0.4);">درجة الأصل:</span>
+            <span style="color:rgba(255,255,255,0.75);">${score}</span>
+          </div>
+          <div style="color:#F2B233; font-weight:500;">
+            👉 الخطوة التالية: أضف دليلاً مرتبطاً بهذا الأصل لتتضح صورته
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function panelHTML(items, type) {
+    if (!items.length) return `<p style="color:rgba(255,255,255,0.35);font-size:12px;margin:8px 0 0;">لا توجد عناصر في هذه الفئة.</p>`;
+    if (type === 'asset')
+      return items.map(a => assetCard(a)).join('');
+    if (type === 'risk')
+      return items.map(e => evidenceCard(e, '⚠️', '#B23A2E')).join('');
+    return items.map(e => evidenceCard(e, '🚀', '#0EA5A5')).join('');
   }
 
   function pillBtn(id, count, color, label) {
@@ -225,9 +305,9 @@ function buildInsightCounter(evidence, assets) {
         ${pillBtn('panel-att', needsAttention.length, '#F2B233', 'أصل يحتاج اهتمامًا')}
       </div>
 
-      <div id="panel-opp"  style="display:none; margin-top:12px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;">${listHTML(opportunities, 'evidence')}</div>
-      <div id="panel-risk" style="display:none; margin-top:12px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;">${listHTML(risks, 'evidence')}</div>
-      <div id="panel-att"  style="display:none; margin-top:12px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;">${listHTML(needsAttention, 'asset')}</div>
+      <div id="panel-opp"  style="display:none; margin-top:12px; border-top:1px solid rgba(255,255,255,0.1); padding-top:12px;">${panelHTML(opportunities, 'opp')}</div>
+      <div id="panel-risk" style="display:none; margin-top:12px; border-top:1px solid rgba(255,255,255,0.1); padding-top:12px;">${panelHTML(risks, 'risk')}</div>
+      <div id="panel-att"  style="display:none; margin-top:12px; border-top:1px solid rgba(255,255,255,0.1); padding-top:12px;">${panelHTML(needsAttention, 'asset')}</div>
     </div>`;
 }
 
