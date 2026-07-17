@@ -458,6 +458,90 @@ function render(d){
     html += `</section>`;
   }
 
+  // ══════════════════════════════════════════════════════════
+  // قسم الأصول المتأثرة
+  // ══════════════════════════════════════════════════════════
+  const affectedAssets = d.affected_assets || [];
+  html += `<section>
+    <h2>الأصول المتأثرة بهذه القضية (${affectedAssets.length})</h2>`;
+  if (affectedAssets.length === 0) {
+    html += `<p style="color:#9AA0AB; font-size:13px; padding:18px 0; text-align:center;
+      border:1px dashed #DEE1EC; border-radius:8px; margin:4px 0;">
+      لا توجد أصول مرتبطة بقرارات هذه القضية.</p>`;
+  } else {
+    const ASSET_COLOR = { 'Brand':'#F2B233', 'Ops':'#0EA5A5', 'Data':'#6366F1', 'Knowledge':'#10B981' };
+    affectedAssets.forEach(a => {
+      const score  = a.current_score != null ? a.current_score : '—';
+      const frag   = a.fragility_score != null ? a.fragility_score : '—';
+      const impact = a.total_impact   != null ? `+${a.total_impact}` : '—';
+      const cnt    = a.impact_count   || 0;
+      const dot    = ASSET_COLOR[a.asset_type] || '#9AA0AB';
+      html += `<div class="evidence-item">
+        <span class="dot" style="background:${dot};"></span>
+        <div style="flex:1;">
+          <div style="font-weight:600; color:#0B132B;">${a.asset_name}
+            <span class="conf-tag"> — درجة حالية: <span class="num">${score}</span>/100</span>
+          </div>
+          <div style="font-size:12px; color:#6E7580; margin-top:3px; display:flex; gap:14px; flex-wrap:wrap;">
+            <span>🎯 <span class="num">${cnt}</span> قرار يؤثر عليه</span>
+            <span>📈 تأثير إجمالي متوقع: <span class="num" style="color:#0B132B; font-weight:600;">${impact}</span> نقطة</span>
+            <span>⚠️ هشاشة: <span class="num">${frag}</span>٪</span>
+          </div>
+          ${a.asset_status ? `<div style="font-size:11.5px; color:#9AA0AB; margin-top:2px;">${a.asset_status}</div>` : ''}
+        </div>
+      </div>`;
+    });
+  }
+  html += `</section>`;
+
+  // ══════════════════════════════════════════════════════════
+  // قسم SOP / المنهجية
+  // ══════════════════════════════════════════════════════════
+  const sopDocs = d.sop_docs || [];
+  html += `<section>
+    <h2>SOP / المنهجية المرتبطة</h2>`;
+  if (sopDocs.length === 0) {
+    html += `<div style="padding:20px 0; text-align:center; border:1.5px dashed #DEE1EC; border-radius:8px;">
+      <div style="font-size:22px; margin-bottom:6px;">📋</div>
+      <div style="font-size:13px; color:#9AA0AB;">لا يوجد بعد — لم يُربط أي SOP بهذه القضية حتى الآن.</div>
+    </div>`;
+  } else {
+    sopDocs.forEach(s => {
+      html += `<div class="evidence-item">
+        <span class="dot" style="background:#6366F1;"></span>
+        <div>
+          <div style="font-weight:600; color:#0B132B;">${s.title}</div>
+          ${s.subtitle ? `<div style="font-size:12px; color:#6E7580; margin-top:2px;">${s.subtitle}</div>` : ''}
+        </div>
+      </div>`;
+    });
+  }
+  html += `</section>`;
+
+  // ══════════════════════════════════════════════════════════
+  // قسم التقارير
+  // ══════════════════════════════════════════════════════════
+  const reports = d.reports || [];
+  html += `<section>
+    <h2>التقارير المرتبطة</h2>`;
+  if (reports.length === 0) {
+    html += `<div style="padding:20px 0; text-align:center; border:1.5px dashed #DEE1EC; border-radius:8px;">
+      <div style="font-size:22px; margin-bottom:6px;">📊</div>
+      <div style="font-size:13px; color:#9AA0AB;">لا يوجد بعد — لم يُنشأ أي تقرير لهذه القضية حتى الآن.</div>
+    </div>`;
+  } else {
+    reports.forEach(r => {
+      html += `<div class="evidence-item">
+        <span class="dot" style="background:#10B981;"></span>
+        <div>
+          <div style="font-weight:600; color:#0B132B;">${r.title}</div>
+          ${r.created_at ? `<div style="font-size:12px; color:#6E7580; margin-top:2px;">${r.created_at}</div>` : ''}
+        </div>
+      </div>`;
+    });
+  }
+  html += `</section>`;
+
   document.getElementById('app').innerHTML = html;
 
   // SDS-002: يُحمَّل بعد render لأن CASE_COMPANY_ID يُحدَّد هنا

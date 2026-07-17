@@ -15,7 +15,7 @@ import uuid
 import secrets
 import decimal
 from datetime import datetime, date, timedelta
-from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for, Response
+from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for, Response, abort
 from flask.json.provider import DefaultJSONProvider
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import CSRFProtect
@@ -619,6 +619,24 @@ def new_case():
 
 @app.route("/case/<case_id>")
 def case_workspace(case_id):
+    # 1. يجب أن يكون المستخدم مسجّلاً (أو وضع العرض الداخلي)
+    account = current_account()
+    if not account and not is_admin_preview():
+        return redirect(url_for("login", next=request.full_path))
+
+    # 2. قيد مرحلي — مفعَّل حالياً لـCS002 فقط؛ لتوسعته لاحقاً: أزل هذه الكتلة فقط
+    ENABLED_CASES = {"CS002"}
+    if case_id not in ENABLED_CASES:
+        abort(404)
+
+    # 3. التحقق من أن القضية موجودة وتخص الشركة الصحيحة
+    db = get_db()
+    case = db.execute("SELECT company_id FROM cases WHERE case_id=?", (case_id,)).fetchone()
+    if not case:
+        abort(404)
+    if account and case["company_id"] != account["company_id"]:
+        abort(403)
+
     return render_template("02-case-workspace.html", case_id=case_id)
 
 
@@ -1453,9 +1471,10 @@ def case_detail(case_id):
     evidence = db.execute("SELECT * FROM evidence WHERE case_id=?", (case_id,)).fetchall()
     decisions = db.execute("SELECT * FROM decisions WHERE case_id=?", (case_id,)).fetchall()
 
-    # مهام هذه القضية — عبر القرارات المرتبطة بها (tasks.decision_id -> decisions.case_id)
+    # مهام هذه القضية — عبر القرارات المرتبطة بها
     decision_ids = [d["decision_id"] for d in decisions]
     tasks = []
+    affected_assets = []
     if decision_ids:
         placeholders = ",".join("?" * len(decision_ids))
         tasks = db.execute(
@@ -1463,13 +1482,37 @@ def case_detail(case_id):
             decision_ids
         ).fetchall()
 
+        # الأصول المتأثرة — مجمَّعة من decision_asset_impacts لكل قرارات هذه القضية
+        affected_assets = db.execute(f"""
+            SELECT dai.asset_id,
+                   a.asset_name,
+                   a.asset_type,
+                   a.current_score,
+                   a.fragility_score,
+                   a.status   AS asset_status,
+                   SUM(dai.score_impact) AS total_impact,
+                   COUNT(dai.impact_id)  AS impact_count
+            FROM decision_asset_impacts dai
+            JOIN assets a ON dai.asset_id = a.asset_id
+            WHERE dai.decision_id IN ({placeholders})
+            GROUP BY dai.asset_id, a.asset_name, a.asset_type,
+                     a.current_score, a.fragility_score, a.status
+            ORDER BY total_impact DESC
+        """, decision_ids).fetchall()
+
+    # SOP docs — لا يوجد ربط مباشر بين methodology_docs والقضايا حالياً
+    sop_docs = []  # قابل للتوسعة: أضف عمود case_id لـmethodology_docs لاحقاً
+
     return jsonify({
         "success": True,
         "data": {
-            "case": dict(case),
-            "evidence": [dict(e) for e in evidence],
-            "decisions": [dict(d) for d in decisions],
-            "tasks": [dict(t) for t in tasks],
+            "case":            dict(case),
+            "evidence":        [dict(e) for e in evidence],
+            "decisions":       [dict(d) for d in decisions],
+            "tasks":           [dict(t) for t in tasks],
+            "affected_assets": [dict(a) for a in affected_assets],
+            "sop_docs":        sop_docs,
+            "reports":         [],  # لا توجد جداول تقارير مرتبطة بالقضية حالياً
         }
     })
 
