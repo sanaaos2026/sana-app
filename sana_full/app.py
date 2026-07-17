@@ -18,6 +18,7 @@ from datetime import datetime, date
 from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for, Response
 from flask.json.provider import DefaultJSONProvider
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_wtf.csrf import CSRFProtect
 # weasyprint يُستورد داخل الدالة فقط لتفادي crash عند غياب libpango وقت التشغيل
 
 # ------------------------------------------------------------------
@@ -102,6 +103,10 @@ if not _session_secret:
         flush=True,
     )
 app.secret_key = _session_secret or secrets.token_hex(32)
+
+# CSRF Protection — تحمي كل POST/PUT/PATCH/DELETE تلقائياً
+app.config["WTF_CSRF_TIME_LIMIT"] = 3600   # ساعة واحدة
+csrf = CSRFProtect(app)
 
 # فلتر Jinja2: يحوّل JSON string → dict (يُستخدم في قوالب المقالات)
 @app.template_filter("from_json")
@@ -718,6 +723,7 @@ def onboarding():
     return jsonify({"success": True, "data": {"redirect": "/discovery"}})
 
 
+@csrf.exempt   # يُستدعى خارجياً بـ admin_key عبر curl/scripts — لا browser session
 @app.route("/api/admin/attach-account", methods=["POST"])
 def admin_attach_account():
     """
