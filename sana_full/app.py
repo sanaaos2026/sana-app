@@ -2379,6 +2379,14 @@ def complete_task(task_id):
         decision = db.execute(
             "SELECT * FROM decisions WHERE decision_id=?", (task["decision_id"],)
         ).fetchone()
+        # تحقق صريح: company_id في القرار يجب أن يطابق company_id المهمة (= company الجلسة)
+        # يمنع أي سيناريو يكون فيه task.decision_id يشير لقرار شركة أخرى
+        if decision and decision["company_id"] != task["company_id"]:
+            return jsonify({
+                "success": False,
+                "error": "FORBIDDEN",
+                "message": "القرار المرتبط بهذه المهمة لا ينتمي لشركتك."
+            }), 403
 
     updated_assets = []
     if decision:
