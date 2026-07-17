@@ -151,16 +151,15 @@ async function submitOnboarding(){
     return;
   }
 
-  // sector = key الأساسي دائمًا؛ other:نص يُحفظ بنفس الصيغة الموجودة في set-sector
-  const sector = selectedSector === 'other' ? `other:${otherText}` : selectedSector;
-
   btn.disabled = true;
   btn.textContent = 'جارٍ الحفظ...';
   try {
+    const payload = { name, sector: selectedSector, employee_count };
+    if(selectedSector === 'other') payload.sector_other = otherText;
     const res = await fetch('/onboarding', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ name, sector, employee_count })
+      body: JSON.stringify(payload)
     });
     const json = await res.json();
     if(res.ok && json.success){

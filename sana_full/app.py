@@ -376,6 +376,8 @@ def init_db(force=False):
             conn.execute("ALTER TABLE companies ADD COLUMN sds_done SMALLINT DEFAULT 0")
         if "success_criteria" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN success_criteria TEXT")
+        if "sector_other" not in companies_cols:
+            conn.execute("ALTER TABLE companies ADD COLUMN sector_other TEXT")
         conn.execute("""CREATE TABLE IF NOT EXISTS case_frameworks (
             cf_id       TEXT PRIMARY KEY,
             case_id     TEXT NOT NULL,
@@ -684,7 +686,8 @@ def onboarding():
 
     body = request.get_json(silent=True) or request.form
     name = (body.get("name") or "").strip()
-    sector = (body.get("sector") or "").strip() or None
+    sector_key = (body.get("sector") or "").strip() or None
+    sector_other = (body.get("sector_other") or "").strip() or None
     employee_count = body.get("employee_count")
     try:
         employee_count = int(employee_count) if employee_count not in (None, "") else None
@@ -693,13 +696,15 @@ def onboarding():
 
     if not name:
         return jsonify({"success": False, "error": "MISSING_NAME", "message": "اسم الشركة مطلوب."}), 400
-    if not sector:
+    if not sector_key:
         return jsonify({"success": False, "error": "MISSING_SECTOR", "message": "تحديد القطاع إلزامي قبل المتابعة."}), 400
+    if sector_key == "other" and not sector_other:
+        return jsonify({"success": False, "error": "MISSING_SECTOR_OTHER", "message": "يرجى كتابة وصف قطاعك عند اختيار 'أخرى'."}), 400
 
     db = get_db()
     db.execute(
-        "UPDATE companies SET name=?, sector=?, employee_count=? WHERE company_id=?",
-        (name, sector, employee_count, account["company_id"])
+        "UPDATE companies SET name=?, sector=?, sector_other=?, employee_count=? WHERE company_id=?",
+        (name, sector_key, sector_other if sector_key == "other" else None, employee_count, account["company_id"])
     )
     db.commit()
 
@@ -1056,21 +1061,18 @@ def set_sector():
 
     body = request.get_json(silent=True) or {}
     sector_key = (body.get("sector") or "").strip()
-    sector_custom = (body.get("sector_custom") or "").strip()  # نص حر عند اختيار "أخرى"
+    sector_other = (body.get("sector_other") or "").strip() or None  # نص حر عند اختيار "أخرى"
 
     if not sector_key:
         return jsonify({"success": False, "error": "MISSING_SECTOR",
                         "message": "يرجى اختيار قطاع الشركة."}), 400
-
-    # دمج "أخرى" مع النص الحر إن وُجد
-    if sector_key == "other" and sector_custom:
-        final_sector = f"other:{sector_custom}"
-    else:
-        final_sector = sector_key
+    if sector_key == "other" and not sector_other:
+        return jsonify({"success": False, "error": "MISSING_SECTOR_OTHER",
+                        "message": "يرجى كتابة وصف قطاعك عند اختيار 'أخرى'."}), 400
 
     db = get_db()
-    db.execute("UPDATE companies SET sector=? WHERE company_id=?",
-               (final_sector, account["company_id"]))
+    db.execute("UPDATE companies SET sector=?, sector_other=? WHERE company_id=?",
+               (sector_key, sector_other if sector_key == "other" else None, account["company_id"]))
     db.commit()
 
     company = db.execute("SELECT sds_done FROM companies WHERE company_id=?",
@@ -1091,7 +1093,7 @@ def company_methodologies(company_id):
     if guard:
         return guard
 
-    sector_key = (company["sector"] or "").split(":")[0]  # استخرج المفتاح من "other:نص"
+    sector_key = (company["sector"] or "").split(":")[0]  # يدعم القيم القديمة "other:نص" والجديدة "other"
     docs = db.execute(
         "SELECT doc_id, slug, title, subtitle, doc_type, version, bos_id, sector_tags FROM methodology_docs ORDER BY created_at"
     ).fetchall()
