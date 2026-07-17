@@ -14,11 +14,12 @@ import json
 import uuid
 import secrets
 import decimal
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for, Response
 from flask.json.provider import DefaultJSONProvider
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import CSRFProtect
+import resend
 # weasyprint يُستورد داخل الدالة فقط لتفادي crash عند غياب libpango وقت التشغيل
 
 # ------------------------------------------------------------------
@@ -78,6 +79,14 @@ def ask_sana_ai(system_prompt, user_prompt):
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE_URL = os.environ["DATABASE_URL"]
 
+# Resend — إرسال البريد الإلكتروني
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
+
+# Rate limiting في الذاكرة — استعادة كلمة المرور: 3 طلبات/ساعة/بريد
+_pw_reset_attempts: dict = {}   # email → [datetime (UTC), ...]
+
 class _SanaJSONProvider(DefaultJSONProvider):
     """
     يحوّل الأنواع التي لا يدعمها json القياسي:
@@ -134,6 +143,7 @@ PUBLIC_ENDPOINTS = {
     "sectors_list",   # قائمة القطاعات — عامة بلا مصادقة
     "articles_list", "article_page", "api_articles_list",  # مقالات — عامة بلا مصادقة
     "sales_pipeline_page",  # B6: صفحة خط المبيعات — تتطلب جلسة، لكن تُعرض دون redirect loop
+    "forgot_password", "reset_password",  # استعادة كلمة المرور — عامة بالضرورة
 }
 # ملاحظة: "companies_list" أُزيل عمداً من القائمة العامة (P0-1)
 # المسار /api/companies مقيَّد الآن بـ admin_key فقط
@@ -466,6 +476,14 @@ def init_db(force=False):
             changed_by TEXT
         )""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ssh_opp ON sales_stage_history(opp_id)")
+        conn.execute("""CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            token      TEXT PRIMARY KEY,
+            email      TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_at TIMESTAMPTZ NOT NULL,
+            used       BOOLEAN NOT NULL DEFAULT false
+        )""")
         conn.commit()
     # لكل شركة بلا رمز دعوة (سواء قاعدة بيانات جديدة أو قديمة) — ولّد رمزًا فريدًا
     for row in conn.execute("SELECT company_id FROM companies WHERE signup_code IS NULL").fetchall():
@@ -818,6 +836,136 @@ def login():
         # sds_done=0 أو main_goal فارغ (جلسة ناقصة) → أكمل Discovery
         redirect_to = "/discovery"
     return jsonify({"success": True, "data": {"redirect": redirect_to}})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# استعادة كلمة المرور
+# ─────────────────────────────────────────────────────────────────────────────
+
+_RESET_MSG = (
+    "إذا كان بريدك الإلكتروني مسجّلاً في سنع، "
+    "ستصلك رسالة خلال دقائق تحتوي رابط إعادة التعيين."
+)
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "GET":
+        return render_template("18-forgot-password.html")
+
+    body  = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    if not email or "@" not in email or "." not in email.split("@")[-1]:
+        return jsonify({"success": False, "message": "بريد إلكتروني غير صحيح."}), 400
+
+    # Rate limiting: 3 طلبات / ساعة / بريد (في الذاكرة)
+    now          = datetime.utcnow()
+    window_start = now - timedelta(hours=1)
+    attempts     = [t for t in _pw_reset_attempts.get(email, []) if t > window_start]
+    if len(attempts) >= 3:
+        return jsonify({"success": True, "message": _RESET_MSG})   # نفس الرسالة
+    attempts.append(now)
+    _pw_reset_attempts[email] = attempts
+
+    db      = get_db()
+    account = db.execute(
+        "SELECT account_id, email FROM user_accounts WHERE email=?", (email,)
+    ).fetchone()
+
+    if account:
+        token      = secrets.token_urlsafe(32)
+        expires_at = now + timedelta(minutes=30)
+        db.execute(
+            """INSERT INTO password_reset_tokens (token, email, account_id, expires_at)
+               VALUES (?, ?, ?, ?)""",
+            (token, account["email"], account["account_id"], expires_at),
+        )
+        db.commit()
+
+        if RESEND_API_KEY:
+            reset_url = f"{request.host_url.rstrip('/')}/reset-password?token={token}"
+            try:
+                resend.Emails.send({
+                    "from":    "سنع <noreply@sanaclarity.com>",
+                    "to":      [account["email"]],
+                    "subject": "إعادة تعيين كلمة المرور — سنع",
+                    "html": f"""
+<div dir="rtl" style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;
+     padding:32px 24px;background:#F5F6FB;border-radius:14px;">
+  <h2 style="color:#0B132B;margin-bottom:12px;">إعادة تعيين كلمة المرور</h2>
+  <p style="color:#333940;line-height:1.8;margin-bottom:24px;">
+    تلقّينا طلباً لإعادة تعيين كلمة المرور لحسابك في <strong>سنع</strong>.<br>
+    الرابط صالح لمدة <strong>30 دقيقة فقط</strong> ولاستخدام واحد فقط.
+  </p>
+  <a href="{reset_url}"
+     style="display:inline-block;background:#0B132B;color:#fff;padding:13px 28px;
+            border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;">
+    إعادة تعيين كلمة المرور
+  </a>
+  <p style="color:#6E7580;font-size:12px;margin-top:28px;line-height:1.7;">
+    إذا لم تطلب ذلك، تجاهل هذه الرسالة — لن يتغير حسابك.<br>
+    الرابط المباشر: {reset_url}
+  </p>
+</div>""",
+                })
+            except Exception as exc:
+                print(f"[Resend ERROR] {exc}", flush=True)
+
+    # دائماً نفس الرسالة بغض النظر عن وجود البريد في النظام
+    return jsonify({"success": True, "message": _RESET_MSG})
+
+
+@app.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    if request.method == "GET":
+        token = request.args.get("token", "").strip()
+        if not token:
+            return redirect("/forgot-password")
+        db  = get_db()
+        row = db.execute(
+            "SELECT * FROM password_reset_tokens WHERE token=?", (token,)
+        ).fetchone()
+        now   = datetime.utcnow()
+        valid = (
+            row is not None
+            and not row["used"]
+            and row["expires_at"].replace(tzinfo=None) > now
+        )
+        return render_template("19-reset-password.html", token=token, expired=not valid)
+
+    # POST — تعيين كلمة مرور جديدة
+    body     = request.get_json(silent=True) or {}
+    token    = (body.get("token") or "").strip()
+    password = body.get("password", "")
+
+    if not token:
+        return jsonify({"success": False, "message": "رمز غير صالح."}), 400
+    if not password or len(password) < 8:
+        return jsonify({"success": False, "message": "كلمة المرور يجب أن تكون 8 أحرف على الأقل."}), 400
+
+    db  = get_db()
+    row = db.execute(
+        "SELECT * FROM password_reset_tokens WHERE token=?", (token,)
+    ).fetchone()
+    now = datetime.utcnow()
+
+    if (row is None
+            or row["used"]
+            or row["expires_at"].replace(tzinfo=None) <= now):
+        return jsonify({"success": False, "message": "الرابط منتهي الصلاحية أو مستخدَم من قبل."}), 400
+
+    # حدّث كلمة المرور — نفس آلية التشفير المستخدمة في التسجيل
+    db.execute(
+        "UPDATE user_accounts SET password_hash=? WHERE account_id=?",
+        (generate_password_hash(password), row["account_id"]),
+    )
+    # استهلك الرمز فوراً (single-use)
+    db.execute(
+        "UPDATE password_reset_tokens SET used=true WHERE token=?", (token,)
+    )
+    db.commit()
+
+    return jsonify({"success": True, "message": "تم تغيير كلمة المرور بنجاح. يمكنك تسجيل الدخول الآن."})
 
 
 @app.route("/discovery")
