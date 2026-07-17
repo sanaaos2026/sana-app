@@ -87,6 +87,21 @@ if RESEND_API_KEY:
 # Rate limiting في الذاكرة — استعادة كلمة المرور: 3 طلبات/ساعة/بريد
 _pw_reset_attempts: dict = {}   # email → [datetime (UTC), ...]
 
+# URL الأساسي للتطبيق — يُستخدم في روابط البريد الإلكتروني
+# أولوية: APP_URL (يدوي) ← REPLIT_DOMAINS ← REPLIT_DEV_DOMAIN ← localhost
+def _resolve_app_base_url() -> str:
+    if os.environ.get("APP_URL"):
+        return os.environ["APP_URL"].rstrip("/")
+    replit_domains = os.environ.get("REPLIT_DOMAINS", "")
+    if replit_domains:
+        return "https://" + replit_domains.split(",")[0].strip()
+    dev_domain = os.environ.get("REPLIT_DEV_DOMAIN", "")
+    if dev_domain:
+        return "https://" + dev_domain
+    return "http://localhost:5000"
+
+APP_BASE_URL: str = _resolve_app_base_url()
+
 class _SanaJSONProvider(DefaultJSONProvider):
     """
     يحوّل الأنواع التي لا يدعمها json القياسي:
@@ -883,7 +898,7 @@ def forgot_password():
         db.commit()
 
         if RESEND_API_KEY:
-            reset_url = f"{request.host_url.rstrip('/')}/reset-password?token={token}"
+            reset_url = f"{APP_BASE_URL}/reset-password?token={token}"
             try:
                 resend.Emails.send({
                     "from":    "سنع <noreply@sanaclarity.com>",
