@@ -94,7 +94,14 @@ class _SanaJSONProvider(DefaultJSONProvider):
 app = Flask(__name__)
 app.json_provider_class = _SanaJSONProvider
 app.json = _SanaJSONProvider(app)
-app.secret_key = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
+_session_secret = os.environ.get("SESSION_SECRET")
+if not _session_secret:
+    print(
+        "WARNING: SESSION_SECRET not set, using ephemeral key"
+        " - sessions will not persist across restarts",
+        flush=True,
+    )
+app.secret_key = _session_secret or secrets.token_hex(32)
 
 # فلتر Jinja2: يحوّل JSON string → dict (يُستخدم في قوالب المقالات)
 @app.template_filter("from_json")
