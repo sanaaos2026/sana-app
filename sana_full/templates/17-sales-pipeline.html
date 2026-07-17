@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>سنع — خط المبيعات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{color-scheme:light;background:#F5F6FB}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#F5F6FB;color:#333940;font-family:'IBM Plex Sans Arabic',sans-serif;line-height:1.6}
+  a{color:inherit;text-decoration:none}
+  button{cursor:pointer;font-family:inherit}
+
+  .concept-nav{background:#080E1F;padding:10px 20px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+  .concept-nav a{font-size:11.5px;color:rgba(255,255,255,0.5);padding:6px 12px;border-radius:20px}
+  .concept-nav a.active{background:rgba(242,178,51,0.15);color:#F2B233;font-weight:600}
+
+  header{background:#080E1F;padding:16px 24px;color:#fff;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  header h1{font-size:17px;font-weight:600}
+  .hdr-right{display:flex;gap:8px;align-items:center}
+  .btn{background:#0EA5A5;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600}
+  .btn:hover{background:#0c9090}
+  .btn-sm{padding:6px 12px;font-size:12px}
+  .btn-outline{background:transparent;color:#0EA5A5;border:1.5px solid #0EA5A5;padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600}
+  .btn-outline:hover{background:#E1F5F5}
+  .btn-danger{background:#EF4444;color:#fff;border:none;padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600}
+
+  /* Metrics Bar */
+  .metrics-bar{display:flex;gap:10px;padding:14px 18px;overflow-x:auto;background:#fff;border-bottom:1px solid #DEE1EC;flex-shrink:0}
+  .metric-card{background:#F5F6FB;border:1px solid #DEE1EC;border-radius:10px;padding:10px 16px;min-width:140px;flex-shrink:0}
+  .metric-card .lbl{font-size:10.5px;color:#9AA0AB;font-weight:600;letter-spacing:.5px;text-transform:uppercase;font-family:'Space Grotesk';margin-bottom:4px}
+  .metric-card .val{font-size:17px;font-weight:700;color:#0B132B;font-family:'Space Grotesk'}
+  .metric-card .sub{font-size:11px;color:#6E7580;margin-top:2px}
+  .metric-warn{border-color:#F59E0B;background:#FFFBEB}
+  .metric-warn .val{color:#D97706}
+
+  /* Alert bar */
+  .alert-bar{background:#FEF3C7;border-bottom:2px solid #F59E0B;padding:10px 18px;font-size:13px;color:#92400E;display:flex;align-items:center;gap:8px}
+  .alert-bar b{font-weight:700}
+  .alert-bar a{color:#92400E;text-decoration:underline}
+
+  /* View toggle */
+  .view-ctrl{padding:12px 18px;display:flex;gap:8px;align-items:center;background:#fff;border-bottom:1px solid #DEE1EC;flex-wrap:wrap}
+  .view-tabs{display:flex;gap:4px}
+  .view-tab{background:#F5F6FB;border:1px solid #DEE1EC;color:#6E7580;padding:5px 14px;border-radius:6px;font-size:12.5px;font-weight:600}
+  .view-tab.active{background:#0B132B;color:#fff;border-color:#0B132B}
+  .filter-row{display:flex;gap:6px;margin-right:auto;flex-wrap:wrap}
+  .filter-row select,.filter-row input{font-family:inherit;font-size:12.5px;padding:5px 10px;border:1px solid #DEE1EC;border-radius:7px;background:#fff;color:#333940}
+
+  /* Kanban */
+  #kanban-view{display:flex;gap:10px;padding:14px 18px;overflow-x:auto;min-height:calc(100vh - 300px)}
+  .lane{flex:0 0 240px;background:#fff;border:1px solid #DEE1EC;border-radius:12px;padding:0;display:flex;flex-direction:column;overflow:hidden}
+  .lane-hdr{padding:10px 14px;border-bottom:1px solid #EEF0F5;display:flex;align-items:center;justify-content:space-between}
+  .lane-name{font-weight:700;font-size:13px;color:#0B132B}
+  .lane-count{background:#F5F6FB;color:#6E7580;font-size:11px;font-family:'Space Grotesk';font-weight:700;padding:2px 8px;border-radius:20px}
+  .lane-body{padding:8px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1}
+  .opp-card{background:#F5F6FB;border:1px solid #DEE1EC;border-radius:9px;padding:10px 12px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .opp-card:hover{border-color:#0EA5A5;box-shadow:0 2px 8px rgba(14,165,165,0.1)}
+  .opp-card.warn{border-color:#F59E0B;background:#FFFBEB}
+  .opp-card .opp-title{font-size:13px;font-weight:600;color:#0B132B;margin-bottom:4px;line-height:1.4}
+  .opp-card .opp-amt{font-family:'Space Grotesk';font-size:12px;color:#0EA5A5;font-weight:700}
+  .opp-card .opp-meta{font-size:11px;color:#9AA0AB;margin-top:4px}
+  .opp-card .warn-badge{font-size:10px;background:#FEF3C7;color:#D97706;border-radius:4px;padding:2px 6px;font-weight:600;margin-top:5px;display:inline-block}
+  .lane.stage-win .lane-hdr{background:#ECFDF5}
+  .lane.stage-win .lane-name{color:#065F46}
+  .lane.stage-loss .lane-hdr{background:#FEF2F2}
+  .lane.stage-loss .lane-name{color:#991B1B}
+
+  /* List view */
+  #list-view{padding:14px 18px;display:none}
+  .list-table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #DEE1EC}
+  .list-table th{background:#0B132B;color:#fff;font-size:11.5px;font-weight:600;text-align:right;padding:9px 14px}
+  .list-table td{font-size:13px;color:#333940;padding:9px 14px;border-top:1px solid #EEF0F5}
+  .list-table tr:hover td{background:#F5F6FB;cursor:pointer}
+  .stage-badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;display:inline-block}
+  .sb-active{background:#E1F5F5;color:#0EA5A5}
+  .sb-win{background:#ECFDF5;color:#065F46}
+  .sb-loss{background:#FEF2F2;color:#991B1B}
+
+  /* Modal / Side panel */
+  .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100}
+  .panel{position:fixed;top:0;left:0;width:min(520px,100vw);height:100vh;background:#fff;z-index:101;overflow-y:auto;transform:translateX(-100%);transition:transform .25s}
+  .panel.open{transform:translateX(0)}
+  .panel-hdr{background:#080E1F;color:#fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:1}
+  .panel-hdr h2{font-size:15px;font-weight:600}
+  .close-btn{background:none;border:none;color:rgba(255,255,255,0.7);font-size:20px;cursor:pointer;line-height:1}
+  .panel-body{padding:20px}
+  .panel-section{margin-bottom:20px}
+  .panel-section .lbl{font-size:11px;color:#9AA0AB;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px;font-family:'Space Grotesk'}
+  .stage-row{display:flex;gap:6px;flex-wrap:wrap}
+  .stage-btn{font-size:12px;padding:6px 14px;border-radius:20px;border:1.5px solid #DEE1EC;background:#F5F6FB;color:#6E7580;font-weight:600;cursor:pointer}
+  .stage-btn.current{border-color:#0EA5A5;background:#E1F5F5;color:#0EA5A5}
+  .stage-btn.next:hover{border-color:#0B132B;background:#0B132B;color:#fff}
+  .form-group{margin-bottom:12px}
+  .form-group label{display:block;font-size:12px;color:#6E7580;margin-bottom:4px;font-weight:600}
+  .form-group input,.form-group select,.form-group textarea{width:100%;padding:8px 10px;border:1px solid #DEE1EC;border-radius:8px;font-family:inherit;font-size:13px;color:#0B132B;background:#fff}
+  .form-group textarea{min-height:80px;resize:vertical}
+  .activity-list{display:flex;flex-direction:column;gap:6px}
+  .activity-item{background:#F5F6FB;border-radius:8px;padding:9px 12px;font-size:12.5px}
+  .activity-item .at{font-family:'Space Grotesk';font-size:11px;color:#0EA5A5;font-weight:700;margin-bottom:2px}
+  .history-list{font-size:12px;color:#6E7580}
+  .history-item{display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-bottom:1px solid #EEF0F5}
+  .history-item:last-child{border-bottom:none}
+
+  /* New opp form */
+  #form-panel .panel-body{padding:20px}
+  .skeleton{color:#9AA0AB;font-size:13px;padding:20px 0;text-align:center}
+
+  /* search highlight */
+  mark{background:#FEF3C7;border-radius:3px;padding:0 2px}
+</style>
+</head>
+<body>
+<div class="concept-nav">
+  <a href="/">① الدخول</a>
+  <a href="/home">② CEO Home</a>
+  <a href="/sales" class="active">💼 المبيعات</a>
+  <a href="/passport">④ جواز الشركة</a>
+</div>
+
+<header>
+  <h1>خط الفرص — نظام المبيعات</h1>
+  <div class="hdr-right">
+    <button class="btn btn-sm" onclick="openNewOppForm()">+ فرصة جديدة</button>
+  </div>
+</header>
+
+<!-- Metrics -->
+<div class="metrics-bar" id="metricsBar"><div class="skeleton">يحمّل المؤشرات…</div></div>
+
+<!-- Alert: SALES-01 -->
+<div class="alert-bar" id="noActionAlert" style="display:none">
+  ⚠ <b id="noActionCount">0</b> فرصة نشطة بلا إجراء تالٍ وتاريخ —
+  <a href="#" onclick="filterNoAction(); return false">عرضها</a>
+</div>
+
+<!-- View Controls -->
+<div class="view-ctrl">
+  <div class="view-tabs">
+    <button class="view-tab active" id="tabKanban" onclick="switchView('kanban')">كانبان</button>
+    <button class="view-tab" id="tabList" onclick="switchView('list')">قائمة</button>
+  </div>
+  <div class="filter-row">
+    <input id="searchInput" type="search" placeholder="بحث بالعنوان أو العميل…" oninput="applyFilters()">
+    <select id="stageFilter" onchange="applyFilters()">
+      <option value="">كل المراحل</option>
+      <option>عميل محتمل</option><option>مؤهل</option>
+      <option>عرض مرسل</option><option>تفاوض</option>
+      <option>فوز</option><option>خسارة</option>
+    </select>
+    <select id="ownerFilter" onchange="applyFilters()">
+      <option value="">كل المسؤولين</option>
+    </select>
+  </div>
+</div>
+
+<!-- Kanban -->
+<div id="kanban-view"></div>
+
+<!-- List -->
+<div id="list-view">
+  <table class="list-table" id="listTable">
+    <thead>
+      <tr>
+        <th>الفرصة</th><th>المرحلة</th><th>القيمة</th>
+        <th>الإجراء التالي</th><th>الموعد</th><th>المسؤول</th>
+      </tr>
+    </thead>
+    <tbody id="listBody"></tbody>
+  </table>
+</div>
+
+<!-- Detail Panel -->
+<div class="overlay" id="overlay" onclick="closePanel()"></div>
+<div class="panel" id="detailPanel">
+  <div class="panel-hdr">
+    <h2 id="panelTitle">تفاصيل الفرصة</h2>
+    <button class="close-btn" onclick="closePanel()">✕</button>
+  </div>
+  <div class="panel-body" id="panelBody"></div>
+</div>
+
+<!-- New Opp Panel -->
+<div class="panel" id="form-panel" style="left:auto;right:0;transform:translateX(100%)">
+  <div class="panel-hdr">
+    <h2>فرصة جديدة</h2>
+    <button class="close-btn" onclick="closeFormPanel()">✕</button>
+  </div>
+  <div class="panel-body">
+    <div class="form-group"><label>عنوان الفرصة *</label>
+      <input id="f-title" placeholder="مثال: استشارة إدارية للشركة X"></div>
+    <div class="form-group"><label>المرحلة</label>
+      <select id="f-stage">
+        <option>عميل محتمل</option><option>مؤهل</option>
+        <option>عرض مرسل</option><option>تفاوض</option>
+      </select></div>
+    <div class="form-group"><label>القيمة المتوقعة (ريال)</label>
+      <input id="f-amount" type="number" min="0" placeholder="0"></div>
+    <div class="form-group"><label>احتمالية الإغلاق %</label>
+      <input id="f-prob" type="number" min="0" max="100" placeholder="50"></div>
+    <div class="form-group"><label>تاريخ الإغلاق المتوقع</label>
+      <input id="f-close" type="date"></div>
+    <div class="form-group"><label>الإجراء التالي *</label>
+      <input id="f-action" placeholder="مثال: إرسال عرض السعر"></div>
+    <div class="form-group"><label>موعد الإجراء *</label>
+      <input id="f-action-due" type="date"></div>
+    <div class="form-group"><label>المسؤول</label>
+      <input id="f-owner" placeholder="اسم المسؤول"></div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn" onclick="submitNewOpp()">إنشاء الفرصة</button>
+      <button class="btn-outline" onclick="closeFormPanel()">إلغاء</button>
+    </div>
+    <div id="form-err" style="color:#EF4444;font-size:12.5px;margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- Stage Move Modal -->
+<div class="overlay" id="stageOverlay" onclick="closeStagePicker()" style="display:none;z-index:200"></div>
+<div id="stageModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:14px;padding:22px;z-index:201;min-width:320px;box-shadow:0 8px 40px rgba(0,0,0,0.18)">
+  <h3 style="font-size:15px;font-weight:700;color:#0B132B;margin-bottom:14px">نقل المرحلة</h3>
+  <div id="stageMoveStages" style="display:flex;flex-direction:column;gap:7px"></div>
+  <div id="lossReasonGroup" style="display:none;margin-top:12px">
+    <label style="font-size:12px;color:#6E7580;font-weight:600;display:block;margin-bottom:4px">سبب الخسارة (إلزامي)</label>
+    <input id="lossReasonInput" type="text" placeholder="مثال: السعر مرتفع، اختار مزوداً آخر…"
+      style="width:100%;padding:8px 10px;border:1.5px solid #F59E0B;border-radius:8px;font-size:13px;font-family:inherit">
+  </div>
+  <div style="display:flex;gap:8px;margin-top:14px">
+    <button class="btn" onclick="confirmStageMove()">تأكيد</button>
+    <button class="btn-outline" onclick="closeStagePicker()">إلغاء</button>
+  </div>
+  <div id="stage-move-err" style="color:#EF4444;font-size:12px;margin-top:6px"></div>
+</div>
+
+<script>
+const CID = "{{ default_company_id }}";
+const STAGES = ["عميل محتمل","مؤهل","عرض مرسل","تفاوض","فوز","خسارة"];
+const ACTIVE_STAGES = new Set(["عميل محتمل","مؤهل","عرض مرسل","تفاوض"]);
+const ACT_TYPES = ["مكالمة","اجتماع","رسالة","عرض","ملاحظة"];
+
+let allOpps = [];
+let currentOpp = null;
+let pendingStage = null;
+
+/* ── Load ─────────────────────────────────────────── */
+async function load(){
+  const [oppsRes, metricsRes] = await Promise.all([
+    fetch(`/api/companies/${CID}/opportunities`),
+    fetch(`/api/companies/${CID}/sales/metrics`)
+  ]);
+  const oppsJson = await oppsRes.json();
+  const metricsJson = await metricsRes.json();
+  allOpps = oppsJson.success ? oppsJson.data : [];
+  if(metricsJson.success) renderMetrics(metricsJson.data);
+  applyFilters();
+  buildOwnerFilter();
+}
+
+function buildOwnerFilter(){
+  const owners = [...new Set(allOpps.map(o=>o.owner_id).filter(Boolean))];
+  const sel = document.getElementById('ownerFilter');
+  owners.forEach(o=>{
+    const opt = document.createElement('option'); opt.value=o; opt.textContent=o; sel.appendChild(opt);
+  });
+}
+
+/* ── Metrics ─────────────────────────────────────── */
+function renderMetrics(d){
+  const fmt = v => v != null ? `${Number(v).toLocaleString('ar-SA')} ريال` : '—';
+  const pct = v => v != null ? `${v}%` : '—';
+  const bar = document.getElementById('metricsBar');
+  bar.innerHTML = `
+    <div class="metric-card"><div class="lbl">قيمة الخط</div><div class="val">${fmt(d.pipeline_value)}</div><div class="sub">موزون: ${fmt(d.weighted_value)}</div></div>
+    <div class="metric-card ${d.no_action_count>0?'metric-warn':''}"><div class="lbl">بلا متابعة</div><div class="val">${d.no_action_count}</div><div class="sub">فرصة نشطة</div></div>
+    <div class="metric-card"><div class="lbl">معدل التحويل</div><div class="val">${pct(d.conversion_rate)}</div><div class="sub">فوز ÷ مغلق</div></div>
+    <div class="metric-card"><div class="lbl">متوسط الصفقة</div><div class="val">${fmt(d.avg_deal_value)}</div></div>
+    ${Object.entries(d.stage_counts||{}).map(([s,c])=>`<div class="metric-card"><div class="lbl">${s}</div><div class="val">${c}</div></div>`).join('')}
+  `;
+  if(d.no_action_count>0){
+    document.getElementById('noActionAlert').style.display='flex';
+    document.getElementById('noActionCount').textContent = d.no_action_count;
+  }
+}
+
+/* ── Filter + Render ─────────────────────────────── */
+function applyFilters(){
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const stage = document.getElementById('stageFilter').value;
+  const owner = document.getElementById('ownerFilter').value;
+  let filtered = allOpps.filter(o=>{
+    if(stage && o.stage !== stage) return false;
+    if(owner && o.owner_id !== owner) return false;
+    if(q && !((o.title||'').toLowerCase().includes(q) || (o.owner_id||'').toLowerCase().includes(q))) return false;
+    return true;
+  });
+  renderKanban(filtered);
+  renderList(filtered);
+}
+
+function filterNoAction(){
+  document.getElementById('stageFilter').value='';
+  document.getElementById('searchInput').value='';
+  const noAction = allOpps.filter(o=>ACTIVE_STAGES.has(o.stage)&&(!o.next_action||!o.next_action_due));
+  renderKanban(noAction);
+  renderList(noAction);
+}
+
+function isWarn(o){ return ACTIVE_STAGES.has(o.stage) && (!o.next_action || !o.next_action_due); }
+
+function renderKanban(opps){
+  const grouped = {};
+  STAGES.forEach(s=>{ grouped[s]=[]; });
+  opps.forEach(o=>{ if(grouped[o.stage]) grouped[o.stage].push(o); });
+  const kv = document.getElementById('kanban-view');
+  kv.innerHTML = STAGES.map(stage=>{
+    const cls = stage==='فوز'?'stage-win':stage==='خسارة'?'stage-loss':'';
+    const cards = grouped[stage].map(o=>{
+      const warn = isWarn(o);
+      return `<div class="opp-card ${warn?'warn':''}" onclick="openDetail('${o.opp_id}')">
+        <div class="opp-title">${esc(o.title)}</div>
+        ${o.amount?`<div class="opp-amt">${Number(o.amount).toLocaleString('ar-SA')} ريال</div>`:''}
+        ${o.owner_id?`<div class="opp-meta">👤 ${esc(o.owner_id)}</div>`:''}
+        ${o.next_action_due?`<div class="opp-meta">📅 ${o.next_action_due}</div>`:''}
+        ${warn?'<div class="warn-badge">⚠ بلا إجراء تالٍ</div>':''}
+      </div>`;
+    }).join('');
+    return `<div class="lane ${cls}">
+      <div class="lane-hdr"><span class="lane-name">${stage}</span><span class="lane-count">${grouped[stage].length}</span></div>
+      <div class="lane-body">${cards||'<div style="color:#C7CBD1;font-size:12px;padding:6px">لا توجد فرص</div>'}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderList(opps){
+  const sb = s => {
+    if(s==='فوز') return `<span class="stage-badge sb-win">${s}</span>`;
+    if(s==='خسارة') return `<span class="stage-badge sb-loss">${s}</span>`;
+    return `<span class="stage-badge sb-active">${s}</span>`;
+  };
+  document.getElementById('listBody').innerHTML = opps.map(o=>`
+    <tr onclick="openDetail('${o.opp_id}')">
+      <td><b>${esc(o.title)}</b>${isWarn(o)?'<span class="warn-badge" style="margin-right:6px">⚠</span>':''}</td>
+      <td>${sb(o.stage)}</td>
+      <td>${o.amount?Number(o.amount).toLocaleString('ar-SA')+' ريال':'—'}</td>
+      <td>${esc(o.next_action||'—')}</td>
+      <td>${o.next_action_due||'—'}</td>
+      <td>${esc(o.owner_id||'—')}</td>
+    </tr>`).join('');
+}
+
+function switchView(v){
+  document.getElementById('kanban-view').style.display = v==='kanban'?'flex':'none';
+  document.getElementById('list-view').style.display = v==='list'?'block':'none';
+  document.getElementById('tabKanban').classList.toggle('active', v==='kanban');
+  document.getElementById('tabList').classList.toggle('active', v==='list');
+}
+
+/* ── Detail Panel ────────────────────────────────── */
+async function openDetail(oppId){
+  currentOpp = null;
+  document.getElementById('overlay').style.display='block';
+  document.getElementById('detailPanel').classList.add('open');
+  document.getElementById('panelBody').innerHTML='<div class="skeleton">يحمّل…</div>';
+  const res = await fetch(`/api/opportunities/${oppId}`);
+  const j = await res.json();
+  if(!j.success){ document.getElementById('panelBody').innerHTML='<p style="color:#EF4444">خطأ في التحميل</p>'; return; }
+  currentOpp = j.data;
+  document.getElementById('panelTitle').textContent = currentOpp.title;
+  renderDetailPanel(currentOpp);
+}
+
+function renderDetailPanel(o){
+  const stageRow = STAGES.map(s=>`
+    <button class="stage-btn ${s===o.stage?'current':'next'}" onclick="openStagePicker('${o.opp_id}','${s}','${o.stage}')">${s}</button>
+  `).join('');
+
+  const actList = (o.activities||[]).length
+    ? o.activities.map(a=>`<div class="activity-item"><div class="at">${esc(a.type)} — ${(a.occurred_at||a.created_at||'').slice(0,10)}</div>${esc(a.subject||'')} ${esc(a.notes||'')}</div>`).join('')
+    : '<div style="color:#9AA0AB;font-size:12px">لا أنشطة بعد</div>';
+
+  const histList = (o.stage_history||[]).map(h=>`
+    <div class="history-item">
+      <span style="color:#0EA5A5;font-family:\'Space Grotesk\';font-size:11px">${(h.changed_at||'').slice(0,10)}</span>
+      <span>${h.from_stage||'—'} → ${h.to_stage}</span>
+    </div>`).join('');
+
+  const warn = isWarn(o);
+  document.getElementById('panelBody').innerHTML = `
+    ${warn?'<div class="alert-bar" style="margin:-20px -20px 16px;border-radius:0">⚠ هذه الفرصة بلا إجراء تالٍ وتاريخ</div>':''}
+    <div class="panel-section">
+      <div class="lbl">المرحلة الحالية</div>
+      <div class="stage-row">${stageRow}</div>
+    </div>
+    <div class="panel-section">
+      <div class="lbl">تفاصيل</div>
+      <div style="font-size:13px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div><span style="color:#9AA0AB">القيمة:</span> ${o.amount?Number(o.amount).toLocaleString('ar-SA')+' ريال':'—'}</div>
+        <div><span style="color:#9AA0AB">الاحتمالية:</span> ${o.probability!=null?o.probability+'%':'—'}</div>
+        <div><span style="color:#9AA0AB">تاريخ الإغلاق:</span> ${o.expected_close_date||'—'}</div>
+        <div><span style="color:#9AA0AB">المسؤول:</span> ${esc(o.owner_id||'—')}</div>
+        ${o.outcome_reason?`<div style="grid-column:span 2"><span style="color:#9AA0AB">السبب:</span> ${esc(o.outcome_reason)}</div>`:''}
+      </div>
+    </div>
+    <div class="panel-section">
+      <div class="lbl">الإجراء التالي</div>
+      <div style="font-size:13px">${esc(o.next_action||'—')} ${o.next_action_due?`<span style="color:#D97706">(${o.next_action_due})</span>`:''}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <input id="na-text" type="text" placeholder="الإجراء التالي" value="${esc(o.next_action||'')}"
+          style="flex:1;min-width:140px;padding:6px 10px;border:1px solid #DEE1EC;border-radius:7px;font-size:12.5px;font-family:inherit">
+        <input id="na-date" type="date" value="${o.next_action_due||''}"
+          style="padding:6px 10px;border:1px solid #DEE1EC;border-radius:7px;font-size:12.5px">
+        <button class="btn btn-sm" onclick="saveNextAction('${o.opp_id}')">حفظ</button>
+      </div>
+    </div>
+    <div class="panel-section">
+      <div class="lbl">الأنشطة</div>
+      <div class="activity-list" id="actList">${actList}</div>
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+        <select id="act-type" style="padding:5px 8px;border:1px solid #DEE1EC;border-radius:7px;font-size:12.5px">
+          ${ACT_TYPES.map(t=>`<option>${t}</option>`).join('')}
+        </select>
+        <input id="act-note" placeholder="ملاحظة…" style="flex:1;min-width:120px;padding:5px 10px;border:1px solid #DEE1EC;border-radius:7px;font-size:12.5px">
+        <button class="btn btn-sm" onclick="addActivity('${o.opp_id}')">إضافة</button>
+      </div>
+    </div>
+    <div class="panel-section">
+      <div class="lbl">تاريخ المراحل</div>
+      <div class="history-list">${histList||'<div style="color:#9AA0AB;font-size:12px">لا سجل بعد</div>'}</div>
+    </div>
+    <div class="panel-section">
+      <button class="btn-danger" onclick="archiveOpp('${o.opp_id}')">أرشفة الفرصة</button>
+    </div>
+  `;
+}
+
+function closePanel(){
+  document.getElementById('overlay').style.display='none';
+  document.getElementById('detailPanel').classList.remove('open');
+}
+
+/* ── Stage Picker ────────────────────────────────── */
+function openStagePicker(oppId, newStage, currentStage){
+  if(newStage===currentStage) return;
+  pendingStage = {oppId, newStage};
+  document.getElementById('stageOverlay').style.display='block';
+  document.getElementById('stageModal').style.display='block';
+  const isLoss = newStage==='خسارة';
+  document.getElementById('lossReasonGroup').style.display = isLoss?'block':'none';
+  document.getElementById('lossReasonInput').value='';
+  document.getElementById('stage-move-err').textContent='';
+  document.getElementById('stageMoveStages').innerHTML=
+    `<div style="font-size:14px;color:#0B132B">نقل الفرصة إلى: <b>${newStage}</b></div>`;
+}
+
+function closeStagePicker(){
+  document.getElementById('stageOverlay').style.display='none';
+  document.getElementById('stageModal').style.display='none';
+  pendingStage=null;
+}
+
+async function confirmStageMove(){
+  if(!pendingStage) return;
+  const {oppId, newStage} = pendingStage;
+  const reason = document.getElementById('lossReasonInput').value.trim();
+  if(newStage==='خسارة' && !reason){
+    document.getElementById('stage-move-err').textContent='سبب الخسارة إلزامي';
+    return;
+  }
+  const body = {stage: newStage};
+  if(reason) body.outcome_reason = reason;
+  const res = await fetch(`/api/opportunities/${oppId}/stage`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+  });
+  const j = await res.json();
+  if(!j.success){
+    document.getElementById('stage-move-err').textContent = j.message||j.error;
+    return;
+  }
+  closeStagePicker();
+  closePanel();
+  await load();
+}
+
+/* ── Next Action ─────────────────────────────────── */
+async function saveNextAction(oppId){
+  const na = document.getElementById('na-text').value.trim();
+  const nd = document.getElementById('na-date').value;
+  // PATCH opportunity — نستخدم endpoint stage بحقل next_action فقط
+  await fetch(`/api/opportunities/${oppId}/next-action`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({next_action: na, next_action_due: nd})
+  });
+  await load();
+  await openDetail(oppId);
+}
+
+/* ── Activity ────────────────────────────────────── */
+async function addActivity(oppId){
+  const type = document.getElementById('act-type').value;
+  const notes = document.getElementById('act-note').value.trim();
+  const res = await fetch(`/api/opportunities/${oppId}/activities`,{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({type, notes, occurred_at: new Date().toISOString()})
+  });
+  const j = await res.json();
+  if(j.success){ document.getElementById('act-note').value=''; await openDetail(oppId); }
+}
+
+/* ── Archive ─────────────────────────────────────── */
+async function archiveOpp(oppId){
+  if(!confirm('تأكيد أرشفة هذه الفرصة؟')) return;
+  const res = await fetch(`/api/opportunities/${oppId}/archive`,{method:'POST'});
+  const j = await res.json();
+  if(j.success){ closePanel(); await load(); }
+  else alert(j.message||j.error);
+}
+
+/* ── New Opp Form ────────────────────────────────── */
+function openNewOppForm(){
+  document.getElementById('form-panel').style.transform='translateX(0)';
+  document.getElementById('overlay').style.display='block';
+}
+function closeFormPanel(){
+  document.getElementById('form-panel').style.transform='translateX(100%)';
+  document.getElementById('overlay').style.display='none';
+}
+
+async function submitNewOpp(){
+  const title = document.getElementById('f-title').value.trim();
+  const na = document.getElementById('f-action').value.trim();
+  const nd = document.getElementById('f-action-due').value;
+  document.getElementById('form-err').textContent='';
+  if(!title){ document.getElementById('form-err').textContent='العنوان مطلوب'; return; }
+  const body = {
+    title, stage: document.getElementById('f-stage').value,
+    amount: document.getElementById('f-amount').value||null,
+    probability: document.getElementById('f-prob').value||null,
+    expected_close_date: document.getElementById('f-close').value||null,
+    next_action: na||null, next_action_due: nd||null,
+    owner_id: document.getElementById('f-owner').value||null
+  };
+  const res = await fetch(`/api/companies/${CID}/opportunities`,{
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+  });
+  const j = await res.json();
+  if(j.success){ closeFormPanel(); await load(); }
+  else { document.getElementById('form-err').textContent = j.message||j.error; }
+}
+
+/* ── Utils ───────────────────────────────────────── */
+function esc(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+load();
+</script>
+</body>
+</html>

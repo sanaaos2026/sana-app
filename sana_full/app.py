@@ -103,6 +103,7 @@ PUBLIC_ENDPOINTS = {
     "system_health", "static", "guide_page",
     "sectors_list",   # قائمة القطاعات — عامة بلا مصادقة
     "articles_list", "article_page", "api_articles_list",  # مقالات — عامة بلا مصادقة
+    "sales_pipeline_page",  # B6: صفحة خط المبيعات — تتطلب جلسة، لكن تُعرض دون redirect loop
 }
 # ملاحظة: "companies_list" أُزيل عمداً من القائمة العامة (P0-1)
 # المسار /api/companies مقيَّد الآن بـ admin_key فقط
@@ -365,6 +366,74 @@ def init_db(force=False):
             linked_at   TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
             FOREIGN KEY (case_id) REFERENCES cases(case_id)
         )""")
+        # ── B6: Sales CRM ──────────────────────────────────────────────
+        conn.execute("""CREATE TABLE IF NOT EXISTS leads (
+            lead_id        TEXT PRIMARY KEY,
+            company_id     TEXT NOT NULL REFERENCES companies(company_id),
+            name           TEXT NOT NULL,
+            company_name   TEXT,
+            email          TEXT,
+            phone          TEXT,
+            source         TEXT,
+            service_interest TEXT,
+            status         TEXT NOT NULL DEFAULT 'جديد',
+            owner_id       TEXT,
+            notes          TEXT,
+            created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_leads_company ON leads(company_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_leads_status  ON leads(company_id, status)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS opportunities (
+            opp_id              TEXT PRIMARY KEY,
+            company_id          TEXT NOT NULL REFERENCES companies(company_id),
+            lead_id             TEXT REFERENCES leads(lead_id),
+            title               TEXT NOT NULL,
+            stage               TEXT NOT NULL DEFAULT 'عميل محتمل',
+            amount              NUMERIC,
+            probability         INTEGER,
+            expected_close_date DATE,
+            next_action         TEXT,
+            next_action_due     DATE,
+            outcome_reason      TEXT,
+            owner_id            TEXT,
+            delivery_task_id    TEXT,
+            archived            SMALLINT NOT NULL DEFAULT 0,
+            archived_at         TIMESTAMPTZ,
+            archived_by         TEXT,
+            created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_opp_company ON opportunities(company_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_opp_stage   ON opportunities(company_id, stage)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_opp_due     ON opportunities(company_id, next_action_due)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS sales_activities (
+            activity_id  TEXT PRIMARY KEY,
+            company_id   TEXT NOT NULL REFERENCES companies(company_id),
+            opp_id       TEXT REFERENCES opportunities(opp_id),
+            type         TEXT NOT NULL,
+            subject      TEXT,
+            notes        TEXT,
+            occurred_at  TIMESTAMPTZ,
+            due_at       TIMESTAMPTZ,
+            completed_at TIMESTAMPTZ,
+            actor_id     TEXT,
+            created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_act_opp ON sales_activities(opp_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_act_company ON sales_activities(company_id)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS sales_stage_history (
+            history_id TEXT PRIMARY KEY,
+            opp_id     TEXT NOT NULL REFERENCES opportunities(opp_id),
+            company_id TEXT NOT NULL,
+            from_stage TEXT,
+            to_stage   TEXT NOT NULL,
+            changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            changed_by TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ssh_opp ON sales_stage_history(opp_id)")
         conn.commit()
     # لكل شركة بلا رمز دعوة (سواء قاعدة بيانات جديدة أو قديمة) — ولّد رمزًا فريدًا
     for row in conn.execute("SELECT company_id FROM companies WHERE signup_code IS NULL").fetchall():
@@ -2357,6 +2426,337 @@ def score_explanation(company_id):
             "pending_decisions": pending_list,
             "projected_score": projected_score,
             "projected_delta": projected_score - current_score,
+        }
+    })
+
+
+# ==================================================================
+# B6 — Sales CRM
+# ==================================================================
+
+SALES_STAGES = ["عميل محتمل", "مؤهل", "عرض مرسل", "تفاوض", "فوز", "خسارة"]
+ACTIVE_STAGES = {"عميل محتمل", "مؤهل", "عرض مرسل", "تفاوض"}
+ACTIVITY_TYPES = {"مكالمة", "اجتماع", "رسالة", "عرض", "ملاحظة"}
+
+
+def _opp_or_404(db, opp_id):
+    o = db.execute("SELECT * FROM opportunities WHERE opp_id=?", (opp_id,)).fetchone()
+    if not o:
+        return None, jsonify({"success": False, "error": "OPP_NOT_FOUND"}), 404
+    return o, None, None
+
+
+@app.route("/sales")
+def sales_pipeline_page():
+    account = current_account()
+    cid = account["company_id"] if account else default_company_id()
+    return render_template("17-sales-pipeline.html", default_company_id=cid)
+
+
+# ── Leads ──────────────────────────────────────────────────────────
+
+@app.route("/api/companies/<company_id>/leads", methods=["GET"])
+def list_leads(company_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard: return guard
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM leads WHERE company_id=? ORDER BY created_at DESC", (company_id,)
+    ).fetchall()
+    return jsonify({"success": True, "data": [dict(r) for r in rows]})
+
+
+@app.route("/api/companies/<company_id>/leads", methods=["POST"])
+def create_lead(company_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard: return guard
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"success": False, "error": "NAME_REQUIRED"}), 400
+    import uuid
+    lead_id = f"L-{uuid.uuid4().hex[:10].upper()}"
+    db = get_db()
+    db.execute(
+        """INSERT INTO leads
+           (lead_id, company_id, name, company_name, email, phone,
+            source, service_interest, status, owner_id, notes)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+        (lead_id, company_id, name,
+         body.get("company_name"), body.get("email"), body.get("phone"),
+         body.get("source"), body.get("service_interest"),
+         body.get("status", "جديد"), body.get("owner_id"), body.get("notes"))
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"lead_id": lead_id}}), 201
+
+
+# ── Opportunities ──────────────────────────────────────────────────
+
+@app.route("/api/companies/<company_id>/opportunities", methods=["GET"])
+def list_opportunities(company_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard: return guard
+    db = get_db()
+    stage_filter = request.args.get("stage")
+    if stage_filter:
+        rows = db.execute(
+            "SELECT * FROM opportunities WHERE company_id=? AND archived=0 AND stage=? ORDER BY created_at DESC",
+            (company_id, stage_filter)
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT * FROM opportunities WHERE company_id=? AND archived=0 ORDER BY created_at DESC",
+            (company_id,)
+        ).fetchall()
+    return jsonify({"success": True, "data": [dict(r) for r in rows]})
+
+
+@app.route("/api/companies/<company_id>/opportunities", methods=["POST"])
+def create_opportunity(company_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard: return guard
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()
+    if not title:
+        return jsonify({"success": False, "error": "TITLE_REQUIRED"}), 400
+    stage = body.get("stage", "عميل محتمل")
+    if stage not in SALES_STAGES:
+        return jsonify({"success": False, "error": "INVALID_STAGE",
+                        "valid": SALES_STAGES}), 400
+    import uuid
+    opp_id = f"OPP-{uuid.uuid4().hex[:10].upper()}"
+    account = current_account()
+    actor = account["account_id"] if account else "system"
+    db = get_db()
+    db.execute(
+        """INSERT INTO opportunities
+           (opp_id, company_id, lead_id, title, stage, amount, probability,
+            expected_close_date, next_action, next_action_due, owner_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+        (opp_id, company_id, body.get("lead_id"), title, stage,
+         body.get("amount"), body.get("probability"),
+         body.get("expected_close_date"),
+         body.get("next_action"), body.get("next_action_due"),
+         body.get("owner_id"))
+    )
+    # سجّل في تاريخ المراحل
+    db.execute(
+        """INSERT INTO sales_stage_history (history_id, opp_id, company_id, from_stage, to_stage, changed_by)
+           VALUES (?,?,?,NULL,?,?)""",
+        (f"SSH-{uuid.uuid4().hex[:10].upper()}", opp_id, company_id, stage, actor)
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"opp_id": opp_id}}), 201
+
+
+@app.route("/api/opportunities/<opp_id>", methods=["GET"])
+def get_opportunity(opp_id):
+    db = get_db()
+    opp, err, code = _opp_or_404(db, opp_id)
+    if err: return err, code
+    guard = enforce_entity_company_scope(opp["company_id"])
+    if guard: return guard
+    activities = db.execute(
+        "SELECT * FROM sales_activities WHERE opp_id=? ORDER BY created_at DESC", (opp_id,)
+    ).fetchall()
+    history = db.execute(
+        "SELECT * FROM sales_stage_history WHERE opp_id=? ORDER BY changed_at", (opp_id,)
+    ).fetchall()
+    return jsonify({
+        "success": True,
+        "data": {**dict(opp),
+                 "activities": [dict(a) for a in activities],
+                 "stage_history": [dict(h) for h in history]}
+    })
+
+
+@app.route("/api/opportunities/<opp_id>/stage", methods=["PATCH"])
+def move_stage(opp_id):
+    db = get_db()
+    opp, err, code = _opp_or_404(db, opp_id)
+    if err: return err, code
+    guard = enforce_entity_company_scope(opp["company_id"])
+    if guard: return guard
+
+    body = request.get_json(silent=True) or {}
+    new_stage = (body.get("stage") or "").strip()
+    if new_stage not in SALES_STAGES:
+        return jsonify({"success": False, "error": "INVALID_STAGE", "valid": SALES_STAGES}), 400
+
+    # SALES-05: الخسارة تتطلب سببًا
+    if new_stage == "خسارة":
+        reason = (body.get("outcome_reason") or "").strip()
+        if not reason:
+            return jsonify({"success": False, "error": "OUTCOME_REASON_REQUIRED",
+                            "message": "الخسارة تتطلب سبب إلزامي"}), 400
+
+    import uuid
+    account = current_account()
+    actor = account["account_id"] if account else "system"
+    old_stage = opp["stage"]
+
+    db.execute(
+        """UPDATE opportunities
+           SET stage=?, outcome_reason=?, updated_at=now()
+           WHERE opp_id=?""",
+        (new_stage,
+         body.get("outcome_reason") if new_stage in ("فوز", "خسارة") else opp["outcome_reason"],
+         opp_id)
+    )
+    # SALES-02: سجّل انتقال المرحلة
+    db.execute(
+        """INSERT INTO sales_stage_history (history_id, opp_id, company_id, from_stage, to_stage, changed_by)
+           VALUES (?,?,?,?,?,?)""",
+        (f"SSH-{uuid.uuid4().hex[:10].upper()}", opp_id, opp["company_id"], old_stage, new_stage, actor)
+    )
+    # SALES-04: الفوز ينشئ مهمة تسليم مرة واحدة فقط (Idempotent)
+    if new_stage == "فوز" and not opp["delivery_task_id"]:
+        task_id = f"TSK-DEL-{uuid.uuid4().hex[:8].upper()}"
+        db.execute(
+            """INSERT INTO tasks (task_id, company_id, title, status, priority)
+               VALUES (?,?,?,?,?)""",
+            (task_id, opp["company_id"],
+             f"بدء تسليم: {opp['title']}", "لم تبدأ", "عالية")
+        )
+        db.execute("UPDATE opportunities SET delivery_task_id=? WHERE opp_id=?", (task_id, opp_id))
+    db.commit()
+    return jsonify({"success": True, "data": {"opp_id": opp_id, "stage": new_stage}})
+
+
+# ── Activities ────────────────────────────────────────────────────
+
+@app.route("/api/opportunities/<opp_id>/activities", methods=["POST"])
+def add_activity(opp_id):
+    db = get_db()
+    opp, err, code = _opp_or_404(db, opp_id)
+    if err: return err, code
+    guard = enforce_entity_company_scope(opp["company_id"])
+    if guard: return guard
+    body = request.get_json(silent=True) or {}
+    act_type = (body.get("type") or "").strip()
+    if act_type not in ACTIVITY_TYPES:
+        return jsonify({"success": False, "error": "INVALID_TYPE",
+                        "valid": list(ACTIVITY_TYPES)}), 400
+    import uuid
+    account = current_account()
+    act_id = f"ACT-{uuid.uuid4().hex[:10].upper()}"
+    db.execute(
+        """INSERT INTO sales_activities
+           (activity_id, company_id, opp_id, type, subject, notes,
+            occurred_at, due_at, completed_at, actor_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (act_id, opp["company_id"], opp_id, act_type,
+         body.get("subject"), body.get("notes"),
+         body.get("occurred_at"), body.get("due_at"), body.get("completed_at"),
+         account["account_id"] if account else body.get("actor_id"))
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"activity_id": act_id}}), 201
+
+
+# ── Archive (SALES-07) ────────────────────────────────────────────
+
+@app.route("/api/opportunities/<opp_id>/next-action", methods=["PATCH"])
+def update_next_action(opp_id):
+    db = get_db()
+    opp, err, code = _opp_or_404(db, opp_id)
+    if err: return err, code
+    guard = enforce_entity_company_scope(opp["company_id"])
+    if guard: return guard
+    body = request.get_json(silent=True) or {}
+    db.execute(
+        "UPDATE opportunities SET next_action=?, next_action_due=?, updated_at=now() WHERE opp_id=?",
+        (body.get("next_action") or None, body.get("next_action_due") or None, opp_id)
+    )
+    db.commit()
+    return jsonify({"success": True})
+
+
+@app.route("/api/opportunities/<opp_id>/archive", methods=["POST"])
+def archive_opportunity(opp_id):
+    """SALES-07: حذف/أرشفة يحتاج صلاحية وسجل تدقيق"""
+    db = get_db()
+    opp, err, code = _opp_or_404(db, opp_id)
+    if err: return err, code
+    guard = enforce_entity_company_scope(opp["company_id"])
+    if guard: return guard
+    account = current_account()
+    if not account and not is_admin_preview():
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+    actor = account["account_id"] if account else "admin"
+    import uuid
+    db.execute(
+        "UPDATE opportunities SET archived=1, archived_at=now(), archived_by=? WHERE opp_id=?",
+        (actor, opp_id)
+    )
+    # سجّل في تاريخ المراحل كحدث أرشفة
+    db.execute(
+        """INSERT INTO sales_stage_history (history_id, opp_id, company_id, from_stage, to_stage, changed_by)
+           VALUES (?,?,?,?,'مؤرشفة',?)""",
+        (f"SSH-{uuid.uuid4().hex[:10].upper()}", opp_id, opp["company_id"], opp["stage"], actor)
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"opp_id": opp_id, "archived": True}})
+
+
+# ── Metrics ───────────────────────────────────────────────────────
+
+@app.route("/api/companies/<company_id>/sales/metrics")
+def sales_metrics(company_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard: return guard
+    db = get_db()
+
+    all_opps = db.execute(
+        "SELECT * FROM opportunities WHERE company_id=? AND archived=0", (company_id,)
+    ).fetchall()
+
+    pipeline_value = sum((o["amount"] or 0) for o in all_opps if o["stage"] in ACTIVE_STAGES)
+    weighted_value = sum(
+        (o["amount"] or 0) * ((o["probability"] or 50) / 100)
+        for o in all_opps if o["stage"] in ACTIVE_STAGES
+    )
+    # SALES-01: فرص بلا إجراء تالٍ أو تاريخ
+    no_action = [
+        dict(o) for o in all_opps
+        if o["stage"] in ACTIVE_STAGES and (not o["next_action"] or not o["next_action_due"])
+    ]
+    wins = [o for o in all_opps if o["stage"] == "فوز"]
+    losses = [o for o in all_opps if o["stage"] == "خسارة"]
+    total_closed = len(wins) + len(losses)
+    conversion_rate = round(len(wins) / total_closed * 100) if total_closed else None
+
+    # أسباب الخسارة
+    loss_reasons: dict = {}
+    for o in losses:
+        r = o["outcome_reason"] or "غير محدد"
+        loss_reasons[r] = loss_reasons.get(r, 0) + 1
+
+    # مصادر العملاء من جدول leads
+    source_rows = db.execute(
+        """SELECT l.source, COUNT(o.opp_id) AS opps, COUNT(CASE WHEN o.stage='فوز' THEN 1 END) AS wins,
+                  SUM(CASE WHEN o.stage='فوز' THEN o.amount ELSE 0 END) AS won_value
+           FROM leads l
+           LEFT JOIN opportunities o ON o.lead_id=l.lead_id AND o.company_id=l.company_id
+           WHERE l.company_id=?
+           GROUP BY l.source""",
+        (company_id,)
+    ).fetchall()
+    sources = [dict(r) for r in source_rows]
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "pipeline_value": pipeline_value,
+            "weighted_value": round(weighted_value),
+            "no_action_count": len(no_action),
+            "no_action_opps": no_action,
+            "conversion_rate": conversion_rate,
+            "avg_deal_value": round(sum((o["amount"] or 0) for o in wins) / len(wins)) if wins else None,
+            "loss_reasons": loss_reasons,
+            "sources": sources,
+            "stage_counts": {s: sum(1 for o in all_opps if o["stage"] == s) for s in SALES_STAGES},
         }
     })
 
