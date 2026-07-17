@@ -794,13 +794,15 @@ def login():
 
     # تحقق من القطاع وحالة SDS لتحديد الوجهة
     company = db.execute(
-        "SELECT sds_done, sector FROM companies WHERE company_id=?", (account["company_id"],)
+        "SELECT sds_done, main_goal, sector FROM companies WHERE company_id=?", (account["company_id"],)
     ).fetchone()
     if company and not company["sector"]:
         redirect_to = "/sector-select"
-    elif company and company["sds_done"]:
+    elif company and company["sds_done"] and company["main_goal"]:
+        # sds_done=1 AND main_goal محفوظ → جلسة مكتملة فعلاً
         redirect_to = "/home"
     else:
+        # sds_done=0 أو main_goal فارغ (جلسة ناقصة) → أكمل Discovery
         redirect_to = "/discovery"
     return jsonify({"success": True, "data": {"redirect": redirect_to}})
 
@@ -828,11 +830,13 @@ def discovery():
         return redirect(url_for("login"))
     db = get_db()
     company = db.execute(
-        "SELECT sds_done, sector FROM companies WHERE company_id=?", (account["company_id"],)
+        "SELECT sds_done, main_goal, sector FROM companies WHERE company_id=?", (account["company_id"],)
     ).fetchone()
     if company and not company["sector"]:
         return redirect(url_for("sector_select"))
-    if company and company["sds_done"]:
+    # يُعيد لـ/home فقط إذا اكتملت الجلسة فعلاً (sds_done=1 AND main_goal محفوظ)
+    # إذا main_goal فارغ رغم sds_done=1 → السماح بإعادة تقديم الجلسة
+    if company and company["sds_done"] and company["main_goal"]:
         return redirect(url_for("ceo_home"))
     return render_template("06-sana-discovery.html")
 
