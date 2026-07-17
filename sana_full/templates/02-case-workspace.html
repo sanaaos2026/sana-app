@@ -180,34 +180,63 @@ function buildInsightCounter(evidence, assets) {
     ((e.title || '').includes('مستوى اعتماد') &&
       (['يتعطل','لا تعمل','تتوقف'].some(w => (e.title||'').includes(w))))
   );
-  // أصول بلا دليل مرتبط بهذي القضية
   const assetIdsWithEvidence = new Set(evidence.map(e => e.asset_id).filter(Boolean));
   const needsAttention = (assets || []).filter(a => !assetIdsWithEvidence.has(a.asset_id));
   const opportunities  = evidence.filter(e => !risks.includes(e));
 
   if (evidence.length === 0 && (assets||[]).length === 0) return '';
+
+  // بناء قائمة HTML لفئة معينة
+  function listHTML(items, type) {
+    if (!items.length) return `<p style="color:rgba(255,255,255,0.4);font-size:12px;margin:6px 0 0;">لا توجد عناصر في هذه الفئة.</p>`;
+    return items.map(item => {
+      const label = type === 'asset'
+        ? item.asset_name || item.asset_type
+        : item.title;
+      const sub   = type === 'asset'
+        ? `درجة ${item.current_score ?? '—'}/100`
+        : `${item.source_type || ''} — ثقة ${item.confidence ?? '—'}٪`;
+      return `<div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.07); display:flex; flex-direction:column; gap:2px;">
+        <span style="color:#fff; font-size:13px;">${label}</span>
+        <span style="color:rgba(255,255,255,0.4); font-size:11px;">${sub}</span>
+      </div>`;
+    }).join('');
+  }
+
+  function pillBtn(id, count, color, label) {
+    return `<button onclick="toggleInsightPanel('${id}')"
+      style="background:none; border:none; cursor:pointer; display:flex; gap:6px; align-items:center; padding:0;">
+      <span style="color:${color}; font-size:19px; font-weight:700; font-family:'Space Grotesk';">${count}</span>
+      <span style="color:rgba(255,255,255,0.55); font-size:13px; text-decoration:underline dotted rgba(255,255,255,0.3);">${label}</span>
+    </button>`;
+  }
+
   return `
-    <div style="background:#0B132B; border-radius:10px; padding:14px 18px; margin-bottom:16px;
-                display:flex; gap:20px; flex-wrap:wrap; align-items:center;">
+    <div style="background:#0B132B; border-radius:10px; padding:14px 18px; margin-bottom:16px;">
       <span style="font-size:11px; color:rgba(255,255,255,0.5); font-weight:600;
-                   letter-spacing:1px; text-transform:uppercase; flex:0 0 100%; margin-bottom:-4px;">
+                   letter-spacing:1px; text-transform:uppercase; display:block; margin-bottom:10px;">
         🧠 ماذا اكتشف سنع؟
       </span>
-      <div style="display:flex; gap:6px; align-items:center;">
-        <span style="color:#0EA5A5; font-size:19px; font-weight:700; font-family:'Space Grotesk';">${opportunities.length}</span>
-        <span style="color:rgba(255,255,255,0.55); font-size:13px;">فرص</span>
+      <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:center;">
+        ${pillBtn('panel-opp', opportunities.length, '#0EA5A5', 'فرص')}
+        <span style="color:rgba(255,255,255,0.15);">·</span>
+        ${pillBtn('panel-risk', risks.length, '#B23A2E', 'مخاطر')}
+        <span style="color:rgba(255,255,255,0.15);">·</span>
+        ${pillBtn('panel-att', needsAttention.length, '#F2B233', 'أصل يحتاج اهتمامًا')}
       </div>
-      <span style="color:rgba(255,255,255,0.15);">·</span>
-      <div style="display:flex; gap:6px; align-items:center;">
-        <span style="color:#B23A2E; font-size:19px; font-weight:700; font-family:'Space Grotesk';">${risks.length}</span>
-        <span style="color:rgba(255,255,255,0.55); font-size:13px;">مخاطر</span>
-      </div>
-      <span style="color:rgba(255,255,255,0.15);">·</span>
-      <div style="display:flex; gap:6px; align-items:center;">
-        <span style="color:#F2B233; font-size:19px; font-weight:700; font-family:'Space Grotesk';">${needsAttention.length}</span>
-        <span style="color:rgba(255,255,255,0.55); font-size:13px;">أصل يحتاج اهتمامًا</span>
-      </div>
+
+      <div id="panel-opp"  style="display:none; margin-top:12px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;">${listHTML(opportunities, 'evidence')}</div>
+      <div id="panel-risk" style="display:none; margin-top:12px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;">${listHTML(risks, 'evidence')}</div>
+      <div id="panel-att"  style="display:none; margin-top:12px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;">${listHTML(needsAttention, 'asset')}</div>
     </div>`;
+}
+
+function toggleInsightPanel(id) {
+  ['panel-opp','panel-risk','panel-att'].forEach(pid => {
+    const el = document.getElementById(pid);
+    if (!el) return;
+    el.style.display = (pid === id && el.style.display === 'none') ? 'block' : 'none';
+  });
 }
 
 function render(d){
