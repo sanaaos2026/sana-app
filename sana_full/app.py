@@ -1006,6 +1006,9 @@ def guide_page():
 
 @app.route("/methodology/<slug>")
 def methodology_page(slug):
+    # صفحة داخلية — فريق سنع فقط، لا يُكشف وجودها لحساب العميل
+    if not is_admin_preview():
+        return redirect(url_for("ceo_home"))
     return render_template("08-methodology.html", slug=slug, default_company_id=default_company_id())
 
 
@@ -1187,7 +1190,9 @@ def company_summary(company_id):
 
 @app.route("/api/methodology/<slug>")
 def methodology_detail(slug):
-    """وثيقة منهجية عامة — مستقلة عن أي شركة، مرجع يمكن ربطه من أي Case Workspace."""
+    """وثيقة منهجية — داخلية بحتة، فريق سنع فقط."""
+    if not is_admin_preview():
+        return jsonify({"success": False, "error": "FORBIDDEN"}), 403
     db = get_db()
     doc = db.execute("SELECT * FROM methodology_docs WHERE slug=?", (slug,)).fetchone()
     if not doc:
