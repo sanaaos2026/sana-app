@@ -2712,9 +2712,9 @@ def sales_metrics(company_id):
         "SELECT * FROM opportunities WHERE company_id=? AND archived=0", (company_id,)
     ).fetchall()
 
-    pipeline_value = sum((o["amount"] or 0) for o in all_opps if o["stage"] in ACTIVE_STAGES)
+    pipeline_value = sum(float(o["amount"] or 0) for o in all_opps if o["stage"] in ACTIVE_STAGES)
     weighted_value = sum(
-        (o["amount"] or 0) * ((o["probability"] or 50) / 100)
+        float(o["amount"] or 0) * ((float(o["probability"] or 50)) / 100)
         for o in all_opps if o["stage"] in ACTIVE_STAGES
     )
     # SALES-01: فرص بلا إجراء تالٍ أو تاريخ
