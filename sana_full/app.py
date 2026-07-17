@@ -519,6 +519,70 @@ def init_db(force=False):
         )""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_task_evidence_task ON task_evidence(task_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_task_evidence_company ON task_evidence(company_id)")
+
+        # ── سنع الخبير: نظام اكتشاف وتأهيل الخبراء (مستقل تمامًا عن جداول الشركات) ──
+        conn.execute("""CREATE TABLE IF NOT EXISTS experts (
+            expert_id          TEXT PRIMARY KEY,
+            uuid               TEXT UNIQUE NOT NULL,
+            name               TEXT NOT NULL,
+            domain_expertise   TEXT NOT NULL,
+            phone              TEXT,
+            email              TEXT,
+            notes              TEXT,
+            access_link_slug   TEXT UNIQUE NOT NULL,
+            access_code        TEXT,
+            status             TEXT NOT NULL DEFAULT 'لم يبدأ',
+            api_call_count     INTEGER NOT NULL DEFAULT 0,
+            created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_session_at    TIMESTAMPTZ
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_experts_slug ON experts(access_link_slug)")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_experts_uuid ON experts(uuid)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS expert_sessions (
+            session_id    TEXT PRIMARY KEY,
+            expert_id     TEXT NOT NULL REFERENCES experts(expert_id),
+            started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+            ended_at      TIMESTAMPTZ,
+            current_stage INTEGER NOT NULL DEFAULT 1,
+            conversation_log TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_expert_sessions_expert ON expert_sessions(expert_id)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS expert_facts (
+            fact_id          TEXT PRIMARY KEY,
+            expert_id        TEXT NOT NULL REFERENCES experts(expert_id),
+            session_id       TEXT NOT NULL REFERENCES expert_sessions(session_id),
+            fact_type        TEXT NOT NULL,
+            content          TEXT NOT NULL,
+            confidence_level TEXT,
+            related_stage    INTEGER,
+            created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_expert_facts_expert  ON expert_facts(expert_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_expert_facts_session ON expert_facts(session_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_expert_facts_type    ON expert_facts(expert_id, fact_type)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS expert_knowledge_assets (
+            asset_id         TEXT PRIMARY KEY,
+            expert_id        TEXT NOT NULL REFERENCES experts(expert_id),
+            asset_category   TEXT NOT NULL,
+            content          TEXT NOT NULL,
+            transformable_to TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_expert_ka_expert ON expert_knowledge_assets(expert_id)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS expert_projects (
+            project_id          TEXT PRIMARY KEY,
+            expert_id           TEXT NOT NULL REFERENCES experts(expert_id),
+            title               TEXT NOT NULL,
+            description         TEXT,
+            scores              TEXT,
+            is_recommended      SMALLINT NOT NULL DEFAULT 0,
+            recommendation_reason TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_expert_projects_expert ON expert_projects(expert_id)")
+
         conn.commit()
     # لكل شركة بلا رمز دعوة (سواء قاعدة بيانات جديدة أو قديمة) — ولّد رمزًا فريدًا
     for row in conn.execute("SELECT company_id FROM companies WHERE signup_code IS NULL").fetchall():
