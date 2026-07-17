@@ -78,6 +78,16 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
 
+# فلتر Jinja2: يحوّل JSON string → dict (يُستخدم في قوالب المقالات)
+@app.template_filter("from_json")
+def from_json_filter(value):
+    if not value:
+        return {}
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
 # مفتاح "العرض الداخلي التجريبي" — يسمح لك أنت كمشرف بفتح أي شركة عبر
 # ?company_id=...&admin_key=... دون تسجيل دخول، منفصل تمامًا عن حسابات العملاء الحقيقية.
 # لا يُعرض هذا المفتاح في أي صفحة عامة؛ استخدمه يدويًا في المتصفح فقط.
@@ -92,6 +102,7 @@ PUBLIC_ENDPOINTS = {
     "methodology_page", "methodology_detail",
     "system_health", "static", "guide_page",
     "sectors_list",   # قائمة القطاعات — عامة بلا مصادقة
+    "articles_list", "article_page", "api_articles_list",  # مقالات — عامة بلا مصادقة
 }
 # ملاحظة: "companies_list" أُزيل عمداً من القائمة العامة (P0-1)
 # المسار /api/companies مقيَّد الآن بـ admin_key فقط
@@ -904,6 +915,39 @@ def guide_page():
 @app.route("/methodology/<slug>")
 def methodology_page(slug):
     return render_template("08-methodology.html", slug=slug, default_company_id=default_company_id())
+
+
+# ------------------------------------------------------------------
+# Articles (doc_type='article' in methodology_docs — no new table)
+# ------------------------------------------------------------------
+
+@app.route("/articles")
+def articles_list():
+    db = get_db()
+    articles = db.execute(
+        "SELECT slug, title, subtitle FROM methodology_docs WHERE doc_type='article' ORDER BY created_at DESC"
+    ).fetchall()
+    return render_template("15-articles-list.html", articles=[dict(a) for a in articles])
+
+
+@app.route("/articles/<slug>")
+def article_page(slug):
+    db = get_db()
+    doc = db.execute(
+        "SELECT * FROM methodology_docs WHERE slug=? AND doc_type='article'", (slug,)
+    ).fetchone()
+    if not doc:
+        return "المقال غير موجود", 404
+    return render_template("16-article.html", doc=dict(doc))
+
+
+@app.route("/api/articles")
+def api_articles_list():
+    db = get_db()
+    articles = db.execute(
+        "SELECT slug, title, subtitle FROM methodology_docs WHERE doc_type='article' ORDER BY created_at DESC"
+    ).fetchall()
+    return jsonify({"success": True, "data": [dict(a) for a in articles]})
 
 
 # ------------------------------------------------------------------

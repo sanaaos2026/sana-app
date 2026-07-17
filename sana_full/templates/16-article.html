@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>{{ doc.title }} — سنع</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html{ color-scheme:light; background:#F5F6FB; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{ background:#F5F6FB; color:#333940; font-family:'IBM Plex Sans Arabic',sans-serif; line-height:1.75; }
+  a{ color:inherit; text-decoration:none; }
+
+  .concept-nav{ background:#080E1F; padding:10px 20px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
+  .concept-nav a.active{ background:rgba(242,178,51,0.15); color:#F2B233; font-weight:600; }
+
+  header{ background:#080E1F; padding:20px 28px 24px; color:#fff; }
+  header .eyebrow{ font-family:'Space Grotesk'; font-size:10.5px; letter-spacing:2px; text-transform:uppercase; color:#F2B233; font-weight:600; margin-bottom:8px; }
+  header h1{ font-size:clamp(18px,3vw,26px); font-weight:700; line-height:1.4; margin-bottom:8px; }
+  header .sub{ color:rgba(255,255,255,0.60); font-size:13.5px; max-width:640px; }
+
+  main{ max-width:720px; margin:0 auto; padding:32px 20px 80px; }
+
+  /* ── Sections ── */
+  .art-section{ margin-bottom:32px; }
+  .art-section .label{
+    font-family:'Space Grotesk'; font-size:10.5px; letter-spacing:2px; text-transform:uppercase;
+    color:#0EA5A5; font-weight:700; margin-bottom:10px;
+  }
+
+  /* المشكلة */
+  .problem-box{
+    background:#FFF8E6; border:1.5px solid #F2B233; border-radius:12px;
+    padding:18px 20px;
+  }
+  .problem-box p{ font-size:15px; font-weight:600; color:#0B132B; line-height:1.75; }
+
+  /* لماذا تحدث / التشخيص / الحل */
+  .content-card{
+    background:#fff; border:1px solid #DEE1EC; border-radius:12px;
+    padding:18px 20px;
+  }
+  .content-card p, .content-card li{ font-size:14px; color:#333940; }
+  .content-card ul{ padding-right:18px; }
+  .content-card li{ margin-bottom:6px; }
+  .content-card a{ color:#0EA5A5; text-decoration:underline; }
+
+  /* خطوات التنفيذ */
+  .steps-list{ list-style:none; counter-reset:step; }
+  .steps-list li{
+    counter-increment:step;
+    background:#fff; border:1px solid #DEE1EC; border-radius:10px;
+    padding:13px 16px 13px 14px; margin-bottom:8px;
+    display:flex; gap:12px; align-items:flex-start;
+  }
+  .steps-list li::before{
+    content:counter(step);
+    font-family:'Space Grotesk'; font-weight:700; font-size:13px;
+    background:#0B132B; color:#fff;
+    min-width:26px; height:26px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0; margin-top:1px;
+  }
+  .steps-list li span{ font-size:14px; color:#0B132B; line-height:1.65; }
+
+  /* Checklist */
+  .checklist{ list-style:none; }
+  .checklist li{
+    display:flex; gap:10px; align-items:flex-start;
+    background:#fff; border:1px solid #DEE1EC; border-radius:10px;
+    padding:11px 14px; margin-bottom:7px; font-size:13.5px; color:#0B132B;
+  }
+  .checklist li::before{ content:'☐'; font-size:16px; flex-shrink:0; color:#9AA0AB; line-height:1.3; }
+
+  /* CTA */
+  .cta-block{
+    background:#0B132B; border-radius:14px; padding:24px 24px;
+    text-align:center; margin-top:36px;
+  }
+  .cta-block p{ color:rgba(255,255,255,0.70); font-size:13.5px; margin-bottom:14px; }
+  .cta-btn{
+    display:inline-block; background:#0EA5A5; color:#fff;
+    font-size:15px; font-weight:700; padding:13px 30px; border-radius:10px;
+    letter-spacing:.2px; transition:background .15s;
+  }
+  .cta-btn:hover{ background:#0c9090; }
+
+  .back-link{ font-size:12.5px; color:#0EA5A5; font-weight:600; margin-bottom:20px; display:inline-block; }
+</style>
+</head>
+<body>
+
+<div class="concept-nav">
+  <a href="/">① الدخول</a>
+  <a href="/home">② CEO Home</a>
+  <a href="/articles" class="active">📚 مقالات</a>
+  <a href="/passport">④ جواز الشركة</a>
+</div>
+
+<header>
+  <div class="eyebrow">مقالات سنع — معرفة قابلة للتطبيق</div>
+  <h1>{{ doc.title }}</h1>
+  {% if doc.subtitle %}<div class="sub">{{ doc.subtitle }}</div>{% endif %}
+</header>
+
+<main>
+  <a class="back-link" href="/articles">← جميع المقالات</a>
+
+  {% set c = doc.content | from_json %}
+
+  <!-- 1. المشكلة -->
+  {% if c.problem %}
+  <div class="art-section">
+    <div class="label">المشكلة</div>
+    <div class="problem-box"><p>{{ c.problem }}</p></div>
+  </div>
+  {% endif %}
+
+  <!-- 2. لماذا تحدث -->
+  {% if c.why %}
+  <div class="art-section">
+    <div class="label">لماذا تحدث</div>
+    <div class="content-card">
+      <p>{{ c.why | safe }}</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- 3. كيف تُشخَّص -->
+  {% if c.diagnose %}
+  <div class="art-section">
+    <div class="label">كيف تُشخَّص</div>
+    <div class="content-card">
+      {% if c.diagnose is iterable and c.diagnose is not string %}
+        <ul>{% for item in c.diagnose %}<li>{{ item | safe }}</li>{% endfor %}</ul>
+      {% else %}
+        <p>{{ c.diagnose | safe }}</p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- 4. الحل -->
+  {% if c.solution %}
+  <div class="art-section">
+    <div class="label">الحل</div>
+    <div class="content-card"><p>{{ c.solution | safe }}</p></div>
+  </div>
+  {% endif %}
+
+  <!-- 5. خطوات التنفيذ -->
+  {% if c.steps %}
+  <div class="art-section">
+    <div class="label">خطوات التنفيذ</div>
+    <ol class="steps-list">
+      {% for step in c.steps %}<li><span>{{ step | safe }}</span></li>{% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+
+  <!-- 6. Checklist -->
+  {% if c.checklist %}
+  <div class="art-section">
+    <div class="label">Checklist — هل نجحتَ؟</div>
+    <ul class="checklist">
+      {% for item in c.checklist %}<li>{{ item | safe }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <!-- 7. روابط ذات صلة (اختياري) -->
+  {% if c.related %}
+  <div class="art-section">
+    <div class="label">مقالات وأدوات ذات صلة</div>
+    <div class="content-card">
+      <ul>
+        {% for r in c.related %}
+        <li><a href="{{ r.url }}">{{ r.label }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- CTA -->
+  <div class="cta-block">
+    <p>جاهز تطبق هذا على شركتك؟ ابدأ جلسة التشخيص داخل سنع الآن — مجانًا وبدون تعقيد.</p>
+    <a class="cta-btn" href="/discovery">ابدأ التشخيص داخل سنع ←</a>
+  </div>
+</main>
+
+</body>
+</html>
