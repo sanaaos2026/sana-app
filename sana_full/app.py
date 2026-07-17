@@ -499,6 +499,26 @@ def init_db(force=False):
             expires_at TIMESTAMPTZ NOT NULL,
             used       BOOLEAN NOT NULL DEFAULT false
         )""")
+        # ── دورة الإثبات: expected_asset_impact على المهام + جدول task_evidence ──
+        # expected_asset_impact: نص JSON يحدد الأصل المستهدف وعدد النقاط المتوقعة
+        # مثال: {"asset_id": "A007", "score_impact": 5}
+        task_cols = _columns_of(conn, "tasks")
+        if "expected_asset_impact" not in task_cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN expected_asset_impact TEXT")
+        conn.execute("""CREATE TABLE IF NOT EXISTS task_evidence (
+            evidence_id         TEXT PRIMARY KEY,
+            task_id             TEXT NOT NULL REFERENCES tasks(task_id),
+            company_id          TEXT NOT NULL,
+            evidence_type       TEXT NOT NULL DEFAULT 'نص وصفي',
+            evidence_content    TEXT NOT NULL,
+            submitted_at        TEXT NOT NULL DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
+            verification_status TEXT NOT NULL DEFAULT 'لم يُتحقق',
+            verification_reason TEXT,
+            verified_at         TEXT,
+            impact_applied      SMALLINT NOT NULL DEFAULT 0
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_task_evidence_task ON task_evidence(task_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_task_evidence_company ON task_evidence(company_id)")
         conn.commit()
     # لكل شركة بلا رمز دعوة (سواء قاعدة بيانات جديدة أو قديمة) — ولّد رمزًا فريدًا
     for row in conn.execute("SELECT company_id FROM companies WHERE signup_code IS NULL").fetchall():
@@ -2489,6 +2509,202 @@ def complete_task(task_id):
             "new_asset_score": updated_assets[0]["new_score"] if updated_assets else None
         }
     })
+
+
+# ------------------------------------------------------------------
+# دورة الإثبات: تقديم إثبات + التحقق بالذكاء الاصطناعي + تطبيق التأثير
+# ------------------------------------------------------------------
+
+def verify_task_evidence(task_id, evidence_id):
+    """
+    تستدعي Claude بسؤال ضيق النطاق: هل الإثبات مرتبط منطقياً بإنجاز المهمة؟
+    تحدّث task_evidence مباشرةً وتُرجع (verification_status, verification_reason).
+    """
+    db = get_db()
+
+    evidence = db.execute(
+        "SELECT te.*, t.title AS task_title, t.company_id AS task_company_id "
+        "FROM task_evidence te JOIN tasks t ON te.task_id = t.task_id "
+        "WHERE te.evidence_id=?", (evidence_id,)
+    ).fetchone()
+    if not evidence:
+        return None, "EVIDENCE_NOT_FOUND"
+
+    # عزل الشركة — تحقق مزدوج
+    if evidence["task_company_id"] != evidence["company_id"]:
+        return None, "COMPANY_MISMATCH"
+
+    result = ask_sana_ai(
+        system_prompt=(
+            "أنت محكّم دقيق. مهمتك فقط: تحديد ما إذا كان الإثبات المقدَّم "
+            "مرتبطاً منطقياً بإنجاز المهمة المذكورة. "
+            "أجب بسطر واحد فقط بهذا الشكل الصارم:\n"
+            "مرتبط: <سبب في جملة واحدة>\n"
+            "أو:\n"
+            "غير مرتبط: <سبب في جملة واحدة>\n"
+            "لا تُضف أي شيء آخر. لا تحكم على الجودة أو الكفاءة."
+        ),
+        user_prompt=(
+            f"المهمة: {evidence['task_title']}\n"
+            f"الإثبات المقدَّم: {evidence['evidence_content']}"
+        ),
+    )
+
+    if "error" in result:
+        return None, result["error"]
+
+    raw = result.get("raw_text", "").strip()
+    if raw.startswith("مرتبط"):
+        status = "مرتبط"
+        reason = raw[len("مرتبط"):].lstrip(":").strip()
+    elif raw.startswith("غير مرتبط"):
+        status = "غير مرتبط"
+        reason = raw[len("غير مرتبط"):].lstrip(":").strip()
+    else:
+        # استجابة غير متوقعة — نحفظها كما هي ونعدّها غير محددة
+        status = "لم يُتحقق"
+        reason = raw[:200]
+
+    db.execute(
+        "UPDATE task_evidence SET verification_status=?, verification_reason=?, "
+        "verified_at=to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS') "
+        "WHERE evidence_id=?",
+        (status, reason, evidence_id)
+    )
+    db.commit()
+    return status, reason
+
+
+def apply_verified_impact(task_id, evidence_id):
+    """
+    Idempotent — تُطبَّق مرة واحدة فقط لكل evidence_id.
+    تقرأ expected_asset_impact من المهمة وتضيفه للأصل المستهدف.
+    تُرجع dict بتفاصيل التحديث أو رسالة خطأ.
+    """
+    import json as _json
+    db = get_db()
+
+    evidence = db.execute(
+        "SELECT te.*, t.expected_asset_impact, t.company_id AS task_company_id, t.title AS task_title "
+        "FROM task_evidence te JOIN tasks t ON te.task_id = t.task_id "
+        "WHERE te.evidence_id=?", (evidence_id,)
+    ).fetchone()
+    if not evidence:
+        return {"error": "EVIDENCE_NOT_FOUND"}
+    if evidence["task_id"] != task_id:
+        return {"error": "TASK_EVIDENCE_MISMATCH"}
+    if evidence["task_company_id"] != evidence["company_id"]:
+        return {"error": "COMPANY_MISMATCH"}
+    if evidence["verification_status"] != "مرتبط":
+        return {"error": "NOT_VERIFIED", "message": "التأثير يُطبَّق فقط بعد التحقق بنتيجة 'مرتبط'"}
+    if evidence["impact_applied"]:
+        return {"error": "ALREADY_APPLIED", "message": "تم تطبيق التأثير مسبقاً لهذا الإثبات"}
+
+    raw_impact = evidence.get("expected_asset_impact")
+    if not raw_impact:
+        return {"error": "NO_IMPACT_DEFINED", "message": "المهمة لا تحمل expected_asset_impact"}
+
+    try:
+        impact_data = _json.loads(raw_impact)
+        asset_id = impact_data["asset_id"]
+        score_impact = int(impact_data["score_impact"])
+    except Exception:
+        return {"error": "INVALID_IMPACT_FORMAT"}
+
+    # تحقق أن الأصل ينتمي لنفس الشركة
+    asset = db.execute(
+        "SELECT * FROM assets WHERE asset_id=? AND company_id=?",
+        (asset_id, evidence["task_company_id"])
+    ).fetchone()
+    if not asset:
+        return {"error": "ASSET_NOT_FOUND_OR_FORBIDDEN"}
+
+    previous_score = asset["current_score"]
+    new_score = min(100, previous_score + score_impact)
+
+    db.execute(
+        "UPDATE assets SET current_score=?, updated_at=now() WHERE asset_id=?",
+        (new_score, asset_id)
+    )
+    db.execute(
+        "UPDATE task_evidence SET impact_applied=1 WHERE evidence_id=?",
+        (evidence_id,)
+    )
+    db.commit()
+
+    return {
+        "asset_id": asset_id,
+        "asset_name": asset["asset_name"],
+        "previous_score": previous_score,
+        "new_score": new_score,
+        "score_impact_applied": score_impact,
+        "evidence_id": evidence_id,
+        "task_id": task_id
+    }
+
+
+@app.route("/api/tasks/<task_id>/evidence", methods=["POST"])
+def submit_task_evidence(task_id):
+    """
+    تقديم إثبات إنجاز لمهمة + استدعاء التحقق بالذكاء الاصطناعي فوراً.
+    Body: { evidence_type, evidence_content }
+    """
+    db = get_db()
+    task = db.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+    if not task:
+        return jsonify({"success": False, "error": "TASK_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(task["company_id"])
+    if guard:
+        return guard
+
+    data = request.get_json(silent=True) or {}
+    evidence_content = (data.get("evidence_content") or "").strip()
+    evidence_type = (data.get("evidence_type") or "نص وصفي").strip()
+    if not evidence_content:
+        return jsonify({"success": False, "error": "MISSING_EVIDENCE_CONTENT"}), 400
+
+    evidence_id = f"EV-{secrets.token_hex(6).upper()}"
+    db.execute(
+        "INSERT INTO task_evidence "
+        "(evidence_id, task_id, company_id, evidence_type, evidence_content) "
+        "VALUES (?,?,?,?,?)",
+        (evidence_id, task_id, task["company_id"], evidence_type, evidence_content)
+    )
+    db.commit()
+
+    # استدعاء التحقق فوراً
+    v_status, v_reason = verify_task_evidence(task_id, evidence_id)
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "evidence_id": evidence_id,
+            "task_id": task_id,
+            "evidence_type": evidence_type,
+            "verification_status": v_status,
+            "verification_reason": v_reason
+        }
+    })
+
+
+@app.route("/api/tasks/<task_id>/evidence/<evidence_id>/apply-impact", methods=["POST"])
+def apply_task_impact(task_id, evidence_id):
+    """
+    تطبيق التأثير المتوقع على الأصل بعد التحقق. Idempotent.
+    """
+    task = get_db().execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+    if not task:
+        return jsonify({"success": False, "error": "TASK_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(task["company_id"])
+    if guard:
+        return guard
+
+    result = apply_verified_impact(task_id, evidence_id)
+    if "error" in result:
+        code = 409 if result["error"] in ("ALREADY_APPLIED", "NOT_VERIFIED") else 400
+        return jsonify({"success": False, **result}), code
+
+    return jsonify({"success": True, "data": result})
 
 
 # ------------------------------------------------------------------
