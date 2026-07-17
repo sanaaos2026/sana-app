@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<script>(function(){var m=document.querySelector('meta[name="csrf-token"]');if(!m)return;var t=m.content;var S=new Set(['POST','PUT','PATCH','DELETE']);var F=window.fetch.bind(window);window.fetch=function(u,o){o=o||{};if(S.has((o.method||'GET').toUpperCase())){o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});}return F(u,o);};})();</script>
+<meta name="color-scheme" content="light">
+<title>سنع — الخطوة التالية</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html { color-scheme: light; background: #F5F6FB; }
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #F5F6FB; color: #333940; font-family: 'IBM Plex Sans Arabic', sans-serif; line-height: 1.6; }
+  .num { font-family: 'Space Grotesk', sans-serif; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ── nav ── */
+  .concept-nav { background: #080E1F; padding: 10px 20px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+  .concept-nav a { font-size: 11.5px; color: rgba(255,255,255,.5); padding: 6px 12px; border-radius: 20px; }
+  .concept-nav a.active { background: rgba(242,178,51,.15); color: #F2B233; font-weight: 600; }
+
+  /* ── header ── */
+  header { background: #080E1F; padding: 14px 28px; color: #fff; display: flex; align-items: center; gap: 14px; }
+  .back  { font-size: 12.5px; color: rgba(255,255,255,.6); }
+  .hd-title { font-weight: 600; font-size: 15px; flex: 1; }
+  .hd-conf  { background: rgba(242,178,51,.15); color: #F2B233; font-size: 11px; font-weight: 600;
+               padding: 3px 10px; border-radius: 20px; font-family: 'Space Grotesk'; white-space: nowrap; }
+
+  /* ── layout ── */
+  main { max-width: 860px; margin: 0 auto; padding: 28px 20px 72px; }
+
+  /* ── intro band ── */
+  .intro-band { background: #0B132B; border-radius: 12px; padding: 22px 24px; margin-bottom: 24px; color: #fff; }
+  .intro-band .eyebrow { font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+                          color: rgba(255,255,255,.4); font-family: 'Space Grotesk'; font-weight: 600;
+                          margin-bottom: 8px; }
+  .intro-band h1 { font-size: 18px; font-weight: 700; line-height: 1.4; margin-bottom: 6px; }
+  .intro-band .sub { font-size: 13px; color: rgba(255,255,255,.55); line-height: 1.6; }
+
+  /* ── path card ── */
+  .path-card {
+    background: #fff;
+    border: 1px solid #DEE1EC;
+    border-radius: 14px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .path-card-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 18px 22px 16px;
+    border-bottom: 1px solid #DEE1EC;
+  }
+  .path-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; flex-shrink: 0;
+  }
+  .path-icon.execute { background: #FFF0E6; }
+  .path-icon.system  { background: #EFF6FF; }
+  .path-icon.impact  { background: #E6FFF6; }
+  .path-icon.understand { background: #FFF8E6; }
+
+  .path-meta { flex: 1; }
+  .path-priority { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+                   font-family: 'Space Grotesk'; font-weight: 600; color: #9AA0AB; margin-bottom: 3px; }
+  .path-label { font-size: 15px; font-weight: 700; color: #0B132B; }
+
+  .path-body { padding: 18px 22px; }
+  .path-headline { font-size: 13.5px; font-weight: 600; color: #0B132B; margin-bottom: 12px; line-height: 1.5; }
+
+  .detail-list { list-style: none; margin-bottom: 14px; display: flex; flex-direction: column; gap: 7px; }
+  .detail-list li { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: #4B5260; line-height: 1.6; }
+  .detail-list li::before { content: '—'; color: #9AA0AB; flex-shrink: 0; margin-top: 1px; }
+  .detail-list li.sub-item { padding-right: 20px; }
+  .detail-list li.sub-item::before { content: '←'; color: #C8CCE0; }
+
+  .action-row {
+    background: #F5F6FB; border-radius: 8px; padding: 12px 14px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12.5px; color: #0B132B; font-weight: 500; line-height: 1.5;
+  }
+  .action-row::before { content: '👉'; flex-shrink: 0; }
+
+  /* colour accents on left border by type */
+  .path-card.execute { border-right: 4px solid #F2833B; }
+  .path-card.system  { border-right: 4px solid #3B82F6; }
+  .path-card.impact  { border-right: 4px solid #0EA5A5; }
+  .path-card.understand { border-right: 4px solid #F2B233; }
+
+  /* ── priority badge ── */
+  .prio-badge {
+    width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; font-family: 'Space Grotesk';
+    background: #F5F6FB; color: #9AA0AB; flex-shrink: 0;
+    border: 1px solid #DEE1EC;
+  }
+
+  /* ── no paths ── */
+  .empty-state { text-align: center; padding: 60px 20px; color: #9AA0AB; }
+  .empty-state .big { font-size: 40px; margin-bottom: 12px; }
+  .empty-state p   { font-size: 14px; }
+
+  /* ── skeleton ── */
+  .skeleton { color: #9AA0AB; font-size: 13px; padding: 40px 0; text-align: center; }
+
+  /* ── footer nav ── */
+  .foot-nav { margin-top: 28px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .foot-link {
+    padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border: 1.5px solid #DEE1EC; background: #fff; color: #0B132B;
+  }
+  .foot-link:hover { border-color: #0B132B; }
+  .foot-link.primary { background: #0B132B; color: #fff; border-color: #0B132B; }
+  .foot-link.primary:hover { background: #131c3d; }
+</style>
+</head>
+<body>
+
+<div class="concept-nav">
+  <a href="/">① الدخول</a>
+  <a href="/home">② CEO Home</a>
+  <a href="/case/{{ case_id }}">③ القضية</a>
+  <a href="/case/{{ case_id }}/next-step" class="active">④ الخطوة التالية</a>
+  <a href="/passport">⑤ جواز الشركة</a>
+</div>
+
+<header>
+  <a href="/case/{{ case_id }}" class="back" id="backLink">← القضية</a>
+  <div class="hd-title" id="pageTitle">الخطوة التالية...</div>
+  <span class="hd-conf num" id="confBadge"></span>
+</header>
+
+<main>
+  <div id="intro" style="display:none">
+    <div class="intro-band">
+      <div class="eyebrow">الخطوة التالية</div>
+      <h1 id="introCaseTitle"></h1>
+      <p class="sub">هذه المسارات مبنية على بيانات قضيتك الحقيقية الآن — لا توقعات، لا أرقام افتراضية.</p>
+    </div>
+  </div>
+
+  <div id="app">
+    <div class="skeleton">سنع يحلّل وضع القضية...</div>
+  </div>
+
+  <div class="foot-nav" id="footNav" style="display:none">
+    <a href="/case/{{ case_id }}" class="foot-link primary">← العودة للقضية</a>
+    <a href="/home" class="foot-link">الرئيسية</a>
+  </div>
+</main>
+
+<script>
+const CASE_ID = "{{ case_id }}";
+
+const TYPE_CSS = {
+  understand: 'understand',
+  execute:    'execute',
+  system:     'system',
+  impact:     'impact',
+};
+const ICON_CSS = {
+  understand: 'understand',
+  execute:    'execute',
+  system:     'system',
+  impact:     'impact',
+};
+const PRIORITY_LABEL = {
+  1: 'الأولوية الأولى',
+  2: 'الأولوية الثانية',
+  3: 'الأولوية الثالثة',
+  4: 'الأولوية الرابعة',
+};
+
+function buildPathCard(path) {
+  const cssType = TYPE_CSS[path.id] || 'execute';
+  const iconCss = ICON_CSS[path.id] || 'execute';
+  const prioLbl = PRIORITY_LABEL[path.priority] || `الأولوية ${path.priority}`;
+
+  const detailsHTML = path.details.map((d, i) => {
+    const isSubItem = d.startsWith('←');
+    return `<li class="${isSubItem ? 'sub-item' : ''}">${d.replace(/^←\s*/, '')}</li>`;
+  }).join('');
+
+  return `
+    <div class="path-card ${cssType}">
+      <div class="path-card-head">
+        <div class="path-icon ${iconCss}">${path.icon}</div>
+        <div class="path-meta">
+          <div class="path-priority">${prioLbl}</div>
+          <div class="path-label">${path.label}</div>
+        </div>
+        <div class="prio-badge num">${path.priority}</div>
+      </div>
+      <div class="path-body">
+        <div class="path-headline">${path.headline}</div>
+        <ul class="detail-list">${detailsHTML}</ul>
+        <div class="action-row">${path.action}</div>
+      </div>
+    </div>`;
+}
+
+async function load() {
+  const res  = await fetch(`/api/cases/${CASE_ID}/next-step`);
+  const json = await res.json();
+
+  if (!json.success) {
+    document.getElementById('app').innerHTML = '<p style="color:#B23A2E;padding:20px">تعذّر تحميل البيانات.</p>';
+    return;
+  }
+
+  const { case_title, confidence, paths } = json.data;
+
+  // header
+  document.getElementById('pageTitle').textContent = `الخطوة التالية — ${case_title}`;
+  if (confidence != null) {
+    document.getElementById('confBadge').textContent = `ثقة التشخيص ${confidence}٪`;
+    document.getElementById('confBadge').style.display = '';
+  }
+
+  // intro
+  document.getElementById('introCaseTitle').textContent = case_title;
+  document.getElementById('intro').style.display = '';
+
+  // paths
+  const app = document.getElementById('app');
+  if (!paths || paths.length === 0) {
+    app.innerHTML = `
+      <div class="empty-state">
+        <div class="big">✅</div>
+        <p>القضية في وضع جيد — لا توجد مسارات ضرورية الآن.</p>
+      </div>`;
+  } else {
+    app.innerHTML = paths.map(buildPathCard).join('');
+  }
+
+  document.getElementById('footNav').style.display = '';
+}
+
+load();
+</script>
+</body>
+</html>

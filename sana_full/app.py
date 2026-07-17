@@ -637,6 +637,177 @@ def new_case():
     return render_template("04-new-case.html", default_company_id=default_company_id())
 
 
+@app.route("/case/<case_id>/next-step")
+def case_next_step(case_id):
+    account = current_account()
+    if not account and not is_admin_preview():
+        return redirect(url_for("login", next=request.full_path))
+    ENABLED_CASES = {"CS002"}
+    if case_id not in ENABLED_CASES:
+        abort(404)
+    db = get_db()
+    case = db.execute("SELECT company_id FROM cases WHERE case_id=?", (case_id,)).fetchone()
+    if not case:
+        abort(404)
+    if account and case["company_id"] != account["company_id"]:
+        abort(403)
+    return render_template("02b-next-step.html", case_id=case_id)
+
+
+@app.route("/api/cases/<case_id>/next-step")
+def case_next_step_data(case_id):
+    """
+    يحسب المسارات الحتمية للخطوة التالية بناءً على بيانات CS002 الحقيقية.
+    قواعد if/else صارمة — لا ذكاء اصطناعي.
+    """
+    db = get_db()
+    case = db.execute("SELECT * FROM cases WHERE case_id=?", (case_id,)).fetchone()
+    if not case:
+        return jsonify({"success": False, "error": "CASE_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(case["company_id"])
+    if guard:
+        return guard
+
+    company_id = case["company_id"]
+    confidence = case["confidence_score"] or 0
+
+    # عدد الأدلة
+    ev_count = db.execute(
+        "SELECT COUNT(*) as c FROM evidence WHERE case_id=?", (case_id,)
+    ).fetchone()["c"]
+
+    # القرارات المقترحة غير المعتمدة
+    proposed_decisions = db.execute(
+        "SELECT decision_id, title FROM decisions WHERE case_id=? AND status='مقترح'",
+        (case_id,)
+    ).fetchall()
+
+    # مهام هذه القضية (عبر قراراتها) التي لم تبدأ
+    all_decisions = db.execute(
+        "SELECT decision_id FROM decisions WHERE case_id=?", (case_id,)
+    ).fetchall()
+    decision_ids = [d["decision_id"] for d in all_decisions]
+    not_started_count = 0
+    if decision_ids:
+        ph = ",".join("?" * len(decision_ids))
+        not_started_count = db.execute(
+            f"SELECT COUNT(*) as c FROM tasks WHERE decision_id IN ({ph}) AND status='لم تبدأ'",
+            decision_ids
+        ).fetchone()["c"]
+
+    # SOP مرتبط بالقضية — لا يوجد ربط رسمي حالياً
+    sop_linked = False  # يصبح True عند إضافة case_id لجدول methodology_docs
+
+    # إثباتات مطبّقة (impact_applied=1) مع تفاصيل الأصل الحقيقية
+    applied_impacts = db.execute("""
+        SELECT DISTINCT
+               te.evidence_id,
+               te.task_id,
+               te.verification_reason,
+               t.title          AS task_title,
+               t.expected_asset_impact,
+               a.asset_id,
+               a.asset_name,
+               a.current_score,
+               (t.expected_asset_impact::jsonb->>'score_impact')::int AS score_delta
+        FROM task_evidence te
+        JOIN tasks t ON te.task_id = t.task_id
+        JOIN assets a ON a.asset_id = (t.expected_asset_impact::jsonb->>'asset_id')
+        WHERE te.company_id = ? AND te.impact_applied = 1
+          AND t.expected_asset_impact IS NOT NULL
+        ORDER BY te.evidence_id
+    """, (company_id,)).fetchall()
+
+    # ── بناء المسارات ──────────────────────────────────────────
+    paths = []
+
+    # مسار 1: ثقة التشخيص < 70%
+    if confidence < 70:
+        paths.append({
+            "id":       "understand",
+            "priority": 1,
+            "icon":     "🧠",
+            "label":    "افهم القضية أكثر",
+            "headline": f"ثقة التشخيص {confidence}٪ — أقل من الحد المطلوب (70٪)",
+            "details":  [
+                f"عدد الأدلة الحالي: {ev_count} دليل",
+                f"ثقة سنع في التشخيص: {confidence}٪",
+                "أضف أدلة جديدة أو أجب على أسئلة التشخيص لرفع الثقة",
+            ],
+            "action": "أضف أدلة جديدة أو أجب على الأسئلة المتبقية لرفع الثقة",
+            "extra":  [],
+        })
+
+    # مسار 2: قرارات مقترحة أو مهام لم تبدأ
+    if proposed_decisions or not_started_count > 0:
+        details = []
+        if proposed_decisions:
+            details.append(f"{len(proposed_decisions)} قرار مقترح في انتظار الاعتماد")
+            for d in proposed_decisions[:2]:
+                details.append(f"← {d['title']}")
+        if not_started_count > 0:
+            details.append(f"{not_started_count} مهمة لم تبدأ بعد")
+        paths.append({
+            "id":       "execute",
+            "priority": 2,
+            "icon":     "⚡",
+            "label":    "ابدأ التنفيذ",
+            "headline": f"{len(proposed_decisions)} قرار مقترح + {not_started_count} مهمة لم تبدأ",
+            "details":  details,
+            "action":   "اعتمد القرارات المقترحة وابدأ أولى المهام المعلّقة",
+            "extra":    [],
+        })
+
+    # مسار 3: لا SOP مرتبط
+    if not sop_linked:
+        paths.append({
+            "id":       "system",
+            "priority": 3,
+            "icon":     "📂",
+            "label":    "ابنِ نظام الشركة",
+            "headline": "لا توجد إجراءات SOP موثّقة مرتبطة بهذه القضية",
+            "details":  [
+                "إجراءات العمل: غير موثّقة رسمياً لهذه القضية",
+                "وثائق المنهجية الموجودة غير مربوطة بقضية محددة",
+            ],
+            "action":   "ابدأ ببناء إجراء واحد مكتوب لأكثر مهمة تتكرر في هذه القضية",
+            "extra":    [],
+        })
+
+    # مسار 4: يوجد impact_applied=1
+    if applied_impacts:
+        impact_details = []
+        seen = set()
+        for imp in applied_impacts:
+            key = (imp["asset_id"], imp["score_delta"])
+            if key not in seen:
+                seen.add(key)
+                delta = imp["score_delta"] or 0
+                impact_details.append(
+                    f"{imp['asset_name']}: +{delta} نقطة → الآن {imp['current_score']}/100"
+                )
+        paths.append({
+            "id":       "impact",
+            "priority": 4,
+            "icon":     "📈",
+            "label":    "شاهد أثر التنفيذ",
+            "headline": f"{len(seen)} أصل تغيّر بفضل إثباتات مُحقَّقة",
+            "details":  impact_details,
+            "action":   "تابع رفع إثباتات لمهامك المنجزة لتسجيل التأثير الحقيقي",
+            "extra":    [],
+        })
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "case_id":    case_id,
+            "case_title": case["case_title"],
+            "confidence": confidence,
+            "paths":      paths,
+        }
+    })
+
+
 @app.route("/case/<case_id>")
 def case_workspace(case_id):
     # 1. يجب أن يكون المستخدم مسجّلاً (أو وضع العرض الداخلي)
