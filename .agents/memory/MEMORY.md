@@ -4,3 +4,4 @@
 - [Sana uploaded zip drift](sana-uploaded-zip-drift.md) — user-provided app.py/schema.sql in feature zips are often stale forks missing later migrations; diff against current before applying, merge additively.
 - [Sana SDS-001 discovery session](sana-sds001-discovery.md) — 7-question onboarding flow (v3); sds_done guards idempotency; success_criteria not vision; no score in outro (SCORE-03).
 - [GOVERNANCE-001](sana-governance-001.md) — قانون نافذ: كل ميزة جديدة تحتاج 5 خانات حقيقية قبل البناء؛ لا كيانات وهمية، لا رؤية تتحول لكود مباشرة.
+- [Sana Expert system prompt integration](sana-expert-prompt-integration.md) — user-supplied Claude system prompts often lack the hidden output-format markers extraction code depends on; append a separated technical appendix, don't alter their verbatim content.
