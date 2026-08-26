@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<title>سنع — {{ expert_name }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════ */
+/*  RESET & BASE                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
+html{color-scheme:light;background:#F5F6FB}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'IBM Plex Sans Arabic',sans-serif;color:#333940;background:#F5F6FB;min-height:100vh}
+.num{font-family:'Space Grotesk',sans-serif}
+button{font-family:inherit;cursor:pointer}
+a{color:inherit;text-decoration:none}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SCREEN MANAGER                                                  */
+/* ═══════════════════════════════════════════════════════════════ */
+.screen{display:none}
+.screen.active{display:flex;flex-direction:column;min-height:100vh}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SCREEN 1: CODE ENTRY                                           */
+/* ═══════════════════════════════════════════════════════════════ */
+#screen-code{
+  align-items:center;justify-content:center;
+  background:linear-gradient(160deg,#080E1F 0%,#0D1B3E 60%,#0B132B 100%);
+}
+.code-card{
+  background:#fff;border-radius:20px;padding:40px 36px;
+  width:400px;max-width:92vw;text-align:center;
+  box-shadow:0 24px 80px rgba(0,0,0,.35);
+}
+.code-logo{
+  width:48px;height:48px;background:#F2B233;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Space Grotesk';font-weight:700;font-size:22px;
+  color:#080E1F;margin:0 auto 20px;
+}
+.code-card h1{font-size:18px;font-weight:700;color:#0B132B;margin-bottom:8px}
+.code-card .sub{font-size:13px;color:#9AA0AB;margin-bottom:28px;line-height:1.6}
+.code-input-wrap{display:flex;gap:8px;justify-content:center;margin-bottom:20px}
+.code-digit{
+  width:44px;height:54px;border:2px solid #DEE1EC;border-radius:10px;
+  font-size:22px;font-family:'Space Grotesk';font-weight:700;
+  text-align:center;color:#0B132B;outline:none;
+  transition:border-color .2s,box-shadow .2s;
+}
+.code-digit:focus{border-color:#0B132B;box-shadow:0 0 0 3px rgba(11,19,43,.1)}
+.code-digit.filled{border-color:#0B132B;background:#F5F6FB}
+.code-error{
+  font-size:13px;color:#B23A2E;background:#FFF0F0;border-radius:8px;
+  padding:10px 14px;margin-bottom:16px;display:none;line-height:1.5;
+}
+.code-error.show{display:block}
+.code-btn{
+  width:100%;padding:13px;background:#0B132B;color:#fff;
+  border:none;border-radius:10px;font-size:14px;font-weight:700;
+  transition:background .2s;
+}
+.code-btn:hover{background:#131c3d}
+.code-btn:disabled{opacity:.5;cursor:not-allowed}
+.code-attempts{font-size:11.5px;color:#9AA0AB;margin-top:14px;line-height:1.6}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SCREEN 2: WELCOME                                              */
+/* ═══════════════════════════════════════════════════════════════ */
+#screen-welcome{
+  align-items:center;justify-content:center;
+  background:linear-gradient(160deg,#080E1F 0%,#0D1B3E 55%,#0B132B 100%);
+}
+.welcome-card{
+  background:#fff;border-radius:20px;padding:48px 40px;
+  width:520px;max-width:92vw;text-align:center;
+  box-shadow:0 24px 80px rgba(0,0,0,.35);
+}
+.welcome-icon{font-size:52px;margin-bottom:20px;display:block}
+.welcome-card h1{
+  font-size:22px;font-weight:700;color:#0B132B;
+  line-height:1.45;margin-bottom:12px;
+}
+.welcome-card .w-sub{font-size:14px;color:#6B7280;margin-bottom:8px;line-height:1.7}
+.welcome-card .w-name{
+  font-size:13.5px;color:#9AA0AB;margin-bottom:32px;
+  font-style:italic;
+}
+.welcome-card .w-name strong{color:#4B5260;font-style:normal}
+.start-btn{
+  width:100%;padding:15px;background:#F2B233;color:#080E1F;
+  border:none;border-radius:12px;font-size:15px;font-weight:700;
+  transition:background .2s,transform .15s;
+}
+.start-btn:hover{background:#e6a820;transform:translateY(-1px)}
+.w-disclaimer{font-size:11.5px;color:#C8CCE0;margin-top:16px;line-height:1.6}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  SCREEN 3: MAIN INTERFACE                                       */
+/* ═══════════════════════════════════════════════════════════════ */
+#screen-main{display:none;flex-direction:column;height:100vh;overflow:hidden}
+#screen-main.active{display:flex}
+
+/* ── top header ── */
+.main-header{
+  background:#080E1F;padding:0 20px;height:52px;
+  display:flex;align-items:center;gap:12px;flex-shrink:0;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.mh-logo{color:#F2B233;font-family:'Space Grotesk';font-weight:700;font-size:15px}
+.mh-sep{width:1px;height:18px;background:rgba(255,255,255,.15)}
+.mh-name{color:rgba(255,255,255,.75);font-size:13px;font-weight:600}
+.mh-domain{color:rgba(255,255,255,.4);font-size:12px}
+.mh-right{margin-right:auto;display:flex;align-items:center;gap:10px}
+.mh-stage{
+  background:rgba(242,178,51,.15);color:#F2B233;
+  padding:4px 12px;border-radius:20px;font-size:11.5px;font-weight:600;
+  font-family:'Space Grotesk';
+}
+.report-btn{
+  background:rgba(255,255,255,.08);color:rgba(255,255,255,.7);
+  border:1px solid rgba(255,255,255,.15);padding:6px 14px;
+  border-radius:8px;font-size:12px;font-weight:600;
+}
+.report-btn:hover{background:rgba(255,255,255,.15)}
+
+/* ── 8 tabs ── */
+.tabs-bar{
+  background:#fff;border-bottom:1px solid #DEE1EC;
+  display:flex;overflow-x:auto;flex-shrink:0;
+  scrollbar-width:none;
+}
+.tabs-bar::-webkit-scrollbar{display:none}
+.tab-btn{
+  padding:13px 18px;font-size:12.5px;font-weight:600;color:#9AA0AB;
+  border-bottom:2px solid transparent;white-space:nowrap;border:none;
+  background:none;cursor:pointer;transition:color .18s;
+  position:relative;
+}
+.tab-btn.active{color:#0B132B;border-bottom:2px solid #F2B233}
+.tab-btn .badge{
+  position:absolute;top:8px;right:6px;
+  background:#F2B233;color:#080E1F;border-radius:10px;
+  font-size:9px;font-weight:700;padding:1px 5px;font-family:'Space Grotesk';
+}
+
+/* ── body layout: sidebar + content ── */
+.main-body{display:flex;flex:1;overflow:hidden}
+
+/* ── sidebar ── */
+.sidebar{
+  width:248px;flex-shrink:0;background:#0B132B;
+  overflow-y:auto;padding:16px 14px;
+  border-left:1px solid rgba(255,255,255,.06);
+  display:flex;flex-direction:column;gap:0;
+}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:2px}
+
+.sb-section{margin-bottom:20px}
+.sb-title{
+  font-size:9.5px;letter-spacing:2px;text-transform:uppercase;
+  color:rgba(255,255,255,.35);font-family:'Space Grotesk';font-weight:600;
+  margin-bottom:10px;
+}
+.sb-counter{
+  display:flex;align-items:center;gap:8px;
+  padding:7px 10px;border-radius:8px;
+  font-size:13px;color:rgba(255,255,255,.7);
+  background:rgba(255,255,255,.04);margin-bottom:4px;
+}
+.sb-counter .icon{font-size:14px;flex-shrink:0}
+.sb-counter .label{flex:1;font-size:12.5px}
+.sb-counter .val{font-family:'Space Grotesk';font-weight:700;color:#fff;font-size:14px}
+
+/* جاهزية النظام */
+.readiness-item{
+  display:flex;align-items:center;gap:7px;
+  padding:5px 0;font-size:12px;color:rgba(255,255,255,.55);
+}
+.readiness-item .check{font-size:13px;flex-shrink:0}
+.readiness-item.done{color:rgba(255,255,255,.85)}
+.readiness-summary{
+  margin-top:8px;padding:8px 10px;
+  background:rgba(242,178,51,.1);border-radius:8px;
+  font-size:11.5px;color:#F2B233;font-weight:600;
+  font-family:'Space Grotesk';text-align:center;
+}
+
+/* ── tab content area ── */
+.content-area{flex:1;overflow-y:auto;background:#F5F6FB;padding:20px}
+.content-area::-webkit-scrollbar{width:6px}
+.content-area::-webkit-scrollbar-thumb{background:#DEE1EC;border-radius:3px}
+
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TAB 1: CHAT                                                    */
+/* ═══════════════════════════════════════════════════════════════ */
+.chat-layout{
+  display:flex;flex-direction:column;
+  height:calc(100vh - 52px - 44px);  /* viewport - header - tabsbar */
+  overflow:hidden;
+}
+.chat-messages{
+  flex:1;overflow-y:auto;padding:16px 20px;
+  display:flex;flex-direction:column;gap:14px;
+}
+.chat-messages::-webkit-scrollbar{width:5px}
+.chat-messages::-webkit-scrollbar-thumb{background:#DEE1EC;border-radius:3px}
+
+.msg-wrap{display:flex;gap:10px;max-width:720px}
+.msg-wrap.user{flex-direction:row-reverse;margin-right:auto;margin-left:0;align-self:flex-end}
+.msg-wrap.assistant{align-self:flex-start}
+.msg-avatar{
+  width:34px;height:34px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:14px;
+}
+.msg-wrap.assistant .msg-avatar{background:#F2B233;color:#080E1F}
+.msg-wrap.user .msg-avatar{background:#DEE1EC;color:#4B5260}
+.msg-bubble{
+  padding:12px 16px;border-radius:14px;font-size:13.5px;line-height:1.65;
+  max-width:560px;
+}
+.msg-wrap.assistant .msg-bubble{
+  background:#fff;border:1px solid #DEE1EC;border-top-right-radius:4px;color:#0B132B;
+}
+.msg-wrap.user .msg-bubble{
+  background:#0B132B;color:#fff;border-top-left-radius:4px;
+}
+.msg-time{font-size:10.5px;color:#C8CCE0;margin-top:4px;text-align:left}
+.msg-wrap.user .msg-time{text-align:right}
+
+/* مستخلصات بعد الرد */
+.extracted-chips{
+  display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;padding-right:44px;
+}
+.extracted-chip{
+  display:flex;align-items:center;gap:5px;
+  padding:4px 10px;border-radius:20px;
+  font-size:11.5px;font-weight:600;border:1px solid;
+  white-space:nowrap;
+}
+.chip-حقيقة{background:#EFF6FF;color:#2563EB;border-color:#BFDBFE}
+.chip-دليل{background:#F0FDF4;color:#16A34A;border-color:#BBF7D0}
+.chip-افتراض{background:#FFF8E6;color:#B45309;border-color:#FDE68A}
+.chip-فرصة{background:#FFF0E6;color:#D97706;border-color:#FED7AA}
+.chip-خطر{background:#FFF0F0;color:#B23A2E;border-color:#FECACA}
+.chip-قرار{background:#F0F9FF;color:#0369A1;border-color:#BAE6FD}
+
+/* نقطة توقف المرحلة */
+.checkpoint-card{
+  background:#fff;border:1.5px solid #F2B233;border-radius:14px;
+  padding:18px 20px;margin:12px 0 12px 44px;
+}
+.checkpoint-card .cp-title{
+  font-size:13px;font-weight:700;color:#0B132B;margin-bottom:12px;
+}
+.checkpoint-btns{display:flex;gap:8px;flex-wrap:wrap}
+.cp-btn{
+  padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;
+  border:1.5px solid;cursor:pointer;transition:all .18s;
+}
+.cp-btn.approve{background:#059669;color:#fff;border-color:#059669}
+.cp-btn.approve:hover{background:#047857}
+.cp-btn.revise{background:#fff;color:#4B5260;border-color:#DEE1EC}
+.cp-btn.revise:hover{border-color:#0B132B;color:#0B132B}
+.cp-btn.evidence{background:#EFF6FF;color:#2563EB;border-color:#BFDBFE}
+.cp-btn.inaccurate{background:#FFF0F0;color:#B23A2E;border-color:#FECACA}
+
+/* input area */
+.chat-input-bar{
+  padding:12px 20px;background:#fff;border-top:1px solid #DEE1EC;
+  flex-shrink:0;
+}
+.chat-input-wrap{
+  display:flex;gap:10px;align-items:flex-end;
+  max-width:800px;margin:0 auto;
+}
+.chat-textarea{
+  flex:1;border:1.5px solid #DEE1EC;border-radius:12px;
+  padding:11px 14px;font-size:14px;font-family:inherit;
+  resize:none;outline:none;line-height:1.55;
+  min-height:48px;max-height:140px;
+  transition:border-color .18s;
+}
+.chat-textarea:focus{border-color:#0B132B}
+.send-btn{
+  width:46px;height:46px;background:#0B132B;color:#fff;
+  border:none;border-radius:12px;font-size:18px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .18s;
+}
+.send-btn:hover{background:#131c3d}
+.send-btn:disabled{opacity:.4;cursor:not-allowed}
+.typing-indicator{
+  display:none;padding:6px 12px;font-size:12.5px;color:#9AA0AB;
+  font-style:italic;
+}
+.typing-indicator.show{display:block}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TABS 2-6: FACT LISTS, KNOWLEDGE ASSETS, ETC.                  */
+/* ═══════════════════════════════════════════════════════════════ */
+.section-header{
+  display:flex;align-items:center;gap:10px;margin-bottom:16px;
+}
+.section-header h2{font-size:15px;font-weight:700;color:#0B132B;flex:1}
+.section-header .count{
+  background:#F2B233;color:#080E1F;padding:2px 10px;
+  border-radius:20px;font-size:11px;font-weight:700;font-family:'Space Grotesk';
+}
+
+.fact-list{display:flex;flex-direction:column;gap:10px}
+.fact-card{
+  background:#fff;border:1px solid #DEE1EC;border-radius:12px;
+  padding:14px 16px;
+}
+.fact-card .fc-top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.fact-type-badge{
+  padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;
+}
+.ft-حقيقة {background:#EFF6FF;color:#2563EB}
+.ft-دليل  {background:#F0FDF4;color:#16A34A}
+.ft-افتراض{background:#FFF8E6;color:#B45309}
+.ft-فرصة {background:#FFF0E6;color:#D97706}
+.ft-خطر  {background:#FFF0F0;color:#B23A2E}
+.ft-قرار {background:#F0F9FF;color:#0369A1}
+.fact-card .conf{font-size:11px;color:#9AA0AB}
+.fact-card .stage-tag{font-size:11px;color:#C8CCE0;margin-right:auto}
+.fact-card .fc-content{font-size:13.5px;color:#0B132B;line-height:1.6}
+.fact-card .fc-date{font-size:11px;color:#C8CCE0;margin-top:6px;text-align:left;font-family:'Space Grotesk'}
+
+.ka-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.ka-card{
+  background:#fff;border:1px solid #DEE1EC;border-radius:12px;padding:16px;
+}
+.ka-card .ka-cat{
+  font-size:10.5px;letter-spacing:1.5px;font-weight:700;color:#9AA0AB;
+  text-transform:uppercase;font-family:'Space Grotesk';margin-bottom:8px;
+}
+.ka-card .ka-content{font-size:13px;color:#0B132B;line-height:1.6;margin-bottom:8px}
+.ka-card .ka-transform{
+  display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;
+}
+.ka-card .kt-chip{
+  background:#F5F6FB;color:#6B7280;padding:2px 8px;border-radius:12px;font-size:11px;
+}
+
+.project-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.project-card{
+  background:#fff;border:1px solid #DEE1EC;border-radius:14px;padding:18px;
+}
+.project-card.recommended{
+  border-color:#F2B233;border-width:2px;
+}
+.project-card .p-rec-badge{
+  background:#F2B233;color:#080E1F;font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:20px;font-family:'Space Grotesk';
+  display:inline-block;margin-bottom:10px;
+}
+.project-card .p-title{font-size:14px;font-weight:700;color:#0B132B;margin-bottom:6px}
+.project-card .p-desc{font-size:12.5px;color:#6B7280;line-height:1.6;margin-bottom:10px}
+.project-card .p-reason{
+  font-size:12px;color:#4B5260;background:#F5F6FB;border-radius:8px;
+  padding:8px 10px;line-height:1.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  TAB 8: FINAL REPORT                                            */
+/* ═══════════════════════════════════════════════════════════════ */
+.report-actions{display:flex;gap:10px;margin-bottom:20px}
+.download-btn{
+  background:#0B132B;color:#fff;border:none;
+  padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;
+}
+.download-btn:hover{background:#131c3d}
+.report-section-card{
+  background:#fff;border:1px solid #DEE1EC;border-radius:12px;
+  padding:18px 20px;margin-bottom:12px;
+}
+.report-section-card h3{font-size:13.5px;font-weight:700;color:#0B132B;margin-bottom:10px}
+.report-section-card p,.report-section-card li{
+  font-size:13px;color:#4B5260;line-height:1.7;
+}
+.report-section-card ul{padding-right:16px}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  EMPTY STATE                                                     */
+/* ═══════════════════════════════════════════════════════════════ */
+.empty-tab{text-align:center;padding:60px 20px;color:#9AA0AB}
+.empty-tab .big{font-size:44px;margin-bottom:12px}
+.empty-tab p{font-size:13.5px;line-height:1.6}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  LOADING SPINNER                                                 */
+/* ═══════════════════════════════════════════════════════════════ */
+.spinner{
+  width:22px;height:22px;border:2.5px solid rgba(255,255,255,.25);
+  border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner.dark{border-color:rgba(0,0,0,.1);border-top-color:#0B132B}
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!--  SCREEN 1: CODE ENTRY                               -->
+<!-- ════════════════════════════════════════════════════ -->
+<div id="screen-code" class="screen active">
+  <div class="code-card">
+    <div class="code-logo">س</div>
+    <h1>أدخل رمز الدخول</h1>
+    <p class="sub">أدخل الرمز المكوّن من 6 أرقام الذي أرسله إليك مستشارك لتبدأ جلسة تحويل خبرتك.</p>
+    <div class="code-input-wrap" id="codeDigits">
+      <input class="code-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]">
+      <input class="code-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]">
+      <input class="code-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]">
+      <input class="code-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]">
+      <input class="code-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]">
+      <input class="code-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]">
+    </div>
+    <div class="code-error" id="codeError"></div>
+    <button class="code-btn" id="verifyBtn" onclick="verifyCode()">تحقق من الرمز</button>
+    <p class="code-attempts" id="codeAttempts"></p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!--  SCREEN 2: WELCOME                                  -->
+<!-- ════════════════════════════════════════════════════ -->
+<div id="screen-welcome" class="screen">
+  <div class="welcome-card">
+    <span class="welcome-icon">🧠</span>
+    <h1>خبرتك أكبر من أن تبقى داخل رأسك</h1>
+    <p class="w-sub">
+      سنع سيساعدك في رحلة منظّمة عبر 7 مراحل لاستخراج معرفتك، تحديد أفضل مشروع لتحويلها، وبناء نظام تشغيل مستدام من خبرتك.
+    </p>
+    <p class="w-name">جلسة مخصصة لـ<strong id="welcomeName"></strong></p>
+    <button class="start-btn" onclick="startSession()">ابدأ تحويل خبرتي ←</button>
+    <p class="w-disclaimer">الجلسة محفوظة — يمكنك المتابعة من أي جهاز بنفس الرمز.</p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!--  SCREEN 3: MAIN INTERFACE                           -->
+<!-- ════════════════════════════════════════════════════ -->
+<div id="screen-main" class="screen">
+
+  <!-- top header -->
+  <div class="main-header">
+    <div class="mh-logo">سنع</div>
+    <div class="mh-sep"></div>
+    <div>
+      <div class="mh-name" id="mh-name"></div>
+      <div class="mh-domain" id="mh-domain"></div>
+    </div>
+    <div class="mh-right">
+      <span class="mh-stage num" id="mh-stage">المرحلة 1 من 7</span>
+      <button class="report-btn" onclick="switchTab('report')">التقرير النهائي 📄</button>
+    </div>
+  </div>
+
+  <!-- 8 tabs -->
+  <div class="tabs-bar">
+    <button class="tab-btn active" data-tab="chat" onclick="switchTab('chat')">💬 المحادثة</button>
+    <button class="tab-btn" data-tab="facts" onclick="switchTab('facts')">
+      ✅ الحقائق <span class="badge num" id="tab-badge-facts" style="display:none"></span>
+    </button>
+    <button class="tab-btn" data-tab="evidence" onclick="switchTab('evidence')">
+      📎 الأدلة <span class="badge num" id="tab-badge-evidence" style="display:none"></span>
+    </button>
+    <button class="tab-btn" data-tab="opportunities" onclick="switchTab('opportunities')">
+      🎯 الفرص <span class="badge num" id="tab-badge-opps" style="display:none"></span>
+    </button>
+    <button class="tab-btn" data-tab="projects" onclick="switchTab('projects')">📊 المشاريع</button>
+    <button class="tab-btn" data-tab="knowledge" onclick="switchTab('knowledge')">
+      🧩 الأصول المعرفية <span class="badge num" id="tab-badge-ka" style="display:none"></span>
+    </button>
+    <button class="tab-btn" data-tab="system" onclick="switchTab('system')">⚙️ نظام التشغيل</button>
+    <button class="tab-btn" data-tab="report" onclick="switchTab('report')">📄 التقرير النهائي</button>
+  </div>
+
+  <!-- body: sidebar + content -->
+  <div class="main-body">
+
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="sb-section">
+        <div class="sb-title">المستخلصات الحقيقية</div>
+        <div class="sb-counter"><span class="icon">✅</span><span class="label">حقائق مكتشفة</span><span class="val num" id="sb-facts">0</span></div>
+        <div class="sb-counter"><span class="icon">📎</span><span class="label">أدلة</span><span class="val num" id="sb-evidence">0</span></div>
+        <div class="sb-counter"><span class="icon">🎯</span><span class="label">فرص</span><span class="val num" id="sb-opps">0</span></div>
+        <div class="sb-counter"><span class="icon">📋</span><span class="label">قرارات معتمدة</span><span class="val num" id="sb-decisions">0</span></div>
+        <div class="sb-counter"><span class="icon">❓</span><span class="label">افتراضات</span><span class="val num" id="sb-assumptions">0</span></div>
+        <div class="sb-counter"><span class="icon">🧠</span><span class="label">أصول معرفية</span><span class="val num" id="sb-ka">0</span></div>
+      </div>
+
+      <div class="sb-section">
+        <div class="sb-title">جاهزية بناء النظام</div>
+        <div id="sb-readiness"></div>
+        <div class="readiness-summary num" id="sb-readiness-summary">0 من 7 عناصر</div>
+      </div>
+    </div>
+
+    <!-- CONTENT AREA -->
+    <div class="content-area" id="contentArea">
+
+      <!-- TAB: chat -->
+      <div class="tab-panel active" id="panel-chat">
+        <div class="chat-layout" id="chatLayout">
+          <div class="chat-messages" id="chatMessages"></div>
+          <div class="typing-indicator" id="typingIndicator">سنع يكتب...</div>
+          <div class="chat-input-bar">
+            <div class="chat-input-wrap">
+              <textarea class="chat-textarea" id="chatInput"
+                placeholder="اكتب ردّك هنا..."
+                rows="1"
+                onkeydown="chatKeydown(event)"
+                oninput="autoResize(this)"></textarea>
+              <button class="send-btn" id="sendBtn" onclick="sendMessage()">↑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: facts -->
+      <div class="tab-panel" id="panel-facts">
+        <div class="section-header">
+          <h2>✅ الحقائق المكتشفة</h2>
+          <span class="count num" id="facts-count">0</span>
+        </div>
+        <div class="fact-list" id="facts-list">
+          <div class="empty-tab"><div class="big">✅</div><p>لا توجد حقائق مستخرجة بعد.<br>ستظهر هنا بعد المحادثة.</p></div>
+        </div>
+      </div>
+
+      <!-- TAB: evidence -->
+      <div class="tab-panel" id="panel-evidence">
+        <div class="section-header">
+          <h2>📎 الأدلة</h2>
+          <span class="count num" id="evidence-count">0</span>
+        </div>
+        <div class="fact-list" id="evidence-list">
+          <div class="empty-tab"><div class="big">📎</div><p>لا توجد أدلة بعد.</p></div>
+        </div>
+      </div>
+
+      <!-- TAB: opportunities -->
+      <div class="tab-panel" id="panel-opportunities">
+        <div class="section-header">
+          <h2>🎯 الفرص</h2>
+          <span class="count num" id="opps-count">0</span>
+        </div>
+        <div class="fact-list" id="opps-list">
+          <div class="empty-tab"><div class="big">🎯</div><p>لا توجد فرص مكتشفة بعد.</p></div>
+        </div>
+      </div>
+
+      <!-- TAB: projects -->
+      <div class="tab-panel" id="panel-projects">
+        <div class="section-header"><h2>📊 المشاريع المقترحة</h2></div>
+        <div class="project-grid" id="projects-grid">
+          <div class="empty-tab" style="grid-column:1/-1"><div class="big">📊</div><p>المشاريع تظهر بعد اكتمال مراحل الاستكشاف.</p></div>
+        </div>
+      </div>
+
+      <!-- TAB: knowledge -->
+      <div class="tab-panel" id="panel-knowledge">
+        <div class="section-header">
+          <h2>🧩 الأصول المعرفية</h2>
+          <span class="count num" id="ka-count">0</span>
+        </div>
+        <div class="ka-grid" id="ka-grid">
+          <div class="empty-tab" style="grid-column:1/-1"><div class="big">🧩</div><p>الأصول المعرفية تُستخرج تلقائياً خلال المحادثة.</p></div>
+        </div>
+      </div>
+
+      <!-- TAB: system -->
+      <div class="tab-panel" id="panel-system">
+        <div class="section-header"><h2>⚙️ نظام التشغيل</h2></div>
+        <p style="font-size:13.5px;color:#6B7280;margin-bottom:20px;line-height:1.7">
+          هذا القسم يُجمع إجراءات العمل القابلة للتكرار من خبرتك — يكتمل في المرحلة السادسة من المحادثة.
+        </p>
+        <div class="fact-list" id="system-list">
+          <div class="empty-tab"><div class="big">⚙️</div><p>سيظهر هنا بعد المرحلة السادسة.</p></div>
+        </div>
+      </div>
+
+      <!-- TAB: report -->
+      <div class="tab-panel" id="panel-report">
+        <div class="section-header"><h2>📄 التقرير النهائي — خريطة مشروعك</h2></div>
+        <div class="report-actions">
+          <button class="download-btn" onclick="downloadReport()">⬇ تحميل كـMarkdown</button>
+        </div>
+        <div id="report-content">
+          <div class="empty-tab"><div class="big">📄</div><p>التقرير يكتمل تلقائياً مع تقدم المحادثة.<br>يمكنك تحميله في أي وقت.</p></div>
+        </div>
+      </div>
+
+    </div><!-- /content-area -->
+  </div><!-- /main-body -->
+</div><!-- /screen-main -->
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+   STATE
+   ════════════════════════════════════════════════════════════════ */
+const SLUG        = "{{ slug }}";
+const EXPERT_NAME = "{{ expert_name }}";
+const EXPERT_DOM  = "{{ expert_domain }}";
+
+const STAGE_NAMES = [
+  "", "التعريف بالخبير", "الخبرة الجوهرية", "العميل المثالي",
+  "المشكلة والحل", "نموذج الإيرادات", "نظام التشغيل", "البناء والتوسع"
+];
+
+let currentStage      = 1;
+let pendingCheckpoint = null;   // stage number waiting for checkpoint response
+
+/* ════════════════════════════════════════════════════════════════
+   CSRF
+   ════════════════════════════════════════════════════════════════ */
+const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || "";
+function apiPost(url, body) {
+  return fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+    body: JSON.stringify(body),
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SCREEN MANAGER
+   ════════════════════════════════════════════════════════════════ */
+function showScreen(id) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SCREEN 1: CODE ENTRY
+   ════════════════════════════════════════════════════════════════ */
+const digits = document.querySelectorAll(".code-digit");
+digits.forEach((d, i) => {
+  d.addEventListener("input", () => {
+    d.value = d.value.replace(/[^0-9]/g, "");
+    d.classList.toggle("filled", d.value !== "");
+    if (d.value && i < digits.length - 1) digits[i+1].focus();
+  });
+  d.addEventListener("keydown", e => {
+    if (e.key === "Backspace" && !d.value && i > 0) digits[i-1].focus();
+    if (e.key === "Enter") verifyCode();
+  });
+  d.addEventListener("paste", e => {
+    e.preventDefault();
+    const paste = (e.clipboardData || window.clipboardData).getData("text").replace(/\D/g,"");
+    paste.split("").forEach((ch, j) => {
+      if (digits[i+j]) { digits[i+j].value = ch; digits[i+j].classList.add("filled"); }
+    });
+    const next = Math.min(i + paste.length, digits.length - 1);
+    digits[next].focus();
+  });
+});
+setTimeout(() => digits[0].focus(), 200);
+
+async function verifyCode() {
+  const code = [...digits].map(d => d.value).join("");
+  if (code.length < 6) {
+    showCodeError("أدخل الرمز كاملاً (6 أرقام).");
+    return;
+  }
+  const btn = document.getElementById("verifyBtn");
+  btn.disabled = true;
+  btn.innerHTML = `<div class="spinner" style="margin:0 auto"></div>`;
+
+  const res  = await apiPost(`/api/e/${SLUG}/verify`, {code});
+  const json = await res.json();
+
+  btn.disabled = false;
+  btn.textContent = "تحقق من الرمز";
+
+  if (json.success) {
+    document.getElementById("welcomeName").textContent = EXPERT_NAME;
+    showScreen("screen-welcome");
+  } else if (json.error === "locked") {
+    showCodeError(json.message);
+    document.getElementById("codeAttempts").textContent = "";
+  } else if (json.error === "wrong_code") {
+    showCodeError(json.message || "رمز خاطئ. حاول مجدداً.");
+    digits.forEach(d => { d.value = ""; d.classList.remove("filled"); });
+    digits[0].focus();
+  } else {
+    showCodeError("حدث خطأ. حاول مجدداً.");
+  }
+}
+
+function showCodeError(msg) {
+  const el = document.getElementById("codeError");
+  el.textContent = msg;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 6000);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SCREEN 2: WELCOME
+   ════════════════════════════════════════════════════════════════ */
+async function startSession() {
+  // انتقل للواجهة الرئيسية
+  document.getElementById("mh-name").textContent   = EXPERT_NAME;
+  document.getElementById("mh-domain").textContent = EXPERT_DOM;
+  showScreen("screen-main");
+
+  // تحميل البيانات
+  await loadStatus();
+  scrollChatBottom();
+
+  // إذا لا يوجد رسائل بعد — ابدأ بتحية من سنع
+  const msgs = document.getElementById("chatMessages");
+  if (!msgs.children.length) {
+    appendMsg("assistant", "مرحباً " + EXPERT_NAME + "! 👋\n\nأنا سنع، وسأكون رفيقك في رحلة استخراج خبرتك وتحويلها إلى مشروع حقيقي.\n\nلنبدأ — بإيجاز: من أنت ومجال خبرتك الذي أمضيت فيه أطول وقت؟");
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SCREEN 3: TABS
+   ════════════════════════════════════════════════════════════════ */
+function switchTab(name) {
+  document.querySelectorAll(".tab-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.tab === name);
+  });
+  document.querySelectorAll(".tab-panel").forEach(p => {
+    p.classList.toggle("active", p.id === `panel-${name}`);
+  });
+  // تحميل محتوى التبويب المطلوب
+  if (name === "facts")         loadFacts();
+  if (name === "evidence")      loadFacts(); // نفس الـAPI
+  if (name === "opportunities") loadFacts();
+  if (name === "knowledge")     loadKA();
+  if (name === "projects")      loadProjects();
+  if (name === "report")        loadReport();
+  // نظام التشغيل يُحمَّل من expert_facts (نوع "قرار") — مشمول في loadFacts
+  if (name === "system")        loadFacts();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   STATUS & SIDEBAR
+   ════════════════════════════════════════════════════════════════ */
+async function loadStatus() {
+  const res  = await fetch(`/api/e/${SLUG}/status`);
+  if (!res.ok) return;
+  const json = await res.json();
+  if (!json.success) return;
+
+  const { counters, readiness, expert } = json;
+  currentStage = expert.current_stage || 1;
+
+  // sidebar counters
+  document.getElementById("sb-facts").textContent     = counters["حقائق"]  || 0;
+  document.getElementById("sb-evidence").textContent  = counters["أدلة"]   || 0;
+  document.getElementById("sb-opps").textContent      = counters["فرص"]    || 0;
+  document.getElementById("sb-decisions").textContent = counters["قرارات"] || 0;
+  document.getElementById("sb-assumptions").textContent = counters["افتراضات"] || 0;
+  document.getElementById("sb-ka").textContent        = counters["أصول"]   || 0;
+
+  // tab badges
+  setBadge("facts",    counters["حقائق"]);
+  setBadge("evidence", counters["أدلة"]);
+  setBadge("opps",     counters["فرص"]);
+  setBadge("ka",       counters["أصول"]);
+
+  // stage header
+  document.getElementById("mh-stage").textContent =
+    `المرحلة ${currentStage} من 7 — ${STAGE_NAMES[currentStage] || ""}`;
+
+  // readiness checklist
+  const done = readiness.filter(r => r.done).length;
+  document.getElementById("sb-readiness-summary").textContent = `${done} من 7 عناصر`;
+  document.getElementById("sb-readiness").innerHTML = readiness.map(r => `
+    <div class="readiness-item ${r.done ? 'done' : ''}">
+      <span class="check">${r.done ? '✔' : '✖'}</span>
+      <span>${r.label}</span>
+    </div>
+  `).join("");
+}
+
+function setBadge(key, n) {
+  const el = document.getElementById(`tab-badge-${key}`);
+  if (!el) return;
+  el.textContent = n || 0;
+  el.style.display = (n > 0) ? "" : "none";
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CHAT
+   ════════════════════════════════════════════════════════════════ */
+function appendMsg(role, text, extras) {
+  const wrap = document.createElement("div");
+  wrap.className = `msg-wrap ${role}`;
+  const now = new Date().toLocaleTimeString("ar", {hour:"2-digit",minute:"2-digit"});
+  const avatar = role === "assistant" ? "س" : "أ";
+  wrap.innerHTML = `
+    <div class="msg-avatar">${avatar}</div>
+    <div>
+      <div class="msg-bubble">${escapeHtml(text).replace(/\n/g,"<br>")}</div>
+      <div class="msg-time">${now}</div>
+      ${extras || ""}
+    </div>`;
+  document.getElementById("chatMessages").appendChild(wrap);
+  scrollChatBottom();
+}
+
+function appendExtractedChips(items) {
+  if (!items || !items.length) return "";
+  const chips = items.slice(0, 3).map(it =>
+    `<div class="extracted-chip chip-${it.type}">${it.type}: ${escapeHtml(it.content.slice(0,60))}${it.content.length>60?"...":""}</div>`
+  ).join("");
+  return `<div class="extracted-chips">${chips}</div>`;
+}
+
+function appendCheckpoint(stageN) {
+  pendingCheckpoint = stageN;
+  const card = document.createElement("div");
+  card.className = "checkpoint-card";
+  card.id = "checkpoint-card";
+  card.innerHTML = `
+    <div class="cp-title">🏁 اكتملت المرحلة ${stageN}: ${STAGE_NAMES[stageN] || ""}</div>
+    <p style="font-size:13px;color:#6B7280;margin-bottom:12px">راجع ما استُخرج في هذه المرحلة واختر:</p>
+    <div class="checkpoint-btns">
+      <button class="cp-btn approve"   onclick="handleCheckpoint('approve')">✅ اعتمد — انتقل للمرحلة التالية</button>
+      <button class="cp-btn revise"    onclick="handleCheckpoint('revise')">✏️ عدّل — أضف أو صحّح</button>
+      <button class="cp-btn evidence"  onclick="handleCheckpoint('add_evidence')">📎 أضف دليلاً</button>
+      <button class="cp-btn inaccurate" onclick="handleCheckpoint('inaccurate')">❌ غير دقيق</button>
+    </div>`;
+  document.getElementById("chatMessages").appendChild(card);
+  scrollChatBottom();
+}
+
+async function handleCheckpoint(decision) {
+  document.getElementById("checkpoint-card")?.remove();
+  const res  = await apiPost(`/api/e/${SLUG}/checkpoint`, {decision});
+  const json = await res.json();
+  pendingCheckpoint = null;
+  if (json.new_stage) {
+    currentStage = json.new_stage;
+    document.getElementById("mh-stage").textContent =
+      `المرحلة ${currentStage} من 7 — ${STAGE_NAMES[currentStage] || ""}`;
+    if (decision === "approve") {
+      appendMsg("assistant",
+        `ممتاز! ننتقل الآن للمرحلة ${currentStage}: ${STAGE_NAMES[currentStage] || ""}.\n\nهل أنت جاهز؟`);
+    }
+  }
+  if (decision === "revise" || decision === "add_evidence" || decision === "inaccurate") {
+    const hints = {
+      revise: "بالطبع، ما الذي تريد تعديله أو إضافته في هذه المرحلة؟",
+      add_evidence: "حسناً — شارك معي الدليل الذي تريد إضافته.",
+      inaccurate: "شكراً على التوضيح — ما الذي لم يكن دقيقاً؟ صحّح ما تراه مناسباً."
+    };
+    appendMsg("assistant", hints[decision]);
+  }
+}
+
+async function sendMessage() {
+  const input = document.getElementById("chatInput");
+  const text  = input.value.trim();
+  if (!text || pendingCheckpoint) return;
+
+  appendMsg("user", text);
+  input.value = "";
+  input.style.height = "";
+
+  document.getElementById("sendBtn").disabled      = true;
+  document.getElementById("typingIndicator").classList.add("show");
+  scrollChatBottom();
+
+  const res  = await apiPost(`/api/e/${SLUG}/chat`, {message: text});
+  document.getElementById("typingIndicator").classList.remove("show");
+  document.getElementById("sendBtn").disabled = false;
+
+  if (!res.ok) {
+    appendMsg("assistant", "⚠️ حدث خطأ في الاتصال. حاول مجدداً.");
+    return;
+  }
+  const json = await res.json();
+  if (!json.success) {
+    appendMsg("assistant", json.error || "حدث خطأ غير متوقع.");
+    return;
+  }
+
+  const extras = appendExtractedChips(json.extracted);
+  appendMsg("assistant", json.reply, extras);
+
+  // تحديث الشريط الجانبي
+  if (json.counters) updateCounters(json.counters);
+
+  // نقطة توقف المرحلة
+  if (json.checkpoint) {
+    setTimeout(() => appendCheckpoint(json.checkpoint), 300);
+  }
+}
+
+function updateCounters(c) {
+  document.getElementById("sb-facts").textContent      = c["حقائق"]  || 0;
+  document.getElementById("sb-evidence").textContent   = c["أدلة"]   || 0;
+  document.getElementById("sb-opps").textContent       = c["فرص"]    || 0;
+  document.getElementById("sb-decisions").textContent  = c["قرارات"] || 0;
+  document.getElementById("sb-assumptions").textContent= c["افتراضات"]||0;
+  document.getElementById("sb-ka").textContent         = c["أصول"]   || 0;
+  setBadge("facts",    c["حقائق"]);
+  setBadge("evidence", c["أدلة"]);
+  setBadge("opps",     c["فرص"]);
+  setBadge("ka",       c["أصول"]);
+  loadStatus(); // تحديث checklist أيضاً
+}
+
+function chatKeydown(e) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+function autoResize(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 140) + "px";
+}
+function scrollChatBottom() {
+  const el = document.getElementById("chatMessages");
+  setTimeout(() => el.scrollTop = el.scrollHeight, 50);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   FACTS (tabs: facts, evidence, opportunities, system)
+   ════════════════════════════════════════════════════════════════ */
+async function loadFacts() {
+  const res  = await fetch(`/api/e/${SLUG}/facts`);
+  const json = await res.json();
+  if (!json.success) return;
+  const { by_type, total } = json;
+
+  renderFactList("facts-list",  "facts-count",  by_type["حقيقة"]  || [], "حقيقة");
+  renderFactList("evidence-list","evidence-count",by_type["دليل"]  || [], "دليل");
+  renderFactList("opps-list",   "opps-count",   by_type["فرصة"]   || [], "فرصة");
+
+  // نظام التشغيل — القرارات
+  renderFactList("system-list", null, by_type["قرار"] || [], "قرار");
+}
+
+function renderFactList(listId, countId, items, type) {
+  if (countId) document.getElementById(countId).textContent = items.length;
+  const el = document.getElementById(listId);
+  if (!items.length) {
+    el.innerHTML = `<div class="empty-tab"><div class="big">${typeIcon(type)}</div><p>لا يوجد بعد.</p></div>`;
+    return;
+  }
+  el.innerHTML = items.map(f => `
+    <div class="fact-card">
+      <div class="fc-top">
+        <span class="fact-type-badge ft-${f.fact_type}">${f.fact_type}</span>
+        ${f.confidence_level ? `<span class="conf">${f.confidence_level}</span>` : ""}
+        ${f.related_stage    ? `<span class="stage-tag num">م${f.related_stage}</span>` : ""}
+      </div>
+      <div class="fc-content">${escapeHtml(f.content)}</div>
+      ${f.created_fmt ? `<div class="fc-date">${f.created_fmt}</div>` : ""}
+    </div>`).join("");
+}
+
+function typeIcon(t) {
+  return {حقيقة:"✅",دليل:"📎",فرصة:"🎯",قرار:"📋",افتراض:"❓",خطر:"⚠️"}[t] || "📌";
+}
+
+/* ════════════════════════════════════════════════════════════════
+   KNOWLEDGE ASSETS
+   ════════════════════════════════════════════════════════════════ */
+async function loadKA() {
+  const res  = await fetch(`/api/e/${SLUG}/knowledge-assets`);
+  const json = await res.json();
+  if (!json.success) return;
+  const { assets } = json;
+  document.getElementById("ka-count").textContent = assets.length;
+  const grid = document.getElementById("ka-grid");
+  if (!assets.length) {
+    grid.innerHTML = `<div class="empty-tab" style="grid-column:1/-1"><div class="big">🧩</div><p>لا توجد أصول معرفية بعد.</p></div>`;
+    return;
+  }
+  grid.innerHTML = assets.map(a => {
+    const transforms = (() => { try { return JSON.parse(a.transformable_to || "[]"); } catch { return []; } })();
+    return `<div class="ka-card">
+      <div class="ka-cat">${escapeHtml(a.asset_category)}</div>
+      <div class="ka-content">${escapeHtml(a.content)}</div>
+      ${transforms.length ? `<div class="ka-transform">${transforms.map(t=>`<span class="kt-chip">${t}</span>`).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+/* ════════════════════════════════════════════════════════════════
+   PROJECTS
+   ════════════════════════════════════════════════════════════════ */
+async function loadProjects() {
+  const res  = await fetch(`/api/e/${SLUG}/projects`);
+  const json = await res.json();
+  if (!json.success) return;
+  const { projects } = json;
+  const grid = document.getElementById("projects-grid");
+  if (!projects.length) {
+    grid.innerHTML = `<div class="empty-tab" style="grid-column:1/-1"><div class="big">📊</div><p>المشاريع تظهر بعد اكتمال الاستكشاف.</p></div>`;
+    return;
+  }
+  grid.innerHTML = projects.map(p => {
+    const scores = (() => { try { return JSON.parse(p.scores || "{}"); } catch { return {}; } })();
+    const scoreEntries = Object.entries(scores);
+    return `<div class="project-card ${p.is_recommended ? 'recommended' : ''}">
+      ${p.is_recommended ? '<div class="p-rec-badge">⭐ المشروع المرشح</div>' : ""}
+      <div class="p-title">${escapeHtml(p.title)}</div>
+      <div class="p-desc">${escapeHtml(p.description || "")}</div>
+      ${p.recommendation_reason ? `<div class="p-reason">${escapeHtml(p.recommendation_reason)}</div>` : ""}
+      ${scoreEntries.length ? `<details style="margin-top:10px"><summary style="font-size:12px;color:#9AA0AB;cursor:pointer">عرض تقييم المعايير (${scoreEntries.length} معيار)</summary>
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+          ${scoreEntries.map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:12px;color:#6B7280"><span>${k}</span><span class="num" style="font-weight:600">${v}/10</span></div>`).join("")}
+        </div></details>` : ""}
+    </div>`;
+  }).join("");
+}
+
+/* ════════════════════════════════════════════════════════════════
+   REPORT
+   ════════════════════════════════════════════════════════════════ */
+async function loadReport() {
+  const res  = await fetch(`/api/e/${SLUG}/report`);
+  const json = await res.json();
+  if (!json.success) return;
+  const { expert, stage, facts, knowledge_assets, projects, counters, readiness } = json;
+  const done = readiness.filter(r => r.done).length;
+
+  const byType = {};
+  facts.forEach(f => byType[f.fact_type] = (byType[f.fact_type]||[]).concat(f));
+
+  const recProject = projects.find(p => p.is_recommended);
+
+  document.getElementById("report-content").innerHTML = `
+    <div class="report-section-card">
+      <h3>① هوية الخبير</h3>
+      <p><strong>${escapeHtml(expert.name)}</strong> — ${escapeHtml(expert.domain_expertise)}</p>
+      ${expert.email ? `<p>البريد: ${escapeHtml(expert.email)}</p>` : ""}
+      ${expert.notes ? `<p>${escapeHtml(expert.notes)}</p>` : ""}
+    </div>
+    <div class="report-section-card">
+      <h3>② رأس المال المعرفي</h3>
+      <p>مرحلة الاستكشاف: <strong class="num">${stage} من 7</strong></p>
+      <p>جاهزية بناء النظام: <strong class="num">${done} من 7 عناصر</strong></p>
+      <ul style="margin-top:8px">
+        ${readiness.map(r => `<li>${r.done?"✔":"✖"} ${r.label}</li>`).join("")}
+      </ul>
+    </div>
+    ${sectionFromFacts("③ الحقائق الجوهرية", byType["حقيقة"] || [])}
+    ${sectionFromFacts("④ الأدلة", byType["دليل"] || [])}
+    ${sectionFromFacts("⑤ الفرص", byType["فرصة"] || [])}
+    ${sectionFromFacts("⑥ القرارات المعتمدة", byType["قرار"] || [])}
+    <div class="report-section-card">
+      <h3>⑦ الأصول المعرفية</h3>
+      ${knowledge_assets.length ? knowledge_assets.map(a =>
+        `<p><strong>${escapeHtml(a.asset_category)}</strong>: ${escapeHtml(a.content)}</p>`
+      ).join("") : "<p>لا توجد بعد.</p>"}
+    </div>
+    <div class="report-section-card">
+      <h3>⑧ المشاريع المقترحة</h3>
+      ${projects.length ? projects.map(p =>
+        `<p>${p.is_recommended?"⭐ ":""}<strong>${escapeHtml(p.title)}</strong>${p.description?" — "+escapeHtml(p.description):""}</p>`
+      ).join("") : "<p>لا توجد بعد.</p>"}
+    </div>
+    ${recProject ? `<div class="report-section-card">
+      <h3>⑨ المشروع المرشح ومبرراته</h3>
+      <p><strong>${escapeHtml(recProject.title)}</strong></p>
+      ${recProject.recommendation_reason ? `<p>${escapeHtml(recProject.recommendation_reason)}</p>` : ""}
+    </div>` : ""}
+    <div class="report-section-card">
+      <h3>⑩ مؤشرات المحادثة</h3>
+      <ul>
+        <li>الحقائق المكتشفة: <strong class="num">${counters["حقائق"]}</strong></li>
+        <li>الأدلة: <strong class="num">${counters["أدلة"]}</strong></li>
+        <li>الفرص: <strong class="num">${counters["فرص"]}</strong></li>
+        <li>القرارات: <strong class="num">${counters["قرارات"]}</strong></li>
+        <li>الأصول المعرفية: <strong class="num">${counters["أصول"]}</strong></li>
+      </ul>
+    </div>`;
+}
+
+function sectionFromFacts(title, items) {
+  if (!items.length) return `<div class="report-section-card"><h3>${title}</h3><p>لا يوجد بعد.</p></div>`;
+  return `<div class="report-section-card">
+    <h3>${title}</h3>
+    <ul>${items.map(f => `<li>${escapeHtml(f.content)}${f.confidence_level ? " ("+f.confidence_level+")" : ""}</li>`).join("")}</ul>
+  </div>`;
+}
+
+async function downloadReport() {
+  const res  = await fetch(`/api/e/${SLUG}/report`);
+  const json = await res.json();
+  if (!json.success) return;
+  const { expert, stage, facts, knowledge_assets, projects, counters, readiness } = json;
+
+  const byType = {};
+  facts.forEach(f => byType[f.fact_type] = (byType[f.fact_type]||[]).concat(f));
+  const done = readiness.filter(r => r.done).length;
+  const recProj = projects.find(p => p.is_recommended);
+
+  let md = `# خريطة مشروعك — ${expert.name}\n\n`;
+  md += `> تاريخ التصدير: ${new Date().toLocaleDateString("ar")}\n\n`;
+  md += `## هوية الخبير\n- الاسم: ${expert.name}\n- المجال: ${expert.domain_expertise}\n`;
+  if (expert.email) md += `- البريد: ${expert.email}\n`;
+  md += `\n## جاهزية بناء النظام\n${done} من 7 عناصر مكتملة\n`;
+  readiness.forEach(r => { md += `- [${r.done?"x":" "}] ${r.label}\n`; });
+  md += `\n## الحقائق المكتشفة (${counters["حقائق"]})\n`;
+  (byType["حقيقة"]||[]).forEach(f => { md += `- ${f.content}${f.confidence_level?" ["+f.confidence_level+"]":""}\n`; });
+  md += `\n## الأدلة (${counters["أدلة"]})\n`;
+  (byType["دليل"]||[]).forEach(f => { md += `- ${f.content}\n`; });
+  md += `\n## الفرص (${counters["فرص"]})\n`;
+  (byType["فرصة"]||[]).forEach(f => { md += `- ${f.content}\n`; });
+  md += `\n## القرارات المعتمدة (${counters["قرارات"]})\n`;
+  (byType["قرار"]||[]).forEach(f => { md += `- ${f.content}\n`; });
+  md += `\n## الأصول المعرفية (${counters["أصول"]})\n`;
+  knowledge_assets.forEach(a => { md += `### ${a.asset_category}\n${a.content}\n\n`; });
+  md += `\n## المشاريع المقترحة\n`;
+  projects.forEach(p => {
+    md += `### ${p.is_recommended?"⭐ ":""}${p.title}\n${p.description||""}\n`;
+    if (p.recommendation_reason) md += `> ${p.recommendation_reason}\n`;
+    md += "\n";
+  });
+
+  const blob = new Blob([md], {type:"text/markdown;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `sana-report-${expert.expert_id}.md`;
+  a.click();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   UTILS
+   ════════════════════════════════════════════════════════════════ */
+function escapeHtml(s) {
+  if (!s) return "";
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+</script>
+</body>
+</html>

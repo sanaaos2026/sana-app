@@ -186,6 +186,9 @@ def default_company_id():
 
 @app.before_request
 def enforce_company_auth():
+    # واجهة الخبير العامة — نظام مصادقة مستقل (access_code في الجلسة) لا علاقة له بحسابات الشركات
+    if request.path.startswith(("/e/", "/api/e/")):
+        return
     endpoint = request.endpoint
     if endpoint is None or endpoint in PUBLIC_ENDPOINTS:
         return
@@ -3475,6 +3478,413 @@ def sales_metrics(company_id):
             "sources": sources,
             "stage_counts": {s: sum(1 for o in all_opps if o["stage"] == s) for s in SALES_STAGES},
         }
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════
+# سنع الخبير — الجزء 3: واجهة الخبير العامة + محادثة Claude
+# ═══════════════════════════════════════════════════════════════════
+
+# ── System Prompt (سيُستبدل بالنص الكامل عند استلامه من المستشار) ──
+EXPERT_SYSTEM_PROMPT = """\
+أنت "سنع"، مساعد استشاري متخصص في استخراج المعرفة من الخبراء وتحويلها إلى مشاريع.
+ساعد الخبير في التعريف بنفسه وخبرته. اسأل أسئلة محددة وعميقة.
+[PLACEHOLDER — سيُستبدل بالبرومبت الكامل السبع مراحل]
+"""
+
+# ── Rate limiting (ذاكرة: slug+IP → {count, locked_until}) ──────────
+import threading as _threading
+_expert_attempts: dict       = {}   # "slug:ip" → {count, locked_until}
+_expert_attempts_lock        = _threading.Lock()
+_EXPERT_MAX_ATTEMPTS         = 5
+_EXPERT_LOCKOUT_MIN          = 15
+
+
+def _exp_attempt_key(slug: str) -> str:
+    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "unknown").split(",")[0].strip()
+    return f"{slug}:{ip}"
+
+
+def _exp_check_lock(slug: str):
+    """None → مسموح، float → ثوانٍ متبقية في الحظر."""
+    key = _exp_attempt_key(slug)
+    with _expert_attempts_lock:
+        rec = _expert_attempts.get(key)
+        if not rec:
+            return None
+        lu = rec.get("locked_until")
+        if lu:
+            if datetime.utcnow() < lu:
+                return (lu - datetime.utcnow()).total_seconds()
+            del _expert_attempts[key]   # انتهى الحظر — امسح
+        return None
+
+
+def _exp_record_fail(slug: str):
+    """سجّل محاولة فاشلة. يُعيد (attempts_left, is_locked)."""
+    key = _exp_attempt_key(slug)
+    with _expert_attempts_lock:
+        rec = _expert_attempts.setdefault(key, {"count": 0, "locked_until": None})
+        rec["count"] += 1
+        if rec["count"] >= _EXPERT_MAX_ATTEMPTS:
+            rec["locked_until"] = datetime.utcnow() + timedelta(minutes=_EXPERT_LOCKOUT_MIN)
+            return 0, True
+        return _EXPERT_MAX_ATTEMPTS - rec["count"], False
+
+
+def _exp_clear_lock(slug: str):
+    with _expert_attempts_lock:
+        _expert_attempts.pop(_exp_attempt_key(slug), None)
+
+
+def _exp_verified(slug: str) -> bool:
+    """تحقق أن الخبير أدخل الرمز الصحيح في هذه الجلسة."""
+    return session.get(f"exp_v_{slug}") is True
+
+
+def _exp_get_or_create_session(db, expert_id: str) -> str:
+    """احصل على آخر جلسة مفتوحة أو أنشئ واحدة جديدة، وارجع session_id."""
+    sess_key = f"exp_sid_{expert_id}"
+    sid = session.get(sess_key)
+    if sid:
+        row = db.execute("SELECT session_id FROM expert_sessions WHERE session_id=? AND expert_id=?",
+                         (sid, expert_id)).fetchone()
+        if row:
+            return sid
+    # جلسة جديدة
+    sid = "SES-" + uuid.uuid4().hex[:12].upper()
+    db.execute("""
+        INSERT INTO expert_sessions (session_id, expert_id, current_stage, conversation_log)
+        VALUES (?,?,?,?)
+    """, (sid, expert_id, 1, json.dumps([])))
+    db.execute("UPDATE experts SET last_session_at=now() WHERE expert_id=?", (expert_id,))
+    db.commit()
+    session[sess_key] = sid
+    return sid
+
+
+def _exp_counters(db, expert_id: str) -> dict:
+    """عدّادات حقيقية من DB — لا أرقام مصطنعة."""
+    rows = db.execute("""
+        SELECT fact_type, COUNT(*) as n FROM expert_facts
+        WHERE expert_id=? GROUP BY fact_type
+    """, (expert_id,)).fetchall()
+    by_type = {r["fact_type"]: r["n"] for r in rows}
+    return {
+        "حقائق":     by_type.get("حقيقة",  0),
+        "أدلة":      by_type.get("دليل",   0),
+        "فرص":       by_type.get("فرصة",   0),
+        "قرارات":    by_type.get("قرار",   0),
+        "افتراضات":  by_type.get("افتراض", 0),
+        "أصول":      db.execute("SELECT COUNT(*) FROM expert_knowledge_assets WHERE expert_id=?",
+                                (expert_id,)).fetchone()[0],
+    }
+
+
+def _exp_readiness(db, expert_id: str) -> list:
+    """قائمة تحقق 'جاهزية بناء النظام' — 7 عناصر بشرط صريح لكل منها."""
+    facts_stages = {r["related_stage"] for r in db.execute(
+        "SELECT DISTINCT related_stage FROM expert_facts WHERE expert_id=?", (expert_id,)
+    ).fetchall() if r["related_stage"]}
+
+    has_decisions = db.execute(
+        "SELECT COUNT(*) FROM expert_facts WHERE expert_id=? AND fact_type='قرار'",
+        (expert_id,)
+    ).fetchone()[0] > 0
+
+    has_evidence = db.execute(
+        "SELECT COUNT(*) FROM expert_facts WHERE expert_id=? AND fact_type='دليل'",
+        (expert_id,)
+    ).fetchone()[0] > 0
+
+    has_projects = db.execute(
+        "SELECT COUNT(*) FROM expert_projects WHERE expert_id=?", (expert_id,)
+    ).fetchone()[0] > 0
+
+    return [
+        {"label": "هوية الخبير",       "done": 1 in facts_stages},
+        {"label": "الخبرة الجوهرية",   "done": 2 in facts_stages},
+        {"label": "العميل المثالي",    "done": 3 in facts_stages},
+        {"label": "المشكلة والحل",     "done": 4 in facts_stages},
+        {"label": "نموذج الإيرادات",   "done": 5 in facts_stages},
+        {"label": "نظام التشغيل",      "done": 6 in facts_stages},
+        {"label": "مشروع محدد معتمد",  "done": has_projects},
+    ]
+
+
+# ── صفحة الخبير ──────────────────────────────────────────────────
+
+@app.route("/e/<slug>")
+def expert_page(slug):
+    db = get_db()
+    exp = db.execute("SELECT expert_id, name, domain_expertise, status FROM experts WHERE access_link_slug=?",
+                     (slug,)).fetchone()
+    if not exp:
+        abort(404)
+    return render_template("expert-interface.html",
+                           slug=slug, expert_name=exp["name"],
+                           expert_domain=exp["domain_expertise"])
+
+
+@csrf.exempt
+@app.route("/api/e/<slug>/verify", methods=["POST"])
+def expert_verify(slug):
+    db  = get_db()
+    exp = db.execute("SELECT expert_id, access_code FROM experts WHERE access_link_slug=?",
+                     (slug,)).fetchone()
+    if not exp:
+        return jsonify({"success": False, "error": "not_found"}), 404
+
+    # تحقق من الحظر
+    remaining = _exp_check_lock(slug)
+    if remaining is not None:
+        mins = int(remaining // 60) + 1
+        return jsonify({"success": False, "error": "locked",
+                        "message": f"تم تجاوز الحد المسموح. حاول بعد {mins} دقيقة."}), 429
+
+    code = (request.get_json(silent=True) or {}).get("code", "").strip()
+    if code != (exp["access_code"] or ""):
+        left, locked = _exp_record_fail(slug)
+        if locked:
+            return jsonify({"success": False, "error": "locked",
+                            "message": f"تم إيقاف الدخول {_EXPERT_LOCKOUT_MIN} دقيقة بعد {_EXPERT_MAX_ATTEMPTS} محاولات خاطئة."}), 429
+        return jsonify({"success": False, "error": "wrong_code",
+                        "message": f"رمز خاطئ. {left} محاولة متبقية."}), 401
+
+    _exp_clear_lock(slug)
+    session[f"exp_v_{slug}"] = True
+    return jsonify({"success": True})
+
+
+@app.route("/api/e/<slug>/status")
+def expert_status(slug):
+    if not _exp_verified(slug):
+        return jsonify({"success": False, "error": "unverified"}), 401
+    db  = get_db()
+    exp = db.execute("""
+        SELECT e.expert_id, e.name, e.domain_expertise, e.status, e.api_call_count,
+               COALESCE((SELECT es.current_stage FROM expert_sessions es
+                          WHERE es.expert_id=e.expert_id ORDER BY es.started_at DESC LIMIT 1), 0)
+               AS current_stage
+        FROM experts e WHERE e.access_link_slug=?
+    """, (slug,)).fetchone()
+    if not exp:
+        return jsonify({"success": False, "error": "not_found"}), 404
+    return jsonify({
+        "success":     True,
+        "expert":      dict(exp),
+        "counters":    _exp_counters(db, exp["expert_id"]),
+        "readiness":   _exp_readiness(db, exp["expert_id"]),
+    })
+
+
+@csrf.exempt
+@app.route("/api/e/<slug>/chat", methods=["POST"])
+def expert_chat(slug):
+    if not _exp_verified(slug):
+        return jsonify({"success": False, "error": "unverified"}), 401
+
+    db  = get_db()
+    exp = db.execute("SELECT expert_id, status, api_call_count FROM experts WHERE access_link_slug=?",
+                     (slug,)).fetchone()
+    if not exp:
+        return jsonify({"success": False, "error": "not_found"}), 404
+
+    body        = request.get_json(silent=True) or {}
+    user_text   = (body.get("message") or "").strip()
+    if not user_text:
+        return jsonify({"success": False, "error": "رسالة فارغة"}), 400
+
+    expert_id  = exp["expert_id"]
+    sid        = _exp_get_or_create_session(db, expert_id)
+
+    # تحميل سجل المحادثة
+    sess_row   = db.execute("SELECT conversation_log, current_stage FROM expert_sessions WHERE session_id=?",
+                            (sid,)).fetchone()
+    history    = json.loads(sess_row["conversation_log"] or "[]")
+    stage      = sess_row["current_stage"]
+
+    # أضف رسالة المستخدم
+    history.append({"role": "user", "content": user_text})
+
+    # ── استدعاء Claude ──────────────────────────────────────────
+    try:
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        resp   = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=2000,
+            system=EXPERT_SYSTEM_PROMPT,
+            messages=history,
+        )
+        raw = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+    except Exception as e:
+        return jsonify({"success": False, "error": f"خطأ في الاتصال بـClaude: {str(e)}"}), 500
+
+    # ── استخراج الحقائق من ردّ Claude ───────────────────────────
+    import re as _re
+    extracted_facts = []
+    checkpoint_stage = None
+
+    # بحث عن كتلة FACTS_JSON مخفية
+    facts_match = _re.search(r"<!--\s*FACTS_JSON:\s*(\[.*?\])\s*-->", raw, _re.DOTALL)
+    if facts_match:
+        try:
+            items = json.loads(facts_match.group(1))
+            for item in items:
+                ftype = item.get("type", "حقيقة")
+                conf  = item.get("confidence") if ftype in ("حقيقة", "قرار") else None
+                fid   = "FACT-" + uuid.uuid4().hex[:10].upper()
+                db.execute("""
+                    INSERT INTO expert_facts
+                        (fact_id, expert_id, session_id, fact_type, content, confidence_level, related_stage)
+                    VALUES (?,?,?,?,?,?,?)
+                """, (fid, expert_id, sid,
+                      ftype, item.get("content", ""), conf, stage))
+                extracted_facts.append({"type": ftype, "content": item.get("content", "")})
+        except Exception:
+            pass
+
+    # بحث عن إشارة إكمال مرحلة
+    cp_match = _re.search(r"<!--\s*STAGE_CHECKPOINT:\s*(\d+)\s*-->", raw)
+    if cp_match:
+        checkpoint_stage = int(cp_match.group(1))
+
+    # حذف الكتل المخفية من النص المعروض للخبير
+    display_text = _re.sub(r"<!--.*?-->", "", raw, flags=_re.DOTALL).strip()
+
+    # أضف ردّ المساعد للسجل (النص الكامل مع الكتل — للحفاظ على السياق الكامل لـClaude)
+    history.append({"role": "assistant", "content": raw})
+
+    # حدّث DB
+    db.execute("UPDATE expert_sessions SET conversation_log=?, current_stage=? WHERE session_id=?",
+               (json.dumps(history, ensure_ascii=False), stage, sid))
+    db.execute("UPDATE experts SET api_call_count=api_call_count+1, last_session_at=now() WHERE expert_id=?",
+               (expert_id,))
+    db.commit()
+
+    return jsonify({
+        "success":        True,
+        "reply":          display_text,
+        "session_id":     sid,
+        "stage":          stage,
+        "checkpoint":     checkpoint_stage,
+        "extracted":      extracted_facts,
+        "counters":       _exp_counters(db, expert_id),
+    })
+
+
+@csrf.exempt
+@app.route("/api/e/<slug>/checkpoint", methods=["POST"])
+def expert_checkpoint(slug):
+    """يُعالج استجابة الخبير عند نقطة التوقف بين المراحل."""
+    if not _exp_verified(slug):
+        return jsonify({"success": False, "error": "unverified"}), 401
+    db   = get_db()
+    exp  = db.execute("SELECT expert_id FROM experts WHERE access_link_slug=?", (slug,)).fetchone()
+    if not exp:
+        return jsonify({"success": False, "error": "not_found"}), 404
+
+    body     = request.get_json(silent=True) or {}
+    decision = body.get("decision", "")   # "approve" | "revise" | "add_evidence" | "inaccurate"
+    expert_id = exp["expert_id"]
+    sid = session.get(f"exp_sid_{expert_id}")
+
+    if decision == "approve" and sid:
+        sess = db.execute("SELECT current_stage FROM expert_sessions WHERE session_id=?", (sid,)).fetchone()
+        new_stage = min((sess["current_stage"] or 1) + 1, 7)
+        db.execute("UPDATE expert_sessions SET current_stage=? WHERE session_id=?", (new_stage, sid))
+        db.commit()
+        return jsonify({"success": True, "new_stage": new_stage})
+
+    return jsonify({"success": True, "new_stage": None})
+
+
+@app.route("/api/e/<slug>/facts")
+def expert_facts_api(slug):
+    if not _exp_verified(slug):
+        return jsonify({"success": False, "error": "unverified"}), 401
+    db  = get_db()
+    exp = db.execute("SELECT expert_id FROM experts WHERE access_link_slug=?", (slug,)).fetchone()
+    if not exp:
+        return jsonify({"success": False, "error": "not_found"}), 404
+    rows = db.execute("""
+        SELECT fact_id, fact_type, content, confidence_level, related_stage,
+               to_char(created_at AT TIME ZONE 'Asia/Riyadh','YYYY-MM-DD HH24:MI') as created_fmt
+        FROM expert_facts WHERE expert_id=? ORDER BY created_at
+    """, (exp["expert_id"],)).fetchall()
+    by_type = {}
+    for r in rows:
+        t = r["fact_type"]
+        by_type.setdefault(t, []).append(dict(r))
+    return jsonify({"success": True, "by_type": by_type,
+                    "total": len(rows)})
+
+
+@app.route("/api/e/<slug>/knowledge-assets")
+def expert_ka_api(slug):
+    if not _exp_verified(slug):
+        return jsonify({"success": False, "error": "unverified"}), 401
+    db  = get_db()
+    exp = db.execute("SELECT expert_id FROM experts WHERE access_link_slug=?", (slug,)).fetchone()
+    if not exp:
+        return jsonify({"success": False, "error": "not_found"}), 404
+    rows = db.execute("""
+        SELECT asset_id, asset_category, content, transformable_to
+        FROM expert_knowledge_assets WHERE expert_id=? ORDER BY asset_id
+    """, (exp["expert_id"],)).fetchall()
+    return jsonify({"success": True, "assets": [dict(r) for r in rows]})
+
+
+@app.route("/api/e/<slug>/projects")
+def expert_projects_api(slug):
+    if not _exp_verified(slug):
+        return jsonify({"success": False, "error": "unverified"}), 401
+    db  = get_db()
+    exp = db.execute("SELECT expert_id FROM experts WHERE access_link_slug=?", (slug,)).fetchone()
+    if not exp:
+        return jsonify({"success": False, "error": "not_found"}), 404
+    rows = db.execute("""
+        SELECT project_id, title, description, scores, is_recommended, recommendation_reason
+        FROM expert_projects WHERE expert_id=? ORDER BY is_recommended DESC, project_id
+    """, (exp["expert_id"],)).fetchall()
+    return jsonify({"success": True, "projects": [dict(r) for r in rows]})
+
+
+@app.route("/api/e/<slug>/report")
+def expert_report_api(slug):
+    if not _exp_verified(slug):
+        return jsonify({"success": False, "error": "unverified"}), 401
+    db  = get_db()
+    exp = db.execute("SELECT * FROM experts WHERE access_link_slug=?", (slug,)).fetchone()
+    if not exp:
+        return jsonify({"success": False, "error": "not_found"}), 404
+    expert_id = exp["expert_id"]
+    facts_rows = db.execute("""
+        SELECT fact_type, content, confidence_level, related_stage
+        FROM expert_facts WHERE expert_id=? ORDER BY created_at
+    """, (expert_id,)).fetchall()
+    ka_rows = db.execute("""
+        SELECT asset_category, content, transformable_to
+        FROM expert_knowledge_assets WHERE expert_id=? ORDER BY asset_id
+    """, (expert_id,)).fetchall()
+    proj_rows = db.execute("""
+        SELECT title, description, scores, is_recommended, recommendation_reason
+        FROM expert_projects WHERE expert_id=? ORDER BY is_recommended DESC
+    """, (expert_id,)).fetchall()
+    sess = db.execute("""
+        SELECT current_stage FROM expert_sessions WHERE expert_id=?
+        ORDER BY started_at DESC LIMIT 1
+    """, (expert_id,)).fetchone()
+    return jsonify({
+        "success":  True,
+        "expert":   dict(exp),
+        "stage":    sess["current_stage"] if sess else 0,
+        "facts":    [dict(r) for r in facts_rows],
+        "knowledge_assets": [dict(r) for r in ka_rows],
+        "projects": [dict(r) for r in proj_rows],
+        "counters": _exp_counters(db, expert_id),
+        "readiness": _exp_readiness(db, expert_id),
     })
 
 
