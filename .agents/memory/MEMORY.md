@@ -22,3 +22,4 @@
 - [Integration capability verification](integration-capability-verification.md) — verify callable tools and a real read-only auth request before relying on an “added” integration.
 - [External production DATABASE_URL](external-production-database-url.md) — Replit’s managed-key restriction does not apply to secrets configured on an external production host.
 - [Long-page browser screenshots](long-page-browser-screenshots.md) — isolate full-page screenshot cases in separate browser processes; one Chromium session can stall after several long captures.
+- [Sana database test safety](sana-database-test-safety.md) — never call destructive force-initialization from tests against an environment-bound database; use isolated rows and cleanup.
