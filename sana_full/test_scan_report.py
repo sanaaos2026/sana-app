@@ -540,7 +540,6 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         )
         self.assertEqual("COMPLETE", after_review["scan_status"])
         self.assertEqual(second_scan["scan_id"], after_review["scan"]["scan_id"])
-        }
         self.assertTrue(initiatives[f"LINKED{suffix}"]["evidence"])
         self.assertTrue(initiatives[f"LINKED{suffix}"]["completeness"])
         self.assertEqual([], initiatives[f"UNLINKED{suffix}"]["evidence"])
@@ -582,7 +581,6 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
             "FIRSTDEC",
             {item.get("decision_id") for item in second_context["scan_initiatives"]},
         )
-        }
         self.assertTrue(initiatives[f"LINKED{suffix}"]["evidence"])
         self.assertTrue(initiatives[f"LINKED{suffix}"]["completeness"])
         self.assertEqual([], initiatives[f"UNLINKED{suffix}"]["evidence"])

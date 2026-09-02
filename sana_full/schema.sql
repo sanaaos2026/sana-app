@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS companies (
     business_reference_url TEXT,
     business_description TEXT,
     goal_90_days TEXT,
-    primary_challenge TEXT
+    primary_challenge TEXT,
+    lifecycle_status TEXT NOT NULL DEFAULT 'Active'
 );
 
 -- حسابات دخول حقيقية للعملاء — كل حساب مرتبط بشركة واحدة فقط، ولا يمكنه
@@ -35,6 +36,9 @@ CREATE TABLE IF NOT EXISTS user_accounts (
     company_id TEXT NOT NULL,
     referral_source TEXT,
     is_admin SMALLINT NOT NULL DEFAULT 0,
+    admin_role TEXT NOT NULL DEFAULT 'USER',
+    account_status TEXT NOT NULL DEFAULT 'active',
+    last_login_at TIMESTAMPTZ,
     created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
     FOREIGN KEY (company_id) REFERENCES companies(company_id)
 );
@@ -223,6 +227,20 @@ CREATE TABLE IF NOT EXISTS p0_impact_reviews (
 );
 CREATE INDEX IF NOT EXISTS idx_p0_impact_reviews_case
     ON p0_impact_reviews(company_id,case_id,reviewed_at DESC);
+
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+    audit_id TEXT PRIMARY KEY,
+    actor_account_id TEXT NOT NULL REFERENCES user_accounts(account_id),
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT,
+    company_id TEXT REFERENCES companies(company_id),
+    reason TEXT NOT NULL,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created
+    ON admin_audit_log(created_at DESC);
 
 -- وثائق منهجية عامة (مثل "نظام سنع لجلب العملاء") — مراجع مستقلة عن أي شركة،
 -- يمكن الرجوع إليها وربطها من أي Case Workspace مستقبلي.

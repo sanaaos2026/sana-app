@@ -1,0 +1,158 @@
+أنشئ لوحة Super Admin / Master Admin داخل سنع مخصصة للإدارة الداخلية فقط، بدون التأثير على رحلة العميل أو توسيع P0.
+
+الهدف:
+تمكيني كمالك النظام من رؤية حالة سنع، الشركات، المستخدمين، الحالات، القرارات، المهام، النتائج، والأخطاء من مكان واحد.
+
+المطلوب:
+
+1. صلاحيات الإدارة
+- SUPER_ADMIN أعلى صلاحية.
+- ADMIN صلاحية تشغيلية أقل.
+- المستخدم العادي لا يرى أي جزء من لوحة الإدارة.
+- جميع المسارات محمية Server-side وليس فقط إخفاء UI.
+- لا تسمح بتجاوز عزل الشركات إلا لـSUPER_ADMIN وبشكل صريح ومسجل.
+
+2. الصفحة الرئيسية للوحة
+اعرض فقط مؤشرات تشغيلية مهمة:
+- عدد الشركات.
+- المستخدمون النشطون.
+- الحالات المفتوحة.
+- الحالات المكتملة.
+- Sana Scans المنفذة.
+- Diagnostic Reviews.
+- القرارات المفتوحة.
+- المهام المفتوحة والمتأخرة.
+- Impact Reviews المكتملة.
+- الحالات التي فيها Evidence غير كافٍ.
+- الحالات المتوقفة أو التي تحتاج تدخلًا إداريًا.
+
+3. إدارة الشركات
+لكل شركة:
+- الاسم.
+- الحالة Active / Trial / Suspended / Archived.
+- المستخدمون.
+- آخر نشاط.
+- مرحلة رحلة P0 الحالية.
+- آخر Scan.
+- Top Bottleneck الحالي.
+- آخر Decision.
+- المهام المفتوحة.
+- آخر Impact Review.
+- Data Quality / Evidence Readiness.
+- إمكانية فتح Company Passport الداخلي.
+
+4. إدارة المستخدمين
+- البحث عن المستخدم.
+- معرفة الشركة التابعة له.
+- الدور والصلاحية.
+- آخر تسجيل دخول.
+- تفعيل/تعطيل الحساب.
+- تغيير الدور فقط لـSUPER_ADMIN.
+- لا تعرض كلمات المرور أو الأسرار نهائيًا.
+
+5. Cases / Diagnostic Control
+اعرض:
+Company → Case → Evidence → Finding → Decision → Task → Result → Impact
+
+مع إمكانية معرفة:
+- أين توقفت الحالة.
+- لماذا توقفت.
+- Evidence Gate status.
+- Decision Readiness:
+  READY
+  CONDITIONAL
+  NOT_READY
+- Contradictions.
+- Unknowns.
+- Missing Evidence.
+
+6. Operations Queue
+أنشئ قائمة واحدة باسم:
+"يحتاج تدخل"
+
+تجمع تلقائيًا:
+- Case متوقف.
+- Evidence ناقص.
+- Decision غير معتمد.
+- Task متأخرة.
+- Impact Review غير مكتمل.
+- Runtime/System Error مرتبط بشركة.
+- فشل عملية حساسة.
+
+رتبها:
+Critical → High → Normal
+
+7. System Health
+اعرض داخليًا:
+- App status.
+- Database connectivity.
+- Supabase status.
+- Railway/runtime status إذا كان متاحًا.
+- آخر deployment معروف.
+- آخر خطأ حرج.
+- schedulers enabled/disabled.
+- لا تعرض Secrets أو Tokens أو connection strings.
+
+8. Audit Log
+سجّل العمليات الحساسة:
+- دخول Super Admin.
+- تغيير صلاحية.
+- تعطيل مستخدم.
+- تغيير حالة شركة.
+- تعديل قرار إداري.
+- أي cross-company access.
+- من قام بالفعل + الوقت + السبب.
+
+9. البحث الشامل
+بحث واحد داخلي عن:
+- شركة.
+- مستخدم.
+- Case.
+- Decision.
+- Task.
+- KPI.
+- Finding.
+
+10. تجربة الاستخدام
+- RTL.
+- عربية واضحة.
+- واجهة تنفيذية بسيطة جدًا.
+- الصفحة الرئيسية لا تتجاوز 6–8 كتل رئيسية.
+- Progressive Disclosure.
+- لا Dashboard مزدحمة.
+- كل شاشة تجيب:
+  ماذا يحدث؟
+  ما الذي يحتاج انتباهي؟
+  ماذا أفعل الآن؟
+
+قيود مهمة:
+- لا تبنِ Analytics Engine جديد.
+- لا Framework جديد.
+- لا Knowledge Engine جديد.
+- لا نظام صلاحيات موازٍ إذا كان الحالي موجودًا؛ وسّعه فقط.
+- لا تنسخ بيانات الشركة في جداول جديدة إذا كانت موجودة أصلًا.
+- استخدم الـmodels والـservices الحالية.
+- لا تغيّر رحلة P0 للعميل.
+- لا تدخل Drive أو Research أو Growth OS.
+- لا تضف ميزة لمجرد أنها مفيدة مستقبلًا.
+- أقل تغيير ممكن وأعلى فائدة تشغيلية.
+
+الأولوية:
+1. Security/RBAC.
+2. Companies + Users.
+3. Cases + P0 journey status.
+4. Intervention Queue.
+5. System Health.
+6. Audit Log.
+
+اختبارات القبول:
+- المستخدم العادي لا يستطيع فتح أي admin route.
+- ADMIN لا يستطيع تنفيذ صلاحيات SUPER_ADMIN.
+- SUPER_ADMIN يستطيع رؤية الشركات دون كسر tenant isolation للمستخدمين الآخرين.
+- كل cross-company access مسجل.
+- لا Secret يظهر في HTML/API/log.
+- لوحة الشركات تعكس البيانات الحقيقية الحالية.
+- Operations Queue تحدد الحالات المتوقفة فعليًا.
+
+لا توقف إغلاق P0 الأساسي بسبب هذه اللوحة.
+إذا تعارض العمل مع #44 أو #45 أو Railway، أكمل P0 أولًا ثم نفذ Minimum Admin Slice فقط.

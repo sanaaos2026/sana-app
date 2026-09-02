@@ -430,7 +430,66 @@ def is_admin_preview():
 def current_account():
     if "account_id" not in session:
         return None
-    return {"account_id": session["account_id"], "company_id": session["company_id"], "email": session.get("email")}
+    return {
+        "account_id": session["account_id"],
+        "company_id": session["company_id"],
+        "email": session.get("email"),
+        "admin_role": session.get("admin_role", "USER"),
+        "account_status": session.get("account_status", "active"),
+    }
+
+
+ADMIN_ROLES = {"USER", "ADMIN", "SUPER_ADMIN"}
+ADMIN_STATUSES = {"active", "disabled"}
+
+
+def _admin_role():
+    """Read the current role from the database; is_admin remains a legacy bridge."""
+    account = current_account()
+    if not account:
+        return None
+    row = get_db().execute(
+        """SELECT admin_role, is_admin, account_status
+           FROM user_accounts WHERE account_id=?""",
+        (account["account_id"],),
+    ).fetchone()
+    if not row or row["account_status"] != "active":
+        return None
+    role = str(row["admin_role"] or "USER").upper()
+    if role == "USER" and row["is_admin"]:
+        return "SUPER_ADMIN"
+    return role if role in ADMIN_ROLES - {"USER"} else None
+
+
+def _admin_guard(minimum="ADMIN", *, json_response=True):
+    """Server-side RBAC guard for the internal operations console."""
+    role = _admin_role()
+    allowed = {"ADMIN", "SUPER_ADMIN"} if minimum == "ADMIN" else {"SUPER_ADMIN"}
+    if role in allowed:
+        return role, None
+    if json_response:
+        return None, (jsonify({
+            "success": False,
+            "error": "ADMIN_FORBIDDEN",
+            "message": "هذه المساحة مخصصة للإدارة الداخلية.",
+        }), 403)
+    return None, redirect(url_for("login", next=request.full_path))
+
+
+def _admin_audit(db, actor_id, action, target_type, target_id=None,
+                 company_id=None, reason="تشغيل إداري", metadata=None):
+    db.execute(
+        """INSERT INTO admin_audit_log
+           (audit_id,actor_account_id,action,target_type,target_id,company_id,
+            reason,metadata_json)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (
+            "AUD-" + secrets.token_hex(8).upper(),
+            actor_id, action, target_type, target_id, company_id,
+            reason[:500],
+            json.dumps(metadata or {}, ensure_ascii=False),
+        ),
+    )
 
 
 def request_company_context():
@@ -525,6 +584,14 @@ def enforce_company_auth():
         return
 
     account = current_account()
+
+    # مساحة الإدارة تستخدم RBAC مستقلًا فوق الحساب نفسه. السماح هنا لا يمنح
+    # صلاحية؛ كل admin route يعيد التحقق حيًا من الدور والحالة. هذا الاستثناء
+    # يمنع حارس tenant العام من حجب وصول SUPER_ADMIN الصريح والمسجل.
+    if account and (
+        request.path == "/admin" or request.path.startswith("/api/admin/")
+    ):
+        return
 
     # 1) أي مسار (صفحة أو API) يحمل بيانات شركة — يتطلب جلسة دخول حقيقية،
     #    أو مفتاح العرض الداخلي للمشرف. بدون أحدهما لا وصول إطلاقًا،
@@ -968,6 +1035,36 @@ def init_db(force=False):
         accts_cols = _columns_of(conn, "user_accounts")
         if "is_admin" not in accts_cols:
             conn.execute("ALTER TABLE user_accounts ADD COLUMN is_admin SMALLINT NOT NULL DEFAULT 0")
+        if "admin_role" not in accts_cols:
+            conn.execute("ALTER TABLE user_accounts ADD COLUMN admin_role TEXT NOT NULL DEFAULT 'USER'")
+        if "account_status" not in accts_cols:
+            conn.execute("ALTER TABLE user_accounts ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active'")
+        if "last_login_at" not in accts_cols:
+            conn.execute("ALTER TABLE user_accounts ADD COLUMN last_login_at TIMESTAMPTZ")
+        conn.execute(
+            "UPDATE user_accounts SET admin_role='SUPER_ADMIN' "
+            "WHERE is_admin=1 AND COALESCE(admin_role,'USER')='USER'"
+        )
+        company_cols_for_admin = _columns_of(conn, "companies")
+        if "lifecycle_status" not in company_cols_for_admin:
+            conn.execute(
+                "ALTER TABLE companies ADD COLUMN lifecycle_status TEXT NOT NULL DEFAULT 'Active'"
+            )
+        conn.execute("""CREATE TABLE IF NOT EXISTS admin_audit_log (
+            audit_id TEXT PRIMARY KEY,
+            actor_account_id TEXT NOT NULL REFERENCES user_accounts(account_id),
+            action TEXT NOT NULL,
+            target_type TEXT NOT NULL,
+            target_id TEXT,
+            company_id TEXT REFERENCES companies(company_id),
+            reason TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_admin_audit_created "
+            "ON admin_audit_log(created_at DESC)"
+        )
 
         conn.commit()
         # طبقة المعرفة — ترقية غير هدّامة سواء كانت القاعدة جديدة أو قديمة.
@@ -1596,16 +1693,44 @@ def login():
     account = db.execute("SELECT * FROM user_accounts WHERE email=?", (email,)).fetchone()
     if not account or not check_password_hash(account["password_hash"], password):
         return jsonify({"success": False, "error": "INVALID_CREDENTIALS", "message": "البريد الإلكتروني أو كلمة المرور غير صحيحة."}), 401
+    if (account.get("account_status") or "active") != "active":
+        return jsonify({
+            "success": False,
+            "error": "ACCOUNT_DISABLED",
+            "message": "هذا الحساب معطّل. تواصل مع إدارة سنع.",
+        }), 403
 
     session.clear()
     session["account_id"] = account["account_id"]
     session["company_id"] = account["company_id"]
     session["email"] = account["email"]
     session["is_admin"] = bool(account.get("is_admin"))
+    session["admin_role"] = account.get("admin_role") or (
+        "SUPER_ADMIN" if account.get("is_admin") else "USER"
+    )
+    session["account_status"] = account.get("account_status") or "active"
+    db.execute(
+        "UPDATE user_accounts SET last_login_at=now() WHERE account_id=?",
+        (account["account_id"],),
+    )
+    if session["admin_role"] in {"ADMIN", "SUPER_ADMIN"}:
+        _admin_audit(
+            db, account["account_id"], "admin_login", "session",
+            target_id=account["account_id"], company_id=account["company_id"],
+            reason="تسجيل دخول إلى حساب إداري",
+            metadata={"role": session["admin_role"]},
+        )
+    db.commit()
 
     return jsonify({
         "success": True,
-        "data": {"redirect": _company_start_redirect(account)},
+        "data": {
+            "redirect": (
+                "/admin"
+                if session["admin_role"] in {"ADMIN", "SUPER_ADMIN"}
+                else _company_start_redirect(account)
+            )
+        },
     })
 
 
@@ -2064,6 +2189,567 @@ def api_session():
         "success": True,
         "data": {"authenticated": False, "admin_preview": is_admin_preview()}
     })
+
+
+# ═══════════════════════════════════════════════════════════════════
+# لوحة الإدارة الداخلية — فوق البيانات الحالية، بلا مسار شركة بديل
+# ═══════════════════════════════════════════════════════════════════
+
+ADMIN_COMPANY_STATUSES = {"Active", "Trial", "Suspended", "Archived"}
+
+
+def _admin_date(value):
+    try:
+        return date.fromisoformat(str(value)[:10]) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _admin_scan_payload(row):
+    if not row:
+        return {}
+    try:
+        payload = json.loads(row["result"] or "{}")
+        return payload if isinstance(payload, dict) else {}
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+
+def _admin_company_snapshot(db, company):
+    company_id = company["company_id"]
+    users = db.execute(
+        "SELECT COUNT(*) AS c FROM user_accounts WHERE company_id=? AND account_status='active'",
+        (company_id,),
+    ).fetchone()["c"]
+    latest_scan = db.execute(
+        """SELECT scan_id,status,created_at,result FROM scan_runs
+           WHERE company_id=? ORDER BY created_at DESC LIMIT 1""",
+        (company_id,),
+    ).fetchone()
+    scan_payload = _admin_scan_payload(latest_scan)
+    bottleneck = scan_payload.get("bottleneck") or {}
+    latest_case = db.execute(
+        """SELECT case_id,case_title,case_status,opened_at
+           FROM cases WHERE company_id=? ORDER BY opened_at DESC LIMIT 1""",
+        (company_id,),
+    ).fetchone()
+    p0_decision = db.execute(
+        """SELECT decision_id,title,status,created_at,case_id
+           FROM decisions WHERE company_id=? AND phase_label='P0'
+           ORDER BY created_at DESC LIMIT 1""",
+        (company_id,),
+    ).fetchone()
+    p0_task = db.execute(
+        """SELECT t.task_id,t.title,t.status,t.due_date,t.completed_at
+           FROM tasks t JOIN decisions d ON d.decision_id=t.decision_id
+           WHERE t.company_id=? AND d.phase_label='P0'
+           ORDER BY t.created_at DESC LIMIT 1""",
+        (company_id,),
+    ).fetchone()
+    last_review = db.execute(
+        """SELECT review_id,impact_outcome,reviewed_at
+           FROM p0_impact_reviews WHERE company_id=?
+           ORDER BY reviewed_at DESC LIMIT 1""",
+        (company_id,),
+    ).fetchone()
+    open_tasks = db.execute(
+        "SELECT COUNT(*) AS c FROM tasks WHERE company_id=? AND status!='منجزة'",
+        (company_id,),
+    ).fetchone()["c"]
+    overdue_tasks = 0
+    for task in db.execute(
+        "SELECT due_date,status FROM tasks WHERE company_id=? AND status!='منجزة'",
+        (company_id,),
+    ).fetchall():
+        due = _admin_date(task["due_date"])
+        if due and due < date.today():
+            overdue_tasks += 1
+    evidence_count = db.execute(
+        "SELECT COUNT(*) AS c FROM evidence WHERE company_id=?", (company_id,)
+    ).fetchone()["c"]
+    missing_evidence = (
+        not latest_scan
+        or latest_scan["status"] == "INCOMPLETE"
+        or bool(scan_payload.get("missing_evidence"))
+    )
+
+    if last_review:
+        phase = "Impact Review"
+    elif p0_task and p0_task["status"] == "منجزة":
+        phase = "Result"
+    elif p0_decision and p0_decision["status"] == "معتمد":
+        phase = "Task"
+    elif p0_decision:
+        phase = "Decision"
+    elif latest_scan and latest_scan["status"] in {"REVIEW_REQUIRED", "COMPLETE"}:
+        phase = "Diagnostic Review"
+    elif latest_scan:
+        phase = "Evidence Gate"
+    elif latest_case:
+        phase = "Discovery"
+    else:
+        phase = "Not started"
+
+    activity_values = [
+        company.get("created_at"),
+        latest_scan["created_at"] if latest_scan else None,
+        p0_decision["created_at"] if p0_decision else None,
+        last_review["reviewed_at"] if last_review else None,
+    ]
+    last_activity = max((str(v) for v in activity_values if v), default=None)
+    return {
+        "company_id": company_id,
+        "name": company["name"],
+        "status": company.get("lifecycle_status") or "Active",
+        "sector": company.get("sector_other") or company.get("sector"),
+        "users_active": users,
+        "last_activity": last_activity,
+        "p0_phase": phase,
+        "latest_case": dict(latest_case) if latest_case else None,
+        "latest_scan": {
+            "scan_id": latest_scan["scan_id"],
+            "status": latest_scan["status"],
+            "created_at": latest_scan["created_at"],
+        } if latest_scan else None,
+        "top_bottleneck": bottleneck.get("statement"),
+        "latest_decision": dict(p0_decision) if p0_decision else None,
+        "open_tasks": open_tasks,
+        "overdue_tasks": overdue_tasks,
+        "latest_impact_review": dict(last_review) if last_review else None,
+        "evidence_readiness": {
+            "status": "NOT_READY" if missing_evidence else "READY",
+            "evidence_count": evidence_count,
+            "scan_status": latest_scan["status"] if latest_scan else "NOT_RUN",
+        },
+    }
+
+
+def _admin_companies(db):
+    return [
+        _admin_company_snapshot(db, row)
+        for row in db.execute(
+            "SELECT * FROM companies ORDER BY created_at DESC, company_id"
+        ).fetchall()
+    ]
+
+
+def _admin_ops_queue(db):
+    items = []
+    today = date.today()
+    companies = db.execute("SELECT company_id,name FROM companies").fetchall()
+    for company in companies:
+        cid = company["company_id"]
+        latest_scan = db.execute(
+            """SELECT scan_id,status,result FROM scan_runs
+               WHERE company_id=? ORDER BY created_at DESC LIMIT 1""", (cid,)
+        ).fetchone()
+        scan_payload = _admin_scan_payload(latest_scan)
+        latest_case = db.execute(
+            """SELECT case_id,case_title FROM cases
+               WHERE company_id=? AND case_status NOT IN ('Closed','Completed','مكتملة')
+               ORDER BY opened_at DESC LIMIT 1""", (cid,)
+        ).fetchone()
+        if latest_case and (
+            not latest_scan
+            or latest_scan["status"] == "INCOMPLETE"
+            or scan_payload.get("missing_evidence")
+        ):
+            items.append({
+                "priority": "HIGH",
+                "type": "evidence",
+                "company_id": cid,
+                "entity_id": latest_case["case_id"],
+                "title": f"{company['name']} · Evidence Gate",
+                "reason": "الأدلة غير كافية أو لم يكتمل Sana Scan.",
+            })
+
+        for decision in db.execute(
+            """SELECT decision_id,title,case_id FROM decisions
+               WHERE company_id=? AND status IN ('مقترح','قيد المراجعة')
+               ORDER BY created_at DESC LIMIT 5""", (cid,)
+        ).fetchall():
+            items.append({
+                "priority": "HIGH" if decision["case_id"] else "NORMAL",
+                "type": "decision",
+                "company_id": cid,
+                "entity_id": decision["decision_id"],
+                "title": f"{company['name']} · قرار غير معتمد",
+                "reason": decision["title"],
+            })
+
+        for task in db.execute(
+            """SELECT task_id,title,due_date,decision_id FROM tasks
+               WHERE company_id=? AND status!='منجزة'""", (cid,)
+        ).fetchall():
+            due = _admin_date(task["due_date"])
+            if due and due < today:
+                items.append({
+                    "priority": "CRITICAL",
+                    "type": "task",
+                    "company_id": cid,
+                    "entity_id": task["task_id"],
+                    "title": f"{company['name']} · مهمة متأخرة",
+                    "reason": f"{task['title']} · الموعد {task['due_date']}",
+                })
+
+        for task in db.execute(
+            """SELECT t.task_id,t.title,d.case_id FROM tasks t
+               JOIN decisions d ON d.decision_id=t.decision_id
+               WHERE t.company_id=? AND d.phase_label='P0' AND t.status='منجزة'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM p0_impact_reviews r WHERE r.task_id=t.task_id
+                 )""", (cid,)
+        ).fetchall():
+            items.append({
+                "priority": "HIGH",
+                "type": "impact",
+                "company_id": cid,
+                "entity_id": task["task_id"],
+                "title": f"{company['name']} · Impact Review ناقص",
+                "reason": task["title"],
+            })
+    order = {"CRITICAL": 0, "HIGH": 1, "NORMAL": 2}
+    return sorted(items, key=lambda x: (order.get(x["priority"], 9), x["title"]))
+
+
+@app.route("/admin")
+def admin_dashboard_page():
+    _role, failure = _admin_guard(json_response=False)
+    if failure:
+        return failure
+    return render_template("admin-dashboard.html")
+
+
+@app.route("/api/admin/overview")
+def admin_overview():
+    role, failure = _admin_guard()
+    if failure:
+        return failure
+    db = get_db()
+    companies = _admin_companies(db)
+    active_users = db.execute(
+        "SELECT COUNT(*) AS c FROM user_accounts WHERE account_status='active'"
+    ).fetchone()["c"]
+    open_cases = db.execute(
+        "SELECT COUNT(*) AS c FROM cases WHERE case_status NOT IN ('Closed','Completed','مكتملة')"
+    ).fetchone()["c"]
+    completed_cases = db.execute(
+        "SELECT COUNT(*) AS c FROM cases WHERE case_status IN ('Closed','Completed','مكتملة')"
+    ).fetchone()["c"]
+    scans = db.execute("SELECT COUNT(*) AS c FROM scan_runs").fetchone()["c"]
+    diagnostic_reviews = db.execute(
+        "SELECT COUNT(*) AS c FROM scan_runs WHERE status IN ('REVIEW_REQUIRED','COMPLETE')"
+    ).fetchone()["c"]
+    open_decisions = db.execute(
+        "SELECT COUNT(*) AS c FROM decisions WHERE status IN ('مقترح','قيد المراجعة')"
+    ).fetchone()["c"]
+    open_tasks = db.execute(
+        "SELECT COUNT(*) AS c FROM tasks WHERE status!='منجزة'"
+    ).fetchone()["c"]
+    impact_reviews = db.execute(
+        "SELECT COUNT(*) AS c FROM p0_impact_reviews"
+    ).fetchone()["c"]
+    evidence_gaps = sum(
+        1 for company in companies
+        if company["evidence_readiness"]["status"] == "NOT_READY"
+    )
+    queue = _admin_ops_queue(db)
+    return jsonify({
+        "success": True,
+        "data": {
+            "role": role,
+            "metrics": {
+                "companies": len(companies),
+                "active_users": active_users,
+                "open_cases": open_cases,
+                "completed_cases": completed_cases,
+                "scans": scans,
+                "diagnostic_reviews": diagnostic_reviews,
+                "open_decisions": open_decisions,
+                "open_tasks": open_tasks,
+                "impact_reviews": impact_reviews,
+                "evidence_gaps": evidence_gaps,
+                "needs_attention": len(queue),
+            },
+            "queue_preview": queue[:8],
+            "system": {
+                "app": "ok",
+                "database": "ok",
+                "supabase": "configured_database",
+                "railway": "available" if IS_RAILWAY else "not_detected",
+                "last_deployment": "not_available_in_app",
+                "last_critical_error": "not_persisted",
+                "schedulers": {
+                    "execution_reminders": os.environ.get("SANA_REMINDER_SCHEDULER_ENABLED", "0"),
+                    "knowledge_backup": os.environ.get("SANA_KNOWLEDGE_BACKUP_SCHEDULER_ENABLED", "0"),
+                    "research": os.environ.get("SANA_RESEARCH_SCHEDULER_ENABLED", "0"),
+                },
+            },
+        },
+    })
+
+
+@app.route("/api/admin/companies")
+def admin_companies():
+    _role, failure = _admin_guard()
+    if failure:
+        return failure
+    return jsonify({"success": True, "data": _admin_companies(get_db())})
+
+
+@app.route("/api/admin/companies/<company_id>")
+def admin_company_detail(company_id):
+    role, failure = _admin_guard()
+    if failure:
+        return failure
+    db = get_db()
+    company = db.execute("SELECT * FROM companies WHERE company_id=?", (company_id,)).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    actor = current_account()
+    _admin_audit(
+        db, actor["account_id"], "company_cross_company_view",
+        "company", company_id, company_id,
+        reason="فتح ملف الشركة من لوحة الإدارة",
+        metadata={"role": role},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": _admin_company_snapshot(db, company)})
+
+
+@app.route("/api/admin/users")
+def admin_users():
+    _role, failure = _admin_guard()
+    if failure:
+        return failure
+    query = (request.args.get("q") or "").strip().lower()
+    db = get_db()
+    rows = db.execute(
+        """SELECT a.account_id,a.email,a.company_id,a.admin_role,a.is_admin,
+                  a.account_status,a.created_at,a.last_login_at,c.name AS company_name
+           FROM user_accounts a LEFT JOIN companies c ON c.company_id=a.company_id
+           WHERE LOWER(a.email) LIKE ? OR LOWER(a.account_id) LIKE ?
+              OR LOWER(COALESCE(c.name,'')) LIKE ?
+           ORDER BY a.created_at DESC LIMIT 200""",
+        (f"%{query}%", f"%{query}%", f"%{query}%"),
+    ).fetchall()
+    return jsonify({"success": True, "data": [
+        {
+            **{k: row[k] for k in (
+                "account_id", "email", "company_id", "admin_role",
+                "account_status", "created_at", "last_login_at", "company_name"
+            )},
+            "admin_role": (
+                "SUPER_ADMIN" if row["is_admin"] and row["admin_role"] == "USER"
+                else row["admin_role"]
+            ),
+        }
+        for row in rows
+    ]})
+
+
+@app.route("/api/admin/ops-queue")
+def admin_ops_queue():
+    _role, failure = _admin_guard()
+    if failure:
+        return failure
+    return jsonify({"success": True, "data": _admin_ops_queue(get_db())})
+
+
+@app.route("/api/admin/system-health")
+def admin_system_health():
+    _role, failure = _admin_guard()
+    if failure:
+        return failure
+    try:
+        get_db().execute("SELECT 1").fetchone()
+        db_status = "ok"
+    except Exception:
+        db_status = "unavailable"
+    return jsonify({
+        "success": True,
+        "data": {
+            "app": "ok",
+            "database": db_status,
+            "supabase": "configured_database",
+            "railway": "available" if IS_RAILWAY else "not_detected",
+            "last_deployment": "not_available_in_app",
+            "last_critical_error": "not_persisted",
+            "schedulers": {
+                "execution_reminders": os.environ.get("SANA_REMINDER_SCHEDULER_ENABLED", "0"),
+                "knowledge_backup": os.environ.get("SANA_KNOWLEDGE_BACKUP_SCHEDULER_ENABLED", "0"),
+                "research": os.environ.get("SANA_RESEARCH_SCHEDULER_ENABLED", "0"),
+            },
+        },
+    })
+
+
+@app.route("/api/admin/audit")
+def admin_audit():
+    _role, failure = _admin_guard()
+    if failure:
+        return failure
+    rows = get_db().execute(
+        """SELECT l.audit_id,l.actor_account_id,l.action,l.target_type,l.target_id,
+                  l.company_id,l.reason,l.metadata_json,l.created_at,
+                  a.email AS actor_email
+           FROM admin_audit_log l JOIN user_accounts a
+             ON a.account_id=l.actor_account_id
+           ORDER BY l.created_at DESC LIMIT 200"""
+    ).fetchall()
+    return jsonify({"success": True, "data": [dict(row) for row in rows]})
+
+
+@app.route("/api/admin/search")
+def admin_search():
+    _role, failure = _admin_guard()
+    if failure:
+        return failure
+    query = (request.args.get("q") or "").strip()
+    if len(query) < 2:
+        return jsonify({"success": True, "data": []})
+    like = f"%{query.lower()}%"
+    db = get_db()
+    results = []
+    searches = (
+        (
+            "company",
+            """SELECT company_id AS id,name AS title,company_id AS company_id
+               FROM companies WHERE LOWER(name) LIKE ? OR LOWER(company_id) LIKE ?
+               LIMIT 8""",
+            (like, like),
+        ),
+        (
+            "user",
+            """SELECT account_id AS id,email AS title,company_id
+               FROM user_accounts WHERE LOWER(email) LIKE ? OR LOWER(account_id) LIKE ?
+               LIMIT 8""",
+            (like, like),
+        ),
+        (
+            "case",
+            """SELECT case_id AS id,case_title AS title,company_id
+               FROM cases WHERE LOWER(case_title) LIKE ? OR LOWER(case_id) LIKE ?
+               LIMIT 8""",
+            (like, like),
+        ),
+        (
+            "decision",
+            """SELECT decision_id AS id,title,company_id FROM decisions
+               WHERE LOWER(title) LIKE ? OR LOWER(decision_id) LIKE ? LIMIT 8""",
+            (like, like),
+        ),
+        (
+            "task",
+            """SELECT task_id AS id,title,company_id FROM tasks
+               WHERE LOWER(title) LIKE ? OR LOWER(task_id) LIKE ?
+                  OR LOWER(COALESCE(kpi,'')) LIKE ? LIMIT 8""",
+            (like, like, like),
+        ),
+        (
+            "finding",
+            """SELECT finding_id AS id,title,company_id FROM scan_findings
+               WHERE LOWER(title) LIKE ? OR LOWER(statement) LIKE ?
+                  OR LOWER(finding_id) LIKE ? LIMIT 8""",
+            (like, like, like),
+        ),
+    )
+    for kind, sql, params in searches:
+        for row in db.execute(sql, params).fetchall():
+            results.append({
+                "type": kind,
+                "id": row["id"],
+                "title": row["title"],
+                "company_id": row["company_id"],
+            })
+    return jsonify({"success": True, "data": results[:30]})
+
+
+@app.route("/api/admin/users/<account_id>", methods=["PATCH"])
+def admin_update_user(account_id):
+    role, failure = _admin_guard()
+    if failure:
+        return failure
+    db = get_db()
+    target = db.execute(
+        "SELECT * FROM user_accounts WHERE account_id=?", (account_id,)
+    ).fetchone()
+    if not target:
+        return jsonify({"success": False, "error": "USER_NOT_FOUND"}), 404
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        return jsonify({"success": False, "error": "AUDIT_REASON_REQUIRED"}), 400
+    new_status = body.get("account_status")
+    new_role = body.get("admin_role")
+    if new_status is not None and new_status not in ADMIN_STATUSES:
+        return jsonify({"success": False, "error": "ACCOUNT_STATUS_INVALID"}), 400
+    if new_role is not None:
+        new_role = str(new_role).upper()
+        if role != "SUPER_ADMIN":
+            return jsonify({"success": False, "error": "SUPER_ADMIN_REQUIRED"}), 403
+        if new_role not in ADMIN_ROLES:
+            return jsonify({"success": False, "error": "ADMIN_ROLE_INVALID"}), 400
+    target_role = (
+        "SUPER_ADMIN"
+        if target["is_admin"] and target["admin_role"] == "USER"
+        else target["admin_role"]
+    )
+    if role == "ADMIN" and target_role == "SUPER_ADMIN":
+        return jsonify({"success": False, "error": "SUPER_ADMIN_REQUIRED"}), 403
+    if account_id == current_account()["account_id"] and new_status == "disabled":
+        return jsonify({"success": False, "error": "CANNOT_DISABLE_SELF"}), 400
+    new_status = new_status or target["account_status"]
+    new_role = new_role or target_role
+    db.execute(
+        """UPDATE user_accounts SET account_status=?,admin_role=?,is_admin=?
+           WHERE account_id=?""",
+        (new_status, new_role, 1 if new_role != "USER" else 0, account_id),
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "user_update", "user", account_id,
+        target["company_id"], reason,
+        {"from_role": target["admin_role"], "to_role": new_role,
+         "from_status": target["account_status"], "to_status": new_status},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"account_id": account_id,
+                                               "admin_role": new_role,
+                                               "account_status": new_status}})
+
+
+@app.route("/api/admin/companies/<company_id>", methods=["PATCH"])
+def admin_update_company(company_id):
+    _role, failure = _admin_guard()
+    if failure:
+        return failure
+    db = get_db()
+    company = db.execute(
+        "SELECT company_id,lifecycle_status FROM companies WHERE company_id=?",
+        (company_id,),
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    body = request.get_json(silent=True) or {}
+    status = body.get("lifecycle_status")
+    reason = (body.get("reason") or "").strip()
+    if status not in ADMIN_COMPANY_STATUSES:
+        return jsonify({"success": False, "error": "COMPANY_STATUS_INVALID"}), 400
+    if not reason:
+        return jsonify({"success": False, "error": "AUDIT_REASON_REQUIRED"}), 400
+    db.execute(
+        "UPDATE companies SET lifecycle_status=? WHERE company_id=?",
+        (status, company_id),
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "company_status_update",
+        "company", company_id, company_id, reason,
+        {"from_status": company["lifecycle_status"], "to_status": status},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "company_id": company_id, "lifecycle_status": status
+    }})
 
 
 @app.route("/guide")
