@@ -379,6 +379,15 @@ a{color:inherit;text-decoration:none}
   padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;
 }
 .download-btn:hover{background:#131c3d}
+.report-counters{
+  display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;
+}
+.report-counters .rc-item{
+  background:#fff;border:1px solid #DEE1EC;border-radius:10px;
+  padding:10px 16px;text-align:center;min-width:90px;
+}
+.report-counters .rc-item .rc-num{font-size:20px;font-weight:800;color:#0B132B;display:block}
+.report-counters .rc-item .rc-label{font-size:11.5px;color:#9AA0AB}
 .report-section-card{
   background:#fff;border:1px solid #DEE1EC;border-radius:12px;
   padding:18px 20px;margin-bottom:12px;
@@ -388,6 +397,12 @@ a{color:inherit;text-decoration:none}
   font-size:13px;color:#4B5260;line-height:1.7;
 }
 .report-section-card ul{padding-right:16px}
+.report-section-card.missing{background:#FAFAFB}
+.report-section-card.missing p{color:#9AA0AB;font-style:italic}
+.report-proj-scores{display:flex;flex-direction:column;gap:3px;margin-top:8px;padding-top:8px;border-top:1px dashed #E5E7EB}
+.report-proj-scores div{display:flex;justify-content:space-between;font-size:12px;color:#6B7280}
+.report-ka-cat{margin-bottom:14px}
+.report-ka-cat h4{font-size:12.5px;font-weight:700;color:#0B132B;margin-bottom:6px}
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  EMPTY STATE                                                     */
@@ -598,6 +613,7 @@ a{color:inherit;text-decoration:none}
         <div class="report-actions">
           <button class="download-btn" onclick="downloadReport()">⬇ تحميل كـMarkdown</button>
         </div>
+        <div class="report-counters" id="report-counters" style="display:none"></div>
         <div id="report-content">
           <div class="empty-tab"><div class="big">📄</div><p>التقرير يكتمل تلقائياً مع تقدم المحادثة.<br>يمكنك تحميله في أي وقت.</p></div>
         </div>
@@ -1029,17 +1045,37 @@ async function loadProjects() {
 /* ════════════════════════════════════════════════════════════════
    REPORT
    ════════════════════════════════════════════════════════════════ */
+const MISSING_TXT = "لم تُستخرج بعد — أكمل المحادثة للوصول لهذا القسم";
+
+function reportModel(json) {
+  /* يبني نموذج تقرير موحّد يُستخدم في العرض والتنزيل معًا — لا بيانات مصطنعة،
+     كل قسم إمّا بيانات فعلية من DB أو نص "لم تُستخرج بعد" الصريح. */
+  const { expert, stage, facts, knowledge_assets, projects, counters, readiness } = json;
+  const byStage = {};
+  facts.forEach(f => { const s = f.related_stage || 0; (byStage[s] = byStage[s] || []).push(f); });
+  const byType = {};
+  facts.forEach(f => byType[f.fact_type] = (byType[f.fact_type]||[]).concat(f));
+  const recProject = projects.find(p => p.is_recommended);
+  const kaByCat = {};
+  knowledge_assets.forEach(a => { (kaByCat[a.asset_category] = kaByCat[a.asset_category] || []).push(a); });
+  return { expert, stage, facts, knowledge_assets, projects, counters, readiness,
+           byStage, byType, recProject, kaByCat };
+}
+
 async function loadReport() {
   const res  = await fetch(`/api/e/${SLUG}/report`);
   const json = await res.json();
   if (!json.success) return;
-  const { expert, stage, facts, knowledge_assets, projects, counters, readiness } = json;
+  const m = reportModel(json);
+  const { expert, stage, byStage, byType, projects, recProject, kaByCat, counters, readiness } = m;
   const done = readiness.filter(r => r.done).length;
 
-  const byType = {};
-  facts.forEach(f => byType[f.fact_type] = (byType[f.fact_type]||[]).concat(f));
-
-  const recProject = projects.find(p => p.is_recommended);
+  const cbar = document.getElementById("report-counters");
+  cbar.style.display = "flex";
+  cbar.innerHTML = `
+    <div class="rc-item"><span class="rc-num num">${counters["حقائق"]}</span><span class="rc-label">حقيقة</span></div>
+    <div class="rc-item"><span class="rc-num num">${counters["أدلة"]}</span><span class="rc-label">دليل</span></div>
+    <div class="rc-item"><span class="rc-num num">${counters["أصول"]}</span><span class="rc-label">أصل معرفي</span></div>`;
 
   document.getElementById("report-content").innerHTML = `
     <div class="report-section-card">
@@ -1047,53 +1083,69 @@ async function loadReport() {
       <p><strong>${escapeHtml(expert.name)}</strong> — ${escapeHtml(expert.domain_expertise)}</p>
       ${expert.email ? `<p>البريد: ${escapeHtml(expert.email)}</p>` : ""}
       ${expert.notes ? `<p>${escapeHtml(expert.notes)}</p>` : ""}
+      <p style="margin-top:6px">مرحلة الاستكشاف الحالية: <strong class="num">${stage} من 7</strong> — جاهزية بناء النظام: <strong class="num">${done} من 7 عناصر</strong></p>
     </div>
-    <div class="report-section-card">
-      <h3>② رأس المال المعرفي</h3>
-      <p>مرحلة الاستكشاف: <strong class="num">${stage} من 7</strong></p>
-      <p>جاهزية بناء النظام: <strong class="num">${done} من 7 عناصر</strong></p>
-      <ul style="margin-top:8px">
-        ${readiness.map(r => `<li>${r.done?"✔":"✖"} ${r.label}</li>`).join("")}
-      </ul>
-    </div>
-    ${sectionFromFacts("③ الحقائق الجوهرية", byType["حقيقة"] || [])}
-    ${sectionFromFacts("④ الأدلة", byType["دليل"] || [])}
-    ${sectionFromFacts("⑤ الفرص", byType["فرصة"] || [])}
-    ${sectionFromFacts("⑥ القرارات المعتمدة", byType["قرار"] || [])}
-    <div class="report-section-card">
-      <h3>⑦ الأصول المعرفية</h3>
-      ${knowledge_assets.length ? knowledge_assets.map(a =>
-        `<p><strong>${escapeHtml(a.asset_category)}</strong>: ${escapeHtml(a.content)}</p>`
-      ).join("") : "<p>لا توجد بعد.</p>"}
-    </div>
-    <div class="report-section-card">
-      <h3>⑧ المشاريع المقترحة</h3>
-      ${projects.length ? projects.map(p =>
-        `<p>${p.is_recommended?"⭐ ":""}<strong>${escapeHtml(p.title)}</strong>${p.description?" — "+escapeHtml(p.description):""}</p>`
-      ).join("") : "<p>لا توجد بعد.</p>"}
-    </div>
-    ${recProject ? `<div class="report-section-card">
-      <h3>⑨ المشروع المرشح ومبرراته</h3>
-      <p><strong>${escapeHtml(recProject.title)}</strong></p>
-      ${recProject.recommendation_reason ? `<p>${escapeHtml(recProject.recommendation_reason)}</p>` : ""}
-    </div>` : ""}
-    <div class="report-section-card">
-      <h3>⑩ مؤشرات المحادثة</h3>
-      <ul>
-        <li>الحقائق المكتشفة: <strong class="num">${counters["حقائق"]}</strong></li>
-        <li>الأدلة: <strong class="num">${counters["أدلة"]}</strong></li>
-        <li>الفرص: <strong class="num">${counters["فرص"]}</strong></li>
-        <li>القرارات: <strong class="num">${counters["قرارات"]}</strong></li>
-        <li>الأصول المعرفية: <strong class="num">${counters["أصول"]}</strong></li>
-      </ul>
-    </div>`;
+    ${reportSection("② رأس المال المعرفي (مخرجات المرحلة الأولى)", byStage[1])}
+    ${reportSection("③ العميل الأكثر استفادة والمشكلة الأعلى قيمة (مخرجات المرحلة الثانية)", byStage[2])}
+    ${reportProjectsSection("④ خمسة مشاريع محتملة (بعناصر التقييم الأربعة عشر)", projects)}
+    ${reportRecommendedSection("⑤ المشروع المرشح النهائي ومبرراته", recProject)}
+    ${reportSection("⑥ نموذج الإيرادات والمنتجات والخدمات (مخرجات المرحلة الرابعة)", byStage[4])}
+    ${reportSection("⑦ نظام التشغيل الأولي (مخرجات المرحلة الخامسة)", byStage[5])}
+    ${reportKASection("⑧ الأصول المعرفية المستخرجة (مجمّعة حسب الفئة)", kaByCat)}
+    ${reportSection("⑨ خطة أول 30 يومًا (مخرجات المرحلة السابعة)", byStage[7])}
+    ${reportSection("⑩ الأسئلة التي ما زالت بلا دليل (افتراضات غير مؤكدة)", byType["افتراض"])}
+  `;
 }
 
-function sectionFromFacts(title, items) {
-  if (!items.length) return `<div class="report-section-card"><h3>${title}</h3><p>لا يوجد بعد.</p></div>`;
+function reportSection(title, items) {
+  if (!items || !items.length) {
+    return `<div class="report-section-card missing"><h3>${title}</h3><p>${MISSING_TXT}</p></div>`;
+  }
   return `<div class="report-section-card">
     <h3>${title}</h3>
-    <ul>${items.map(f => `<li>${escapeHtml(f.content)}${f.confidence_level ? " ("+f.confidence_level+")" : ""}</li>`).join("")}</ul>
+    <ul>${items.map(f => `<li>${escapeHtml(f.content)}${f.confidence_level ? " — "+f.confidence_level : ""}</li>`).join("")}</ul>
+  </div>`;
+}
+
+function reportProjectsSection(title, projects) {
+  if (!projects || !projects.length) {
+    return `<div class="report-section-card missing"><h3>${title}</h3><p>${MISSING_TXT}</p></div>`;
+  }
+  return `<div class="report-section-card">
+    <h3>${title}</h3>
+    ${projects.map(p => {
+      const scores = (() => { try { return JSON.parse(p.scores || "{}"); } catch { return {}; } })();
+      const entries = Object.entries(scores);
+      return `<div style="margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #EEF0F4">
+        <p>${p.is_recommended?"⭐ ":""}<strong>${escapeHtml(p.title)}</strong>${p.description?" — "+escapeHtml(p.description):""}</p>
+        ${entries.length ? `<div class="report-proj-scores">${entries.map(([k,v])=>`<div><span>${escapeHtml(k)}</span><span class="num">${v}/10</span></div>`).join("")}</div>` : ""}
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function reportRecommendedSection(title, recProject) {
+  if (!recProject) {
+    return `<div class="report-section-card missing"><h3>${title}</h3><p>${MISSING_TXT}</p></div>`;
+  }
+  return `<div class="report-section-card">
+    <h3>${title}</h3>
+    <p><strong>${escapeHtml(recProject.title)}</strong></p>
+    ${recProject.recommendation_reason ? `<p>${escapeHtml(recProject.recommendation_reason)}</p>` : ""}
+  </div>`;
+}
+
+function reportKASection(title, kaByCat) {
+  const cats = Object.keys(kaByCat || {});
+  if (!cats.length) {
+    return `<div class="report-section-card missing"><h3>${title}</h3><p>${MISSING_TXT}</p></div>`;
+  }
+  return `<div class="report-section-card">
+    <h3>${title}</h3>
+    ${cats.map(cat => `<div class="report-ka-cat">
+      <h4>${escapeHtml(cat)} <span class="num">(${kaByCat[cat].length})</span></h4>
+      <ul>${kaByCat[cat].map(a => `<li>${escapeHtml(a.content)}</li>`).join("")}</ul>
+    </div>`).join("")}
   </div>`;
 }
 
@@ -1101,35 +1153,52 @@ async function downloadReport() {
   const res  = await fetch(`/api/e/${SLUG}/report`);
   const json = await res.json();
   if (!json.success) return;
-  const { expert, stage, facts, knowledge_assets, projects, counters, readiness } = json;
-
-  const byType = {};
-  facts.forEach(f => byType[f.fact_type] = (byType[f.fact_type]||[]).concat(f));
+  const m = reportModel(json);
+  const { expert, stage, byStage, byType, projects, recProject, kaByCat, counters, readiness } = m;
   const done = readiness.filter(r => r.done).length;
-  const recProj = projects.find(p => p.is_recommended);
+
+  const mdSection = (title, items) => {
+    let s = `\n## ${title}\n`;
+    if (!items || !items.length) return s + `${MISSING_TXT}\n`;
+    items.forEach(f => { s += `- ${f.content}${f.confidence_level?" — "+f.confidence_level:""}\n`; });
+    return s;
+  };
 
   let md = `# خريطة مشروعك — ${expert.name}\n\n`;
   md += `> تاريخ التصدير: ${new Date().toLocaleDateString("ar")}\n\n`;
-  md += `## هوية الخبير\n- الاسم: ${expert.name}\n- المجال: ${expert.domain_expertise}\n`;
+  md += `## ① هوية الخبير\n- الاسم: ${expert.name}\n- المجال: ${expert.domain_expertise}\n`;
   if (expert.email) md += `- البريد: ${expert.email}\n`;
-  md += `\n## جاهزية بناء النظام\n${done} من 7 عناصر مكتملة\n`;
-  readiness.forEach(r => { md += `- [${r.done?"x":" "}] ${r.label}\n`; });
-  md += `\n## الحقائق المكتشفة (${counters["حقائق"]})\n`;
-  (byType["حقيقة"]||[]).forEach(f => { md += `- ${f.content}${f.confidence_level?" ["+f.confidence_level+"]":""}\n`; });
-  md += `\n## الأدلة (${counters["أدلة"]})\n`;
-  (byType["دليل"]||[]).forEach(f => { md += `- ${f.content}\n`; });
-  md += `\n## الفرص (${counters["فرص"]})\n`;
-  (byType["فرصة"]||[]).forEach(f => { md += `- ${f.content}\n`; });
-  md += `\n## القرارات المعتمدة (${counters["قرارات"]})\n`;
-  (byType["قرار"]||[]).forEach(f => { md += `- ${f.content}\n`; });
-  md += `\n## الأصول المعرفية (${counters["أصول"]})\n`;
-  knowledge_assets.forEach(a => { md += `### ${a.asset_category}\n${a.content}\n\n`; });
-  md += `\n## المشاريع المقترحة\n`;
-  projects.forEach(p => {
-    md += `### ${p.is_recommended?"⭐ ":""}${p.title}\n${p.description||""}\n`;
-    if (p.recommendation_reason) md += `> ${p.recommendation_reason}\n`;
-    md += "\n";
+  md += `- مرحلة الاستكشاف الحالية: ${stage} من 7\n- جاهزية بناء النظام: ${done} من 7 عناصر\n`;
+
+  md += mdSection("② رأس المال المعرفي (مخرجات المرحلة الأولى)", byStage[1]);
+  md += mdSection("③ العميل الأكثر استفادة والمشكلة الأعلى قيمة (مخرجات المرحلة الثانية)", byStage[2]);
+
+  md += `\n## ④ خمسة مشاريع محتملة (بعناصر التقييم الأربعة عشر)\n`;
+  if (!projects.length) { md += `${MISSING_TXT}\n`; }
+  else projects.forEach(p => {
+    const scores = (() => { try { return JSON.parse(p.scores || "{}"); } catch { return {}; } })();
+    md += `\n### ${p.is_recommended?"⭐ ":""}${p.title}\n${p.description||""}\n`;
+    Object.entries(scores).forEach(([k,v]) => { md += `- ${k}: ${v}/10\n`; });
   });
+
+  md += `\n## ⑤ المشروع المرشح النهائي ومبرراته\n`;
+  md += recProject ? `${recProject.title}\n${recProject.recommendation_reason||""}\n` : `${MISSING_TXT}\n`;
+
+  md += mdSection("⑥ نموذج الإيرادات والمنتجات والخدمات (مخرجات المرحلة الرابعة)", byStage[4]);
+  md += mdSection("⑦ نظام التشغيل الأولي (مخرجات المرحلة الخامسة)", byStage[5]);
+
+  md += `\n## ⑧ الأصول المعرفية المستخرجة (مجمّعة حسب الفئة)\n`;
+  const cats = Object.keys(kaByCat);
+  if (!cats.length) { md += `${MISSING_TXT}\n`; }
+  else cats.forEach(cat => {
+    md += `\n### ${cat} (${kaByCat[cat].length})\n`;
+    kaByCat[cat].forEach(a => { md += `- ${a.content}\n`; });
+  });
+
+  md += mdSection("⑨ خطة أول 30 يومًا (مخرجات المرحلة السابعة)", byStage[7]);
+  md += mdSection("⑩ الأسئلة التي ما زالت بلا دليل (افتراضات غير مؤكدة)", byType["افتراض"]);
+
+  md += `\n## عدّادات حقيقية\n- الحقائق: ${counters["حقائق"]}\n- الأدلة: ${counters["أدلة"]}\n- الأصول المعرفية: ${counters["أصول"]}\n`;
 
   const blob = new Blob([md], {type:"text/markdown;charset=utf-8"});
   const a = document.createElement("a");

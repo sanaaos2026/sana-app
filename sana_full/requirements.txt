@@ -1,0 +1,12 @@
+# requirements.txt — لخدمات الاستضافة التي لا تفهم pyproject.toml/uv مباشرة
+# (Railway/Nixpacks, Render, Heroku-style buildpacks, إلخ).
+# مصدر الحقيقة الأساسي على Replit يبقى pyproject.toml + uv.lock — هذا الملف
+# مرآة منه لبيئات الإنتاج خارج Replit. حدّثه يدويًا كلما أضفت مكتبة جديدة
+# إلى pyproject.toml.
+Flask>=3.1.3
+Flask-WTF>=1.3.0
+psycopg2-binary>=2.9.12
+anthropic>=0.116.0
+resend>=2.34.0
+weasyprint>=69.0
+gunicorn>=23.0.0

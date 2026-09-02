@@ -77,6 +77,8 @@ def ask_sana_ai(system_prompt, user_prompt):
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# اتصال PostgreSQL واحد وواضح في كل بيئة. في Railway يشير إلى Supabase
+# Pooler، وفي Replit يشير إلى قاعدة التطوير فقط.
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 # Resend — إرسال البريد الإلكتروني
@@ -119,7 +121,21 @@ class _SanaJSONProvider(DefaultJSONProvider):
 app = Flask(__name__)
 app.json_provider_class = _SanaJSONProvider
 app.json = _SanaJSONProvider(app)
+IS_RAILWAY = bool(
+    os.environ.get("RAILWAY_PROJECT_ID")
+    or os.environ.get("RAILWAY_SERVICE_ID")
+    or os.environ.get("RAILWAY_ENVIRONMENT_ID")
+)
+IS_PRODUCTION = (
+    IS_RAILWAY
+    or os.environ.get("SANA_ENV", "").strip().lower() == "production"
+)
 _session_secret = os.environ.get("SESSION_SECRET")
+if IS_PRODUCTION and (not _session_secret or len(_session_secret) < 32):
+    raise RuntimeError(
+        "SESSION_SECRET must be a non-empty value of at least 32 characters "
+        "in production"
+    )
 if not _session_secret:
     print(
         "WARNING: SESSION_SECRET not set, using ephemeral key"
@@ -154,7 +170,7 @@ ADMIN_PREVIEW_KEY = os.environ.get("ADMIN_PREVIEW_KEY")
 PUBLIC_ENDPOINTS = {
     "entry", "login", "signup", "logout", "api_session",
     "methodology_page", "methodology_detail",
-    "system_health", "static", "guide_page",
+    "system_health", "healthz", "static", "guide_page",
     "sectors_list",   # قائمة القطاعات — عامة بلا مصادقة
     "articles_list", "article_page", "api_articles_list",  # مقالات — عامة بلا مصادقة
     "sales_pipeline_page",  # B6: صفحة خط المبيعات — تتطلب جلسة، لكن تُعرض دون redirect loop
@@ -2644,6 +2660,21 @@ def system_health():
     return jsonify({"success": True, "data": checks})
 
 
+@app.route("/healthz")
+def healthz():
+    """فحص جاهزية بلا أسرار للموازن والمراقبة الخارجية."""
+    try:
+        db = get_db()
+        db.execute("SELECT 1").fetchone()
+    except Exception:
+        response = jsonify({"status": "unavailable", "database": "unavailable"})
+        response.status_code = 503
+    else:
+        response = jsonify({"status": "ok", "database": "ok"})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 # ------------------------------------------------------------------
 # API — Tasks (إنجاز المهمة = ترفع الأصل المرتبط بالقرار تلقائيًا)
 # ------------------------------------------------------------------
@@ -3573,6 +3604,14 @@ EXPERT_SYSTEM_PROMPT = """\
 
 2. فقط في الرد الذي تلخّص فيه مرحلة كاملة وتطلب اعتماد المستخدم صراحةً قبل الانتقال، أضف سطرًا برقم المرحلة المكتملة (وإلا لا تُخرج هذا السطر إطلاقًا):
 <!-- STAGE_CHECKPOINT: N -->
+
+3. فقط في الرد الذي تعرض فيه المشاريع الخمسة المقترحة كاملة ببطاقة تقييمها (نهاية المرحلة الثالثة) — مرة واحدة فقط، لا تكرره في أي رد لاحق:
+<!-- PROJECTS_JSON: [{"title": "اسم المشروع", "description": "وصف مختصر للمشروع", "scores": {"ملاءمته للخبير": 0, "وضوح المشكلة": 0, "توفر الطلب": 0, "سرعة الوصول للإيراد": 0, "سهولة البدء": 0, "تكلفة التأسيس": 0, "هامش الربح": 0, "قوة التميز": 0, "قابلية التكرار": 0, "قابلية التوسع": 0, "قابلية الأتمتة": 0, "سهولة إثبات النتيجة": 0, "المخاطر": 0, "اعتماد المشروع على الخبير شخصيًا": 0}, "is_recommended": false, "recommendation_reason": ""}] -->
+ضع أرقامًا فعلية من 0 إلى 10 لكل معيار من المعايير الأربعة عشر بأسمائها بالضبط كما وردت. يجب أن تحتوي المصفوفة خمسة عناصر بالضبط، وعنصر واحد فقط منها "is_recommended": true مع "recommendation_reason" مملوء بمبرر الترشيح الفعلي؛ اترك "recommendation_reason" فارغًا "" للأربعة الأخرى.
+
+4. أصول معرفية هذا الرد فقط (خلال المرحلة السادسة تحديدًا)، بلا تكرار لما استُخرج في ردود سابقة. إن لم يظهر أصل جديد أخرج مصفوفة فارغة:
+<!-- KNOWLEDGE_ASSETS_JSON: [{"category": "مبدأ|قاعدة|طريقة تشخيص|معيار تقييم|شجرة قرار|نموذج|قائمة|سؤال|خطأ شائع|إشارة مبكرة|استثناء|مصطلح|قصة|دراسة حالة|اختصار|خطوة تنفيذ", "content": "نص الأصل المعرفي بوضوح وتحديد", "transformable_to": ["خدمة", "منتج رقمي"]}] -->
+اختر "category" من القائمة أعلاه فقط، و"transformable_to" مصفوفة نصوص من: خدمة، منتج رقمي، أداة، وكيل ذكاء اصطناعي، محتوى، دورة، دليل، نموذج جاهز، SOP، نظام تقييم، أصل قابل للترخيص أو الاشتراك.
 """
 
 # ── Rate limiting (ذاكرة: slug+IP → {count, locked_until}) ──────────
@@ -3762,6 +3801,91 @@ def expert_status(slug):
 
 
 @csrf.exempt
+def _exp_extract_facts_json(raw: str, db, expert_id: str, sid: str, stage: int) -> list:
+    """يستخرج كتلة FACTS_JSON المخفية من رد Claude ويحفظها في expert_facts. يُرجع قائمة العناصر المُستخرجة."""
+    import re as _re
+    extracted_facts = []
+    facts_match = _re.search(r"<!--\s*FACTS_JSON:\s*(\[.*?\])\s*-->", raw, _re.DOTALL)
+    if facts_match:
+        try:
+            items = json.loads(facts_match.group(1))
+            for item in items:
+                ftype = item.get("type", "حقيقة")
+                conf  = item.get("confidence") if ftype in ("حقيقة", "قرار") else None
+                fid   = "FACT-" + uuid.uuid4().hex[:10].upper()
+                db.execute("""
+                    INSERT INTO expert_facts
+                        (fact_id, expert_id, session_id, fact_type, content, confidence_level, related_stage)
+                    VALUES (?,?,?,?,?,?,?)
+                """, (fid, expert_id, sid,
+                      ftype, item.get("content", ""), conf, stage))
+                extracted_facts.append({"type": ftype, "content": item.get("content", "")})
+        except Exception:
+            pass
+    return extracted_facts
+
+
+def _exp_extract_projects_json(raw: str, db, expert_id: str) -> list:
+    """يستخرج كتلة PROJECTS_JSON المخفية (نهاية المرحلة الثالثة، مرة واحدة فقط) ويحفظها في expert_projects.
+    محمية بحارس idempotency: لا تُدرج مشاريع جديدة إذا كانت موجودة أصلاً لهذا الخبير. يُرجع قائمة العناصر المُستخرجة."""
+    import re as _re
+    extracted_projects = []
+    proj_match = _re.search(r"<!--\s*PROJECTS_JSON:\s*(\[.*?\])\s*-->", raw, _re.DOTALL)
+    if proj_match:
+        try:
+            already = db.execute(
+                "SELECT COUNT(*) FROM expert_projects WHERE expert_id=?", (expert_id,)
+            ).fetchone()[0]
+            if already == 0:
+                items = json.loads(proj_match.group(1))
+                for item in items:
+                    pid = "PROJ-" + uuid.uuid4().hex[:10].upper()
+                    db.execute("""
+                        INSERT INTO expert_projects
+                            (project_id, expert_id, title, description, scores, is_recommended, recommendation_reason)
+                        VALUES (?,?,?,?,?,?,?)
+                    """, (pid, expert_id, item.get("title", ""), item.get("description", ""),
+                          json.dumps(item.get("scores", {}), ensure_ascii=False),
+                          1 if item.get("is_recommended") else 0,
+                          item.get("recommendation_reason") or None))
+                    extracted_projects.append({"title": item.get("title", ""),
+                                                "is_recommended": bool(item.get("is_recommended"))})
+        except Exception:
+            pass
+    return extracted_projects
+
+
+def _exp_extract_ka_json(raw: str, db, expert_id: str) -> list:
+    """يستخرج كتلة KNOWLEDGE_ASSETS_JSON المخفية (تراكمية، المرحلة السادسة) ويحفظها في expert_knowledge_assets.
+    محمية بحارس تكرار على مستوى المحتوى (لا يُدرج نفس الأصل مرتين لنفس الخبير). يُرجع قائمة العناصر المُستخرجة."""
+    import re as _re
+    extracted_ka = []
+    ka_match = _re.search(r"<!--\s*KNOWLEDGE_ASSETS_JSON:\s*(\[.*?\])\s*-->", raw, _re.DOTALL)
+    if ka_match:
+        try:
+            items = json.loads(ka_match.group(1))
+            for item in items:
+                content = item.get("content", "")
+                if not content:
+                    continue
+                dup = db.execute(
+                    "SELECT COUNT(*) FROM expert_knowledge_assets WHERE expert_id=? AND content=?",
+                    (expert_id, content)
+                ).fetchone()[0]
+                if dup:
+                    continue
+                aid = "KA-" + uuid.uuid4().hex[:10].upper()
+                db.execute("""
+                    INSERT INTO expert_knowledge_assets (asset_id, expert_id, asset_category, content, transformable_to)
+                    VALUES (?,?,?,?,?)
+                """, (aid, expert_id, item.get("category", ""), content,
+                      json.dumps(item.get("transformable_to", []), ensure_ascii=False)))
+                extracted_ka.append({"category": item.get("category", ""), "content": content})
+        except Exception:
+            pass
+    return extracted_ka
+
+
 @app.route("/api/e/<slug>/chat", methods=["POST"])
 def expert_chat(slug):
     if not _exp_verified(slug):
@@ -3796,7 +3920,7 @@ def expert_chat(slug):
         client = _anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         resp   = client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=2000,
+            max_tokens=8192,
             system=EXPERT_SYSTEM_PROMPT,
             messages=history,
         )
@@ -3804,31 +3928,13 @@ def expert_chat(slug):
     except Exception as e:
         return jsonify({"success": False, "error": f"خطأ في الاتصال بـClaude: {str(e)}"}), 500
 
-    # ── استخراج الحقائق من ردّ Claude ───────────────────────────
+    # ── استخراج الكتل المخفية من ردّ Claude ─────────────────────
     import re as _re
-    extracted_facts = []
+    extracted_facts    = _exp_extract_facts_json(raw, db, expert_id, sid, stage)
+    extracted_projects = _exp_extract_projects_json(raw, db, expert_id)
+    extracted_ka       = _exp_extract_ka_json(raw, db, expert_id)
+
     checkpoint_stage = None
-
-    # بحث عن كتلة FACTS_JSON مخفية
-    facts_match = _re.search(r"<!--\s*FACTS_JSON:\s*(\[.*?\])\s*-->", raw, _re.DOTALL)
-    if facts_match:
-        try:
-            items = json.loads(facts_match.group(1))
-            for item in items:
-                ftype = item.get("type", "حقيقة")
-                conf  = item.get("confidence") if ftype in ("حقيقة", "قرار") else None
-                fid   = "FACT-" + uuid.uuid4().hex[:10].upper()
-                db.execute("""
-                    INSERT INTO expert_facts
-                        (fact_id, expert_id, session_id, fact_type, content, confidence_level, related_stage)
-                    VALUES (?,?,?,?,?,?,?)
-                """, (fid, expert_id, sid,
-                      ftype, item.get("content", ""), conf, stage))
-                extracted_facts.append({"type": ftype, "content": item.get("content", "")})
-        except Exception:
-            pass
-
-    # بحث عن إشارة إكمال مرحلة
     cp_match = _re.search(r"<!--\s*STAGE_CHECKPOINT:\s*(\d+)\s*-->", raw)
     if cp_match:
         checkpoint_stage = int(cp_match.group(1))
@@ -3853,6 +3959,8 @@ def expert_chat(slug):
         "stage":          stage,
         "checkpoint":     checkpoint_stage,
         "extracted":      extracted_facts,
+        "extracted_projects": extracted_projects,
+        "extracted_knowledge_assets": extracted_ka,
         "counters":       _exp_counters(db, expert_id),
     })
 
@@ -4090,10 +4198,50 @@ def get_expert(expert_id):
     return jsonify({"success": True, "expert": data})
 
 
+# تهيئة بيئة التطوير فقط. Railway لا يستدعي هذه الدالة تلقائيًا ولا ينفذ
+# أي DDL/seed عند النشر؛ Supabase الحالية هي قاعدة السجل الموجودة مسبقًا.
+_STARTUP_LOCK_KEY = 727310001  # رقم تعسفي ثابت خاص بإقلاع تطبيق سنع فقط
+
+
+def _run_startup_migrations():
+    lock_conn = psycopg2.connect(DATABASE_URL)
+    lock_conn.autocommit = True
+    try:
+        with lock_conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_lock(%s)", (_STARTUP_LOCK_KEY,))
+        try:
+            init_db()
+            seed_db()
+            seed_decision_impacts()
+        finally:
+            with lock_conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (_STARTUP_LOCK_KEY,))
+    finally:
+        lock_conn.close()
+
+
+def _enforce_web_process_invariants():
+    """يمنع تشغيل أي scheduler معروف داخل Railway Web process."""
+    if not IS_PRODUCTION:
+        return
+    scheduler_flags = {
+        "ENABLE_EXECUTION_REMINDER_SCHEDULER",
+        "ENABLE_KNOWLEDGE_BACKUP_SCHEDULER",
+        "ENABLE_KNOWLEDGE_RESEARCH_SCHEDULER",
+    }
+    # الغياب يعني 0: عدم ضبط المتغير لا يفتح scheduler بالخطأ.
+    enabled = [name for name in scheduler_flags if os.environ.get(name, "0") == "1"]
+    if enabled:
+        raise RuntimeError(
+            "Schedulers cannot run in the production web process: "
+            + ", ".join(enabled)
+        )
+
+
+_enforce_web_process_invariants()
+
 if __name__ == "__main__":
-    fresh = init_db()
-    seed_db()
-    seed_decision_impacts()
+    _run_startup_migrations()
     print("=" * 60)
     print("سنع — الخادم يعمل الآن")
     print("افتح المتصفح على: http://localhost:5000")
