@@ -478,6 +478,8 @@ def p0_template_context():
         params = {"admin_key": request.args["admin_key"]}
         if request.args.get("company_id"):
             params["company_id"] = request.args["company_id"]
+        if request.args.get("view") == "client":
+            params["view"] = "client"
         return {
             "company_id": default_company_id(),
             "context_query": "?" + urlencode(params),

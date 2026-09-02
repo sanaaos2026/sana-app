@@ -133,6 +133,7 @@
   .appendix-label{ font-family:'IBM Plex Mono'; direction:ltr; color:var(--muted); font-size:10px; letter-spacing:.5px; margin-bottom:14px; }
   .report-meta{ display:flex; flex-wrap:wrap; gap:8px 18px; color:var(--muted); font-size:11px; margin-top:12px; }
   .report-meta b{ color:var(--ink); font-weight:600; }
+  .surface-label{ font-family:'IBM Plex Mono'; direction:ltr; color:var(--teal); font-size:10px; letter-spacing:.7px; margin-bottom:8px; }
 
   @media print{
     body{ background:#fff; }
@@ -145,7 +146,7 @@
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap" data-testid="executive-report">
 
   <header>
     <div class="head-top">
@@ -164,7 +165,7 @@
       {% if scan.methodology_version %}<span><b>المنهجية:</b> {{ scan.methodology_version }}</span>{% endif %}
     </div>
     {% if scan_journey %}
-    <div class="journey-state {{ scan_journey.tone }}">
+    <div class="journey-state {{ scan_journey.tone }}" data-testid="report-journey-state">
       <div class="journey-state-title">{{ scan_journey.label }}</div>
       <div class="journey-state-copy">{{ scan_journey.message }} الإجراء التالي: {{ scan_journey.action_label }}.</div>
     </div>
@@ -172,10 +173,13 @@
   </header>
 
   <!-- الملخص التنفيذي -->
-  <section>
+  <section data-testid="executive-report-summary">
     <div class="sec-head">
       <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M8 8 H40 V40 H8 Z" stroke="#0B132B" stroke-width="3"/><path d="M15 17 H33 M15 24 H33 M15 31 H26" stroke="#F2B233" stroke-width="3" stroke-linecap="round"/></svg>
-      <div class="sec-title">الملخص التنفيذي</div>
+      <div>
+        <div class="surface-label">EXECUTIVE REPORT · SANA SCAN</div>
+        <div class="sec-title">الملخص التنفيذي</div>
+      </div>
       <div class="sec-note">ما يحتاج المدير معرفته أولًا</div>
     </div>
     <div class="executive-lede">{{ scan_executive_answer }}</div>

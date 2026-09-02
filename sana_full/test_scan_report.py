@@ -6,6 +6,12 @@ from datetime import date
 import app as sana_app
 from sana_scan import run_scan
 import weasyprint
+import os
+import socket
+import subprocess
+import sys
+import time
+from urllib.request import urlopen
 
 
 class SanaScanReportAcceptanceTests(unittest.TestCase):
@@ -397,6 +403,310 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         self.assertFalse(initiatives[f"UNLINKED{suffix}"]["completeness"])
         self.assertEqual([], initiatives[f"NONFACT{suffix}"]["evidence"])
         self.assertFalse(initiatives[f"NONFACT{suffix}"]["completeness"])
+
+@unittest.skipUnless(
+    os.environ.get("RUN_SANA_SCAN_BROWSER_TESTS") == "1"
+    and (os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_PASSWORD")),
+    "يتطلب RUN_SANA_SCAN_BROWSER_TESTS=1 واتصال قاعدة البيانات",
+)
+class SanaScanJourneyBrowserTests(unittest.TestCase):
+    """تغطية متصفح معزولة للحالات الأربع وارتباط ملف الأصول بالتقرير."""
+
+    PREVIEW_KEY = "sana-scan-browser-preview-key-2026"
+    STATES = (
+        ("NOT_RUN", "لم يُشغّل بعد", "ابدأ تقييم الأصول", "/assessment"),
+        ("INCOMPLETE", "غير مكتمل — بوابة الأدلة مفتوحة", "أكمل الأدلة المطلوبة", "/case/"),
+        ("REVIEW_REQUIRED", "جاهز للمراجعة البشرية", "راجع التقرير التنفيذي", "/company/"),
+        ("COMPLETE", "مكتمل — التقرير جاهز", "افتح التقرير التنفيذي", "/company/"),
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = sana_app._connect_pg()
+        suffix = uuid.uuid4().hex[:10].upper()
+        cls.suffix = suffix
+        cls.fixtures = {}
+
+        for status, label, action, _ in cls.STATES:
+            company_id = f"SCAN-BROWSER-{status}-{suffix}"
+            case_id = f"CASE-SCAN-BROWSER-{status}-{suffix}"
+            cls.fixtures[status] = {
+                "company_id": company_id,
+                "case_id": case_id,
+                "label": label,
+                "action": action,
+            }
+            cls.db.execute(
+                """INSERT INTO companies
+                   (company_id,name,sector,main_goal)
+                   VALUES (?,?,?,?)""",
+                (
+                    company_id,
+                    f"شركة اختبار حالة {status}",
+                    "خدمات B2B",
+                    "اختبار رحلة Sana Scan",
+                ),
+            )
+            cls.db.execute(
+                """INSERT INTO cases
+                   (case_id,company_id,case_title,case_type,case_status,
+                    declared_problem,real_question)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (
+                    case_id,
+                    company_id,
+                    f"قضية حالة {status}",
+                    "تشخيص",
+                    "مفتوح",
+                    f"مشكلة اختبار {status}",
+                    f"سؤال اختبار {status}",
+                ),
+            )
+            for index, asset_type in enumerate(
+                ("Knowledge", "Operations", "Brand", "Data", "Independence")
+            ):
+                cls.db.execute(
+                    """INSERT INTO assets
+                       (asset_id,company_id,asset_type,asset_name,current_score,
+                        fragility_score,status)
+                       VALUES (?,?,?,?,?,?,?)""",
+                    (
+                        f"ASSET-SCAN-BROWSER-{status}-{index}-{suffix}",
+                        company_id,
+                        asset_type,
+                        asset_type,
+                        35 + index * 8,
+                        50,
+                        "تحت المراجعة",
+                    ),
+                )
+
+            if status != "NOT_RUN":
+                score_status = [
+                    {
+                        "asset_type": asset_type,
+                        "score": 60 + index * 5,
+                        "status": "COMPLETE",
+                    }
+                    for index, asset_type in enumerate(
+                        ("Knowledge", "Operations", "Brand", "Data", "Independence")
+                    )
+                ]
+                result = {
+                    "status": status,
+                    "case_id": case_id,
+                    "asset_scores": score_status if status != "INCOMPLETE" else [],
+                    "missing_evidence": (
+                        ["سجل اختبار ناقص"] if status == "INCOMPLETE" else []
+                    ),
+                    "findings": [],
+                }
+                cls.db.execute(
+                    """INSERT INTO scan_runs
+                       (scan_id,case_id,company_id,status,result,methodology_version)
+                       VALUES (?,?,?,?,?,?)""",
+                    (
+                        f"SCAN-RUN-BROWSER-{status}-{suffix}",
+                        case_id,
+                        company_id,
+                        status,
+                        json.dumps(result, ensure_ascii=False),
+                        "browser-test",
+                    ),
+                )
+        cls.db.commit()
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        cls.port = sock.getsockname()[1]
+        sock.close()
+        server_env = os.environ.copy()
+        server_env.update(
+            {
+                "PORT": str(cls.port),
+                "SANA_ENV": "production",
+                "REPLIT_DEPLOYMENT": "1",
+                "SESSION_SECRET": "sana-scan-browser-session-secret-2026",
+                "ADMIN_PREVIEW_KEY": cls.PREVIEW_KEY,
+            }
+        )
+        cls.server = subprocess.Popen(
+            [sys.executable, "app.py"],
+            cwd=os.path.dirname(__file__),
+            env=server_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        cls.base_url = f"http://127.0.0.1:{cls.port}"
+        try:
+            for _ in range(60):
+                if cls.server.poll() is not None:
+                    raise RuntimeError("خادم اختبار رحلة Scan توقف قبل الجاهزية")
+                try:
+                    with urlopen(f"{cls.base_url}/login", timeout=1) as response:
+                        if response.status == 200:
+                            break
+                except Exception:
+                    time.sleep(0.25)
+            else:
+                raise RuntimeError("انتهت مهلة تشغيل خادم اختبار رحلة Scan")
+        except Exception:
+            cls._stop_server()
+            cls._cleanup_fixtures()
+            raise
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._stop_server()
+        cls._cleanup_fixtures()
+        cls.db.close()
+
+    @classmethod
+    def _stop_server(cls):
+        if getattr(cls, "server", None) and cls.server.poll() is None:
+            cls.server.terminate()
+            try:
+                cls.server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                cls.server.kill()
+                cls.server.wait(timeout=5)
+
+    @classmethod
+    def _cleanup_fixtures(cls):
+        if not getattr(cls, "db", None):
+            return
+        company_ids = [item["company_id"] for item in cls.fixtures.values()]
+        placeholders = ",".join("?" for _ in company_ids)
+        try:
+            cls.db.rollback()
+            cls.db.execute(
+                f"DELETE FROM scan_findings WHERE company_id IN ({placeholders})",
+                company_ids,
+            )
+            cls.db.execute(
+                f"DELETE FROM scan_runs WHERE company_id IN ({placeholders})",
+                company_ids,
+            )
+            cls.db.execute(
+                f"DELETE FROM cases WHERE company_id IN ({placeholders})",
+                company_ids,
+            )
+            cls.db.execute(
+                f"DELETE FROM assets WHERE company_id IN ({placeholders})",
+                company_ids,
+            )
+            cls.db.execute(
+                f"DELETE FROM companies WHERE company_id IN ({placeholders})",
+                company_ids,
+            )
+            cls.db.commit()
+        except Exception:
+            cls.db.rollback()
+            raise
+
+    def _preview_url(self, path, company_id):
+        return (
+            f"{self.base_url}{path}?company_id={company_id}"
+            f"&view=client&admin_key={self.PREVIEW_KEY}"
+        )
+
+    def test_each_scan_state_is_clear_in_live_passport_and_executive_report(self):
+        from playwright.sync_api import sync_playwright
+
+        screenshot_dir = os.environ.get(
+            "SANA_SCAN_SCREENSHOT_DIR", "/tmp/sana-scan-browser"
+        )
+        os.makedirs(screenshot_dir, exist_ok=True)
+        with sync_playwright() as playwright:
+            for status, expected_label, expected_action, expected_path in self.STATES:
+                with self.subTest(status=status):
+                    browser = playwright.chromium.launch(headless=True)
+                    page = browser.new_page(viewport={"width": 1440, "height": 1100})
+                    fixture = self.fixtures[status]
+                    company_id = fixture["company_id"]
+                    page.goto(
+                        self._preview_url("/passport", company_id),
+                        wait_until="domcontentloaded",
+                    )
+                    live = page.locator("[data-testid='live-scan-journey']")
+                    live.wait_for(state="visible", timeout=30_000)
+                    self.assertEqual(status, live.get_attribute("data-scan-status"))
+                    self.assertIn(expected_label, live.inner_text())
+                    action_link = live.locator(".journey-action")
+                    self.assertIn(expected_action, action_link.inner_text())
+                    action_href = action_link.get_attribute("href")
+                    self.assertIn(f"company_id={company_id}", action_href)
+                    self.assertIn("view=client", action_href)
+                    self.assertIn("admin_key=", action_href)
+                    if status == "INCOMPLETE":
+                        self.assertIn(f"/case/{fixture['case_id']}", action_href)
+                    elif status in {"REVIEW_REQUIRED", "COMPLETE"}:
+                        self.assertIn(f"/company/{company_id}/scan-report", action_href)
+                    else:
+                        self.assertTrue(action_href.startswith("/assessment"))
+                    live_summary = page.locator("[data-testid='live-passport-summary']")
+                    self.assertIn("الملخص الحي", live_summary.inner_text())
+                    self.assertIn("التقرير التنفيذي", live_summary.inner_text())
+                    page.screenshot(
+                        path=os.path.join(
+                            screenshot_dir, f"{status.lower()}-passport.png"
+                        ),
+                        full_page=True,
+                    )
+
+                    page.goto(
+                        self._preview_url(
+                            f"/company/{company_id}/scan-report", company_id
+                        ),
+                        wait_until="domcontentloaded",
+                    )
+                    report = page.locator("[data-testid='executive-report']")
+                    report.wait_for(state="visible", timeout=30_000)
+                    self.assertEqual(
+                        1,
+                        page.locator(
+                            "[data-testid='executive-report-summary']"
+                        ).count(),
+                    )
+                    journey = report.locator(
+                        "[data-testid='report-journey-state']"
+                    )
+                    self.assertIn(expected_label, journey.inner_text())
+                    self.assertIn(expected_action, journey.inner_text())
+                    self.assertIn("EXECUTIVE REPORT", report.inner_text())
+                    self.assertNotIn("LIVE PASSPORT", report.inner_text())
+                    page.screenshot(
+                        path=os.path.join(
+                            screenshot_dir, f"{status.lower()}-report.png"
+                        ),
+                        full_page=True,
+                    )
+                    page.close()
+                    browser.close()
+
+    def test_assessment_returns_to_the_same_preview_passport_context(self):
+        from playwright.sync_api import sync_playwright
+
+        company_id = self.fixtures["NOT_RUN"]["company_id"]
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1440, "height": 1100})
+            page.goto(
+                self._preview_url("/assessment", company_id),
+                wait_until="domcontentloaded",
+            )
+            return_link = page.locator("[data-testid='passport-after-assessment']")
+            return_link.wait_for(state="visible", timeout=10_000)
+            href = return_link.get_attribute("href")
+            self.assertTrue(href.startswith("/passport?"))
+            self.assertIn(f"company_id={company_id}", href)
+            self.assertIn("view=client", href)
+            self.assertIn("admin_key=", href)
+            return_link.click()
+            page.wait_for_url("**/passport?**", timeout=10_000)
+            self.assertIn(f"company_id={company_id}", page.url)
+            self.assertIn("view=client", page.url)
+            browser.close()
 
 
 if __name__ == "__main__":

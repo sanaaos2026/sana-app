@@ -136,16 +136,17 @@ function render(d, meta, sds){
     </div>
 
     <main>
-      <section class="journey-card ${journey.tone}">
+      <section class="journey-card ${journey.tone}" data-testid="live-scan-journey" data-scan-status="${journey.status}">
         <div class="journey-kicker">SANA JOURNEY · ${journey.status}</div>
         <div class="journey-title">${journey.label}</div>
         <div class="journey-message">${journey.message}</div>
         <a class="journey-action" href="${journey.action_url}${CQS}">${journey.action_label} ←</a>
       </section>
 
-      <section>
-        <h2>الأصول ودرجة اكتمال الدليل</h2>
-        <p style="font-size:12px;color:#6E7580;margin:-6px 0 12px;line-height:1.7;">هذه الطبقة الحية تُظهر ما نعرفه الآن. أما التقرير التنفيذي فيحفظ نتيجة Scan ومصادرها للمراجعة.</p>
+      <section data-testid="live-passport-summary">
+        <div class="journey-kicker">LIVE PASSPORT · ملف الأصول</div>
+        <h2>الملخص الحي ودرجة اكتمال الدليل</h2>
+        <p style="font-size:12px;color:#6E7580;margin:-6px 0 12px;line-height:1.7;">هذه الصفحة تتحدث مع ملف الشركة الحالي. التقرير التنفيذي صفحة مستقلة تحفظ نتيجة Scan ومصادرها للمراجعة.</p>
   `;
   // أشرطة تقدم الأدلة: عدد الأدلة الفعلي / 5 كحد أقصى للعرض (SDS-002)
   const evPer = (sds && sds.evidence_per_asset) || {};
@@ -171,7 +172,8 @@ function render(d, meta, sds){
         <a href="/case/${d.weakest_asset_case_id}${CQS}" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح القضية المرتبطة به</a>
       </section>` : ''}
       <section style="text-align:center;">
-        <a href="${journey.report_url || `/company/${COMPANY_ID}/scan-report`}" style="display:inline-block;color:#0EA5A5;font-weight:600;font-size:13.5px;margin-bottom:14px;">افتح الملخص التنفيذي الحي والتقرير الكامل ←</a><br>
+        <div style="font-size:11.5px;color:#6E7580;margin-bottom:8px;">هل تحتاج إلى نتيجة قابلة للمراجعة؟ افتح التقرير التنفيذي المنفصل.</div>
+        <a data-testid="executive-report-link" href="${journey.report_url || `/company/${COMPANY_ID}/scan-report`}" style="display:inline-block;color:#0EA5A5;font-weight:600;font-size:13.5px;margin-bottom:14px;">افتح التقرير التنفيذي الكامل ←</a><br>
         <button class="btn" id="downloadReportBtn" onclick="downloadReport()"
           style="background:#0B132B; color:#fff; border:none; padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans Arabic';">
           ⬇ تحميل تقرير Sana Scan
