@@ -43,3 +43,5 @@ _Populate as you build — sharp edges, "always run X before Y" rules._
 ## Pointers
 
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- `sana_full/` is the Sana Flask product (sanaclarity.com) — a separate Python app, not part of the pnpm workspace's TS artifacts.
+- Sana's production hosting is migrating off Replit (Railway backend + Supabase Postgres + Cloudflare DNS) so the live site no longer depends on the dev environment's uptime/billing. See `sana_full/MIGRATION_AUDIT.md`, `sana_full/MIGRATION_PLAN.md`, and `sana_full/SECRETS_RUNBOOK.md` before changing deployment config or secrets.
