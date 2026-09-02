@@ -133,6 +133,8 @@ class P0ClosureAcceptanceTest(unittest.TestCase):
         decision = review.get_json()["data"]
         self.assertEqual("P0", decision["phase_label"])
         self.assertEqual(self.scan_id, decision["scan_id"])
+        self.assertEqual(self.company_id, decision["company_id"])
+        self.assertEqual(self.case_id, decision["case_id"])
         self.assertEqual(
             "COMPLETE",
             self.db.execute(
@@ -151,6 +153,15 @@ class P0ClosureAcceptanceTest(unittest.TestCase):
         )
         self.assertEqual(200, approval.status_code, approval.get_data(as_text=True))
         task_id = approval.get_json()["data"]["task_id"]
+        task = self.db.execute(
+            """SELECT t.company_id,d.case_id,t.decision_id
+               FROM tasks t JOIN decisions d ON d.decision_id=t.decision_id
+               WHERE t.task_id=?""",
+            (task_id,),
+        ).fetchone()
+        self.assertEqual(self.company_id, task["company_id"])
+        self.assertEqual(self.case_id, task["case_id"])
+        self.assertEqual(decision["decision_id"], task["decision_id"])
 
         result = self.client.post(
             f"/api/tasks/{task_id}/p0-result",
@@ -170,10 +181,15 @@ class P0ClosureAcceptanceTest(unittest.TestCase):
         self.assertEqual("منجزة", task["status"])
         self.assertIsNotNone(task["completed_at"])
         impact = self.db.execute(
-            """SELECT impact_outcome,result_source_ref FROM p0_impact_reviews
+            """SELECT company_id,case_id,decision_id,task_id,
+                      impact_outcome,result_source_ref FROM p0_impact_reviews
                WHERE task_id=?""",
             (task_id,),
         ).fetchone()
+        self.assertEqual(self.company_id, impact["company_id"])
+        self.assertEqual(self.case_id, impact["case_id"])
+        self.assertEqual(decision["decision_id"], impact["decision_id"])
+        self.assertEqual(task_id, impact["task_id"])
         self.assertEqual("IMPROVED", impact["impact_outcome"])
         self.assertEqual("TEST:P0:RESULT", impact["result_source_ref"])
 

@@ -1780,44 +1780,21 @@ def onboarding():
     return jsonify({"success": True, "data": {"redirect": "/discovery"}})
 
 
-@csrf.exempt   # يُستدعى خارجياً بـ admin_key عبر curl/scripts — لا browser session
 @app.route("/api/admin/attach-account", methods=["POST"])
 def admin_attach_account():
     """
-    إنشاء حساب دخول جديد مرتبط بشركة موجودة — محمي بـ admin_key.
-    Body JSON: { admin_key, email, password, company_id }
+    مسار توافق قديم متوقف.
+    يجب استخدام مساري الدعوة أو الربط الآمنين داخل Command Center.
     """
-    body = request.get_json(silent=True) or {}
-    if not body.get("admin_key") or body["admin_key"] != os.environ.get("ADMIN_PREVIEW_KEY", ""):
-        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
-
-    email    = (body.get("email") or "").strip().lower()
-    password = body.get("password") or ""
-    cid      = (body.get("company_id") or "").strip()
-
-    if not email or not password or not cid:
-        return jsonify({"success": False, "error": "MISSING_FIELDS"}), 400
-
-    db = get_db()
-
-    # الشركة يجب أن تكون موجودة مسبقًا
-    co = db.execute("SELECT company_id FROM companies WHERE company_id=%s", (cid,)).fetchone()
-    if not co:
-        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
-
-    # إذا الإيميل موجود، ارجع خطأ واضح
-    ex = db.execute("SELECT account_id FROM user_accounts WHERE email=%s", (email,)).fetchone()
-    if ex:
-        return jsonify({"success": False, "error": "EMAIL_TAKEN",
-                        "account_id": ex["account_id"]}), 409
-
-    account_id = "ACC" + uuid.uuid4().hex[:10].upper()
-    db.execute(
-        "INSERT INTO user_accounts (account_id, email, password_hash, company_id) VALUES (%s,%s,%s,%s)",
-        (account_id, email, generate_password_hash(password), cid)
-    )
-    db.commit()
-    return jsonify({"success": True, "data": {"account_id": account_id, "company_id": cid}})
+    return jsonify({
+        "success": False,
+        "error": "LEGACY_ROUTE_DISABLED",
+        "message": "استخدم مسار الدعوة أو الربط الآمن داخل Command Center.",
+        "replacement": {
+            "invite": "/api/admin/companies/<company_id>/invitations",
+            "link": "/api/admin/companies/<company_id>/accounts/link",
+        },
+    }), 410
 
 
 @app.route("/dev-preview-login")

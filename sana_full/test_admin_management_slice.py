@@ -1,6 +1,8 @@
 import json
+import re
 import secrets
 import unittest
+from unittest.mock import patch
 
 from werkzeug.security import generate_password_hash
 
@@ -184,6 +186,61 @@ class AdminManagementSliceTest(unittest.TestCase):
         self.assertNotIn("token", serialized)
         self.assertNotIn("password", serialized)
 
+        # The retired compatibility route must never accept the old secret path.
+        response = super_client.post("/api/admin/attach-account", json={
+            "admin_key": "legacy-key",
+            "email": "slice-legacy@example.test",
+            "password": "NeverAccepted123!",
+            "company_id": company_a["company_id"],
+        })
+        self.assertEqual(response.status_code, 410)
+        self.assertNotIn("NeverAccepted123!", response.get_data(as_text=True))
+
+        # One invitation is accepted through the real public activation path.
+        accepted_email = f"slice-accepted-{secrets.token_hex(4)}@example.test"
+        sent_html = []
+        with patch.object(
+            sana_app, "_admin_send_email",
+            side_effect=lambda _db, **kwargs: (
+                sent_html.append(kwargs["html_body"])
+                or {"notification_id": "test", "status": "queued"}
+            ),
+        ):
+            response = super_client.post(
+                f"/api/admin/companies/{company_a['company_id']}/invitations",
+                json={
+                    "email": accepted_email,
+                    "company_role": "COMPANY_MEMBER",
+                    "reason": "اختبار قبول الدعوة",
+                },
+            )
+        self.assertEqual(response.status_code, 201)
+        invite_token = re.search(r"token=([^'&]+)", sent_html[-1]).group(1)
+        response = super_client.post("/accept-invitation", json={
+            "token": invite_token,
+            "password": "AcceptedPassword123!",
+        })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertTrue(response.get_json()["success"])
+
+        # A second invitation covers cancellation without exposing its token.
+        cancel_email = f"slice-cancel-{secrets.token_hex(4)}@example.test"
+        response = super_client.post(
+            f"/api/admin/companies/{company_a['company_id']}/invitations",
+            json={
+                "email": cancel_email,
+                "company_role": "COMPANY_MEMBER",
+                "reason": "اختبار إلغاء الدعوة",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        cancel_invitation_id = response.get_json()["data"]["invitation_id"]
+        response = super_client.post(
+            f"/api/admin/companies/{company_a['company_id']}/invitations/"
+            f"{cancel_invitation_id}/cancel"
+        )
+        self.assertEqual(response.status_code, 200)
+
         # F — العضو لا يستطيع قراءة شركة أخرى.
         with sana_app.app.app_context():
             db = sana_app.get_db()
@@ -212,6 +269,13 @@ class AdminManagementSliceTest(unittest.TestCase):
         report = response.get_data(as_text=True)
         self.assertIn(company_a["company_id"], report)
         self.assertIn(company_a["company_code"], report)
+        response = super_client.get(
+            f"/api/admin/companies/{company_a['company_id']}/reports/export?format=pdf"
+        )
+        self.assertEqual(response.status_code, 200, response.get_data()[:500])
+        self.assertEqual(
+            response.headers["X-Sana-Company-Code"], company_a["company_code"]
+        )
 
         # H — العمليات الحساسة الأساسية موجودة في Audit.
         response = super_client.get("/api/admin/audit?limit=200")

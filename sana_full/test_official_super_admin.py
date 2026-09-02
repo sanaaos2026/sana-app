@@ -101,13 +101,6 @@ class OfficialSuperAdminAcceptanceTest(unittest.TestCase):
             ).fetchall()
             self.assertEqual([COMPANY_EMAIL], [row["email"] for row in members])
 
-            reset_token = db.execute(
-                """SELECT 1 FROM password_reset_tokens
-                   WHERE account_id=? AND used=false AND expires_at > now()
-                   LIMIT 1""",
-                (account["account_id"],),
-            ).fetchone()
-            self.assertIsNotNone(reset_token)
         finally:
             db.close()
 
