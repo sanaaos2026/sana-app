@@ -53,6 +53,12 @@ def ensure_schema(db):
              ) AS has_provenance_column,
              to_regclass('public.drive_source_excerpts') IS NOT NULL AS has_excerpt_table,
              to_regclass('public.drive_private_citations') IS NOT NULL AS has_citation_table,
+             to_regclass('public.drive_excerpt_reviews') IS NOT NULL AS has_excerpt_review_table,
+             EXISTS (
+               SELECT 1 FROM information_schema.columns
+               WHERE table_schema='public' AND table_name='drive_source_excerpts'
+                 AND column_name='published_text'
+             ) AS has_excerpt_review_columns,
              EXISTS (
                SELECT 1 FROM pg_constraint
                WHERE conname='drive_source_excerpts_case_id_fkey'
@@ -65,7 +71,8 @@ def ensure_schema(db):
     ).fetchone()
     if (
         ready and ready["has_provenance_column"] and ready["has_excerpt_table"]
-        and ready["has_citation_table"]
+        and ready["has_citation_table"] and ready["has_excerpt_review_table"]
+        and ready["has_excerpt_review_columns"]
         and ready["has_case_fk"]
         and ready["has_release_trigger"]
     ):
@@ -202,6 +209,43 @@ def ensure_schema(db):
             UNIQUE(drive_file_id,section_locator,content_hash)
         )"""
     )
+    excerpt_columns = {
+        row["column_name"] for row in db.execute(
+            """SELECT column_name FROM information_schema.columns
+               WHERE table_schema='public' AND table_name='drive_source_excerpts'"""
+        ).fetchall()
+    }
+    for column_name, definition in {
+        "review_reason": "TEXT",
+        "review_references": "TEXT NOT NULL DEFAULT '[]'",
+        "anonymized_text": "TEXT",
+        "anonymization_notes": "TEXT",
+        "published_text": "TEXT",
+        "reviewed_by": "TEXT",
+        "reviewed_at": "TIMESTAMPTZ",
+    }.items():
+        if column_name not in excerpt_columns:
+            db.execute(
+                f"ALTER TABLE drive_source_excerpts ADD COLUMN {column_name} {definition}"
+            )
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS drive_excerpt_reviews (
+            review_id TEXT PRIMARY KEY,
+            excerpt_id TEXT NOT NULL REFERENCES drive_source_excerpts(excerpt_id)
+                ON DELETE CASCADE,
+            decision TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            references_json TEXT NOT NULL DEFAULT '[]',
+            anonymization_notes TEXT,
+            reviewer TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CHECK (decision IN ('approved','rejected'))
+        )"""
+    )
+    db.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS uq_drive_excerpt_reviews_excerpt
+           ON drive_excerpt_reviews(excerpt_id)"""
+    )
     db.execute(
         """CREATE TABLE IF NOT EXISTS drive_private_citations (
             citation_id TEXT PRIMARY KEY,
@@ -321,6 +365,10 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_drive_files_parent ON drive_files(drive_parent_id, drive_state)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_drive_files_hash ON drive_files(md5_checksum, duplicate_of)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_drive_provenance_entity ON drive_provenance_links(entity_type, entity_id)")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_drive_excerpts_review "
+        "ON drive_source_excerpts(review_status, created_at)"
+    )
     # قواعد البيانات القديمة لا تحتوي هذا الرابط؛ العمود اختياري للحفاظ على التوافق.
     columns = {
         row["column_name"] for row in db.execute(
@@ -938,7 +986,15 @@ def extract_selected_drive_excerpt(
         "excerpt_chars": len(excerpt),
     }
 
-
+def _review_references(value):
+    if isinstance(value, (list, tuple)):
+        values = value
+    else:
+        values = re.split(r"[\n,;]+", str(value or ""))
+    references = [str(item).strip() for item in values if str(item).strip()]
+    if len(references) > 20 or any(len(item) > 500 for item in references):
+        return []
+    return references
 def link_drive_source(db, drive_file_id, source_id=None, source_type="drive_metadata",
                       section_locator=None, version_label=None, quality=None,
                       review_status="pending_review", object_id=None):
@@ -1071,16 +1127,32 @@ def provenance_for_object(db, object_id):
     ensure_schema(db)
     rows = db.execute(
         """SELECT dks.link_id,dks.source_id,dks.source_type,dks.version_label,
-                  dks.section_locator,dks.quality,dks.verified_at,
+                   p.section_locator,dks.quality,dks.verified_at,
                   df.drive_file_id,df.name,df.web_view_link,df.mime_type,
                   df.modified_time,df.confidentiality
-           FROM drive_knowledge_sources dks
-           JOIN drive_files df ON df.drive_file_id=dks.drive_file_id
-            JOIN knowledge_objects ko ON ko.provenance_link_id=dks.link_id
-           WHERE ko.object_id=?
-           ORDER BY dks.created_at""",
+            FROM drive_provenance_links p
+            JOIN drive_files df ON df.drive_file_id=p.drive_file_id
+            LEFT JOIN drive_knowledge_sources dks
+              ON dks.drive_file_id=p.drive_file_id
+             AND dks.section_locator IS NOT DISTINCT FROM p.section_locator
+             AND dks.review_status='approved'
+            WHERE p.entity_type='knowledge_object' AND p.entity_id=?
+            ORDER BY p.created_at""",
         (object_id,),
     ).fetchall()
+    if not rows:
+        rows = db.execute(
+            """SELECT dks.link_id,dks.source_id,dks.source_type,dks.version_label,
+                       dks.section_locator,dks.quality,dks.verified_at,
+                       df.drive_file_id,df.name,df.web_view_link,df.mime_type,
+                       df.modified_time,df.confidentiality
+                FROM drive_knowledge_sources dks
+                JOIN drive_files df ON df.drive_file_id=dks.drive_file_id
+                JOIN knowledge_objects ko ON ko.provenance_link_id=dks.link_id
+                WHERE ko.object_id=?
+                ORDER BY dks.created_at""",
+            (object_id,),
+        ).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -1190,5 +1262,205 @@ def coverage_report(db):
         "I_capability_gaps": {"status": "complete", "details": "recurring gaps are recorded"},
         "J_customer_coverage": {"status": "manual_required", "details": "map each client folder explicitly"},
         "K_backup_boundary": {"status": "manual_required", "details": "operational backup remains separate"},
-        "L_content_extraction_review": {"status": "manual_required", "details": "select sections and review before creating knowledge"},
+        "L_content_extraction_review": {
+            "status": "complete",
+            "details": "selected excerpts require an audited review; confidential text needs documented anonymization before atomic knowledge objects are created",
+        },
     }
+
+def review_drive_excerpt(
+    db, excerpt_id, *, decision, reason, references, reviewer,
+    objects=None, anonymized_text=None, anonymization_notes=None,
+    actor_company_id=None,
+):
+    """يراجع مقتطفًا مرة واحدة ويحوّل النص المعتمد إلى كائنات صغيرة."""
+    ensure_schema(db)
+    decision = str(decision or "").strip().lower()
+    reason = str(reason or "").strip()
+    references = _review_references(references)
+    if decision not in {"approved", "rejected"}:
+        return {"success": False, "error": "EXCERPT_REVIEW_DECISION_INVALID"}
+    if not reason:
+        return {"success": False, "error": "EXCERPT_REVIEW_REASON_REQUIRED"}
+    if not references:
+        return {"success": False, "error": "EXCERPT_REVIEW_REFERENCES_REQUIRED"}
+    if not reviewer:
+        return {"success": False, "error": "REVIEWER_REQUIRED"}
+    row = db.execute(
+        """SELECT dse.*,df.name,df.web_view_link,df.confidentiality,
+                  df.drive_state,df.is_folder
+           FROM drive_source_excerpts dse
+           JOIN drive_files df ON df.drive_file_id=dse.drive_file_id
+           WHERE dse.excerpt_id=?
+           FOR UPDATE OF dse""",
+        (excerpt_id,),
+    ).fetchone()
+    if not row:
+        return {"success": False, "error": "EXCERPT_NOT_FOUND"}
+    if row["review_status"] != "pending_review":
+        return {"success": False, "error": "EXCERPT_ALREADY_REVIEWED"}
+    if actor_company_id and row["company_id"] and actor_company_id != row["company_id"]:
+        return {"success": False, "error": "EXCERPT_COMPANY_MISMATCH"}
+    if row["drive_state"] != "active" or row["is_folder"]:
+        return {"success": False, "error": "DRIVE_FILE_NOT_READABLE"}
+
+    confidential = row["confidentiality"] in ("CLIENT_CONFIDENTIAL", "RESTRICTED")
+    anonymized_text = str(anonymized_text or "").strip()
+    anonymization_notes = str(anonymization_notes or "").strip()
+    if decision == "approved":
+        if confidential and (not anonymized_text or not anonymization_notes):
+            return {
+                "success": False,
+                "error": "ANONYMIZATION_DOCUMENTATION_REQUIRED",
+                "message": "المقتطف السري لا يُنشر إلا بنص منزوع الهوية وتوثيق طريقة الإخفاء.",
+            }
+        if confidential and anonymized_text == str(row["excerpt_text"]).strip():
+            return {
+                "success": False,
+                "error": "ANONYMIZED_TEXT_MUST_DIFFER",
+                "message": "النص منزوع الهوية يجب أن يختلف عن المقتطف السري الأصلي.",
+            }
+        if len(anonymized_text) > 12000 or len(anonymization_notes) > 3000:
+            return {"success": False, "error": "ANONYMIZATION_DOCUMENTATION_TOO_LARGE"}
+        published_text = anonymized_text if confidential else row["excerpt_text"]
+        if not published_text:
+            return {"success": False, "error": "PUBLISHED_TEXT_REQUIRED"}
+        from sana_knowledge import create_drive_knowledge_objects
+        try:
+            requested_objects = objects if isinstance(objects, list) else []
+            if not requested_objects or len(requested_objects) > 12:
+                return {"success": False, "error": "KNOWLEDGE_OBJECTS_REQUIRED"}
+        except TypeError:
+            return {"success": False, "error": "KNOWLEDGE_OBJECTS_REQUIRED"}
+
+        source_link = db.execute(
+            """SELECT link_id FROM drive_knowledge_sources
+               WHERE drive_file_id=? AND source_id IS NULL
+                 AND section_locator=?""",
+            (row["drive_file_id"], row["section_locator"]),
+        ).fetchone()
+        link_id = source_link["link_id"] if source_link else "DKS-" + uuid.uuid4().hex[:12].upper()
+        if not source_link:
+            db.execute(
+                """INSERT INTO drive_knowledge_sources
+                   (link_id,drive_file_id,source_id,source_type,version_label,
+                    section_locator,quality,verified_at,review_status)
+                   VALUES (?, ?, NULL, ?, ?, ?, ?, now(), 'approved')""",
+                (
+                    link_id, row["drive_file_id"], "drive_excerpt",
+                    "sha256-" + str(row["content_hash"])[:12],
+                    row["section_locator"], "reviewed",
+                ),
+            )
+        try:
+            created_objects = create_drive_knowledge_objects(
+                db, excerpt=dict(row), source=dict(row), objects=requested_objects,
+                published_text=published_text, provenance_link_id=link_id,
+            )
+        except ValueError as exc:
+            db.rollback()
+            return {"success": False, "error": str(exc)}
+        for created in created_objects:
+            db.execute(
+                """INSERT INTO drive_provenance_links
+                   (provenance_id,entity_type,entity_id,drive_file_id,source_id,
+                    section_locator,relationship)
+                   VALUES (?,'knowledge_object',?,?,NULL,?,'derived_from')""",
+                (
+                    "PROV-" + uuid.uuid4().hex[:12].upper(),
+                    created["object_id"], row["drive_file_id"],
+                    row["section_locator"],
+                ),
+            )
+    else:
+        published_text = None
+        created_objects = []
+
+    review_id = "DER-" + uuid.uuid4().hex[:12].upper()
+    db.execute(
+        """INSERT INTO drive_excerpt_reviews
+           (review_id,excerpt_id,decision,reason,references_json,
+            anonymization_notes,reviewer)
+           VALUES (?,?,?,?,?,?,?)""",
+        (
+            review_id, excerpt_id, decision, reason,
+            json.dumps(references, ensure_ascii=False),
+            anonymization_notes or None, reviewer,
+        ),
+    )
+    db.execute(
+        """UPDATE drive_source_excerpts
+           SET review_status=?,review_reason=?,review_references=?,
+               anonymized_text=?,anonymization_notes=?,published_text=?,
+               reviewed_by=?,reviewed_at=now()
+           WHERE excerpt_id=?""",
+        (
+            decision, reason, json.dumps(references, ensure_ascii=False),
+            anonymized_text or None, anonymization_notes or None,
+            published_text, reviewer, excerpt_id,
+        ),
+    )
+    citation = db.execute(
+        """SELECT research_source_id FROM drive_private_citations
+           WHERE excerpt_id=? ORDER BY created_at LIMIT 1""",
+        (excerpt_id,),
+    ).fetchone()
+    if citation:
+        db.execute(
+            "UPDATE research_sources SET review_status=? WHERE research_source_id=?",
+            (decision, citation["research_source_id"]),
+        )
+    db.commit()
+    return {
+        "success": True,
+        "excerpt_id": excerpt_id,
+        "review_id": review_id,
+        "review_status": decision,
+        "knowledge_objects": created_objects,
+        "published_chars": len(published_text or ""),
+    }
+
+def list_pending_drive_excerpts(db, company_id=None, limit=100):
+    """يعرض مقتطفات مختارة فقط، مع سياق المصدر ونطاق الشركة والقضية."""
+    ensure_schema(db)
+    try:
+        limit = max(1, min(int(limit or 100), 500))
+    except (TypeError, ValueError):
+        limit = 100
+    conditions = [
+        "dse.review_status='pending_review'",
+        "df.drive_state='active'",
+        "df.is_folder=0",
+    ]
+    params = []
+    if company_id:
+        conditions.append(
+            "(dse.company_id=? OR (dse.company_id IS NULL AND df.confidentiality='internal'))"
+        )
+        params.append(str(company_id))
+    rows = db.execute(
+        f"""SELECT dse.excerpt_id,dse.drive_file_id,dse.section_locator,
+                   dse.excerpt_text,dse.content_hash,dse.extraction_status,
+                   dse.company_id,dse.case_id,dse.created_by,dse.created_at,
+                   dse.review_status,dse.review_reason,dse.review_references,
+                   df.name,df.current_path,df.web_view_link,df.modified_time,
+                   df.confidentiality,df.knowledge_classification,
+                   c.name AS company_name,cs.case_title
+            FROM drive_source_excerpts dse
+            JOIN drive_files df ON df.drive_file_id=dse.drive_file_id
+            LEFT JOIN companies c ON c.company_id=dse.company_id
+            LEFT JOIN cases cs ON cs.case_id=dse.case_id
+            WHERE {' AND '.join(conditions)}
+            ORDER BY dse.created_at ASC,dse.excerpt_id ASC
+            LIMIT {limit}""",
+        params,
+    ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["review_references"] = json.loads(item["review_references"] or "[]")
+        except (TypeError, ValueError):
+            item["review_references"] = []
+        result.append(item)
+    return result

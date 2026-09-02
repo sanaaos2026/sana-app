@@ -54,6 +54,23 @@ class DecisionRoomAcceptanceTests(unittest.TestCase):
     def setUp(self):
         self.db.rollback()
         self.company_id = f"DR{uuid.uuid4().hex[:8].upper()}"
+    @classmethod
+    def setUpClass(cls):
+        sana_app.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+        cls.db = sana_app._connect_pg()
+        ensure_growth_schema(cls.db)
+        seed_growth_os(cls.db)
+        ensure_schema(cls.db)
+        cls.db.commit()
+
+    @classmethod
+
+    def tearDownClass(cls):
+        cls.db.close()
+
+    def setUp(self):
+        self.db.rollback()
+        self.company_id = f"DR{uuid.uuid4().hex[:8].upper()}"
         self.other_id = f"DR{uuid.uuid4().hex[:8].upper()}"
         for company_id in (self.company_id, self.other_id):
             self.db.execute(
@@ -842,6 +859,319 @@ class DecisionRoomAcceptanceTests(unittest.TestCase):
             promote_sop(self.db, self.company_id, sop["sop_id"], {
                 "version_id": sop["version_id"], "maturity": "Automatable",
             }, "approver")
+
+    def test_sop_promotion_route_is_registered_before_direct_launch(self):
+        rules = {rule.rule for rule in sana_app.app.url_map.iter_rules()}
+        self.assertIn(
+            "/api/companies/<company_id>/execution/sops/<sop_id>/promote",
+            rules,
+        )
+
+    def test_profile_change_changes_room_labels(self):
+        from sana_growth_os import set_company_profile
+        profiles = self.db.execute(
+            "SELECT profile_key FROM gos_project_profiles ORDER BY profile_key"
+        ).fetchall()
+        if len(profiles) < 2:
+            self.skipTest("يلزم ملفا مشروع لاختبار التغيير")
+        set_company_profile(self.db, self.company_id, profiles[1]["profile_key"], "test:profile")
+        self.db.commit()
+        room = decision_room(self.db, self.company_id)
+        self.assertEqual(profiles[1]["profile_key"], room["current_state"]["profile_key"])
+        self.assertEqual(room["profile"]["stages"], room["profile"]["stages"])
+
+    def test_task_and_risk_reminders_are_internal_idempotent_and_isolated(self):
+        task_id = f"T{uuid.uuid4().hex[:10].upper()}"
+        due = (date.today() + timedelta(days=2)).isoformat()
+        self.db.execute(
+            """INSERT INTO tasks
+               (task_id,company_id,title,status,owner_user_id,due_date)
+               VALUES (?,?,?,?,?,?)""",
+            (task_id, self.company_id, "مهمة قريبة", "قيد التنفيذ", "owner-a", due),
+        )
+        evidence_id = self._evidence()
+        create_risk(self.db, self.company_id, {
+            "title": "مراجعة قريبة", "description": "خطر",
+            "evidence_ids": [evidence_id], "impact": "تأخير",
+            "owner_id": "owner-b", "probability": 4, "severity": 4,
+            "mitigation_plan": "راجع", "review_due_at": due,
+            "source_ref": "test:risk",
+        })
+        first = materialize_due_reminders(self.db, company_id=self.company_id)
+        second = materialize_due_reminders(self.db, company_id=self.company_id)
+        self.db.commit()
+        self.assertEqual(2, first["created"])
+        self.assertEqual(0, second["created"])
+        reminders = list_reminders(
+            self.db, self.company_id,
+            recipient_account_id=f"ACC-{self.company_id}",
+        )
+        self.assertEqual(2, len(reminders))
+        self.assertEqual([], list_reminders(self.db, self.other_id, "owner-a"))
+        task = self.db.execute(
+            "SELECT status FROM tasks WHERE task_id=?", (task_id,)
+        ).fetchone()
+        self.assertEqual("قيد التنفيذ", task["status"])
+
+    def test_overdue_reminder_owner_cannot_be_read_by_another_owner(self):
+        task_id = f"T{uuid.uuid4().hex[:10].upper()}"
+        self.db.execute(
+            """INSERT INTO tasks
+               (task_id,company_id,title,status,owner_user_id,due_date)
+               VALUES (?,?,?,?,?,?)""",
+            (task_id, self.company_id, "مهمة متأخرة", "لم تبدأ", "owner-a",
+             (date.today() - timedelta(days=1)).isoformat()),
+        )
+        materialize_due_reminders(self.db, company_id=self.company_id)
+        self.db.commit()
+        reminder = list_reminders(
+            self.db, self.company_id,
+            recipient_account_id=f"ACC-{self.company_id}",
+        )[0]
+        self.assertEqual("overdue", reminder["reminder_kind"])
+        with self.assertRaises(PermissionError):
+            update_reminder_status(
+                self.db, self.company_id, reminder["reminder_id"],
+                "read", f"ACC-{self.other_id}",
+            )
+        update_reminder_status(
+            self.db, self.company_id, reminder["reminder_id"], "read",
+            f"ACC-{self.company_id}"
+        )
+        self.db.commit()
+        attempts = self.db.execute(
+            """SELECT * FROM execution_reminder_attempts
+               WHERE reminder_id=? AND outcome='delivered'""",
+            (reminder["reminder_id"],),
+        ).fetchall()
+        self.assertEqual(1, len(attempts))
+
+    def test_unresolved_reminder_is_delivered_when_account_becomes_available(self):
+        account_id = f"ACC-{self.company_id}"
+        self.db.execute(
+            "DELETE FROM user_accounts WHERE account_id=?", (account_id,)
+        )
+        task_id = f"T{uuid.uuid4().hex[:10].upper()}"
+        self.db.execute(
+            """INSERT INTO tasks
+               (task_id,company_id,title,status,owner_user_id,due_date)
+               VALUES (?,?,?,?,?,?)""",
+            (task_id, self.company_id, "تنبيه قابل للاسترداد", "لم تبدأ",
+             "owner-a", date.today().isoformat()),
+        )
+        first = materialize_due_reminders(self.db, company_id=self.company_id)
+        self.db.commit()
+        self.assertEqual(1, first["created"])
+        unresolved = self.db.execute(
+            """SELECT * FROM execution_reminders
+               WHERE company_id=? AND entity_id=?""",
+            (self.company_id, task_id),
+        ).fetchone()
+        self.assertIsNone(unresolved["recipient_account_id"])
+        self.db.execute(
+            """INSERT INTO user_accounts
+               (account_id,email,password_hash,company_id) VALUES (?,?,?,?)""",
+            (account_id, f"restored-{self.company_id.lower()}@test.local",
+             "not-used", self.company_id),
+        )
+        recovered = materialize_due_reminders(
+            self.db, company_id=self.company_id
+        )
+        self.db.commit()
+        self.assertEqual(0, recovered["created"])
+        self.assertEqual(1, recovered["recovered"])
+        delivered = list_reminders(
+            self.db, self.company_id, recipient_account_id=account_id
+        )
+        self.assertEqual(1, len(delivered))
+        count = self.db.execute(
+            """SELECT COUNT(*) AS c FROM execution_reminders
+               WHERE company_id=? AND entity_id=?""",
+            (self.company_id, task_id),
+        ).fetchone()["c"]
+        self.assertEqual(1, count)
+
+    def test_explicit_owner_binding_delivers_only_to_mapped_account(self):
+        from sana_decision_room import bind_owner_account
+        first_account = f"ACC-{self.company_id}"
+        second_account = f"ACC2-{self.company_id}"
+        self.db.execute(
+            """INSERT INTO user_accounts
+               (account_id,email,password_hash,company_id) VALUES (?,?,?,?)""",
+            (second_account, f"second-{self.company_id.lower()}@test.local",
+             "not-used", self.company_id),
+        )
+        task_id = f"T{uuid.uuid4().hex[:10].upper()}"
+        self.db.execute(
+            """INSERT INTO tasks
+               (task_id,company_id,title,status,owner_user_id,due_date)
+               VALUES (?,?,?,?,?,?)""",
+            (task_id, self.company_id, "مهمة متعددة الحسابات", "لم تبدأ",
+             "سارة", date.today().isoformat()),
+        )
+        bind_owner_account(
+            self.db, self.company_id, "سارة", second_account,
+            first_account, "test:explicit-binding",
+        )
+        result = materialize_due_reminders(
+            self.db, company_id=self.company_id
+        )
+        self.db.commit()
+        self.assertEqual(1, result["created"])
+        self.assertEqual([], list_reminders(
+            self.db, self.company_id, recipient_account_id=first_account
+        ))
+        reminders = list_reminders(
+            self.db, self.company_id, recipient_account_id=second_account
+        )
+        self.assertEqual(1, len(reminders))
+        with self.assertRaises(PermissionError):
+            update_reminder_status(
+                self.db, self.company_id, reminders[0]["reminder_id"],
+                "read", first_account,
+            )
+        client = sana_app.app.test_client()
+        with client.session_transaction() as session:
+            session["account_id"] = first_account
+            session["company_id"] = self.company_id
+            session["email"] = f"{self.company_id.lower()}@test.local"
+        previous_csrf = sana_app.app.config.get("WTF_CSRF_ENABLED", True)
+        sana_app.app.config["WTF_CSRF_ENABLED"] = False
+        try:
+            response = client.put(
+                f"/api/companies/{self.company_id}/execution/reminder-owners",
+                json={"owner_id": "سارة", "account_id": first_account},
+            )
+        finally:
+            sana_app.app.config["WTF_CSRF_ENABLED"] = previous_csrf
+        self.assertEqual(403, response.status_code)
+        binding = self.db.execute(
+            """SELECT account_id FROM execution_owner_bindings
+               WHERE company_id=? AND owner_id=?""",
+            (self.company_id, "سارة"),
+        ).fetchone()
+        self.assertEqual(second_account, binding["account_id"])
+
+    def test_sole_account_delivery_is_revoked_when_company_becomes_ambiguous(self):
+        from sana_decision_room import bind_owner_account
+        first_account = f"ACC-{self.company_id}"
+        second_account = f"ACC2-{self.company_id}"
+        task_id = f"T{uuid.uuid4().hex[:10].upper()}"
+        self.db.execute(
+            """INSERT INTO tasks
+               (task_id,company_id,title,status,owner_user_id,due_date)
+               VALUES (?,?,?,?,?,?)""",
+            (task_id, self.company_id, "تنبيه يتطلب تعيينًا", "لم تبدأ",
+             "مالك بشري", date.today().isoformat()),
+        )
+        materialize_due_reminders(self.db, company_id=self.company_id)
+        self.db.commit()
+        self.assertEqual(1, len(list_reminders(
+            self.db, self.company_id, recipient_account_id=first_account
+        )))
+        self.db.execute(
+            """INSERT INTO user_accounts
+               (account_id,email,password_hash,company_id) VALUES (?,?,?,?)""",
+            (second_account, f"ambiguous-{self.company_id.lower()}@test.local",
+             "not-used", self.company_id),
+        )
+        materialize_due_reminders(self.db, company_id=self.company_id)
+        self.db.commit()
+        self.assertEqual([], list_reminders(
+            self.db, self.company_id, recipient_account_id=first_account
+        ))
+        self.assertEqual([], list_reminders(
+            self.db, self.company_id, recipient_account_id=second_account
+        ))
+        bind_owner_account(
+            self.db, self.company_id, "مالك بشري", second_account,
+            "admin-preview", "test:resolve-ambiguity",
+        )
+        recovered = materialize_due_reminders(
+            self.db, company_id=self.company_id
+        )
+        self.db.commit()
+        self.assertEqual(1, recovered["recovered"])
+        self.assertEqual([], list_reminders(
+            self.db, self.company_id, recipient_account_id=first_account
+        ))
+        self.assertEqual(1, len(list_reminders(
+            self.db, self.company_id, recipient_account_id=second_account
+        )))
+
+    def test_authenticated_reminder_inbox_is_never_cacheable(self):
+        account_id = f"ACC-{self.company_id}"
+        client = sana_app.app.test_client()
+        with client.session_transaction() as session:
+            session["account_id"] = account_id
+            session["company_id"] = self.company_id
+            session["email"] = f"{self.company_id.lower()}@test.local"
+        response = client.get(
+            f"/api/companies/{self.company_id}/execution/reminders"
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("no-store, private", response.headers["Cache-Control"])
+        self.assertEqual("no-cache", response.headers["Pragma"])
+
+    def test_one_shot_scheduler_runs_without_web_request(self):
+        import run_execution_reminders
+        fake_db = MagicMock()
+        with patch.object(
+            run_execution_reminders, "_connect_pg", return_value=fake_db
+        ), patch.object(
+            run_execution_reminders, "ensure_schema"
+        ) as schema, patch.object(
+            run_execution_reminders, "materialize_due_reminders",
+            return_value={"status": "completed", "created": 1},
+        ) as materialize:
+            self.assertEqual(0, run_execution_reminders.main())
+        schema.assert_called_once_with(fake_db)
+        materialize.assert_called_once_with(fake_db, acquire_lock=True)
+        fake_db.commit.assert_called_once()
+        fake_db.close.assert_called_once()
+
+    def test_scheduler_cycle_initializes_schema_before_materialization(self):
+        import sana_decision_room
+        fake_db = MagicMock()
+        calls = []
+        with patch.object(
+            sana_decision_room, "ensure_schema",
+            side_effect=lambda db: calls.append(("schema", db)),
+        ), patch.object(
+            sana_decision_room, "materialize_due_reminders",
+            side_effect=lambda db, acquire_lock: (
+                calls.append(("materialize", db)),
+                {"status": "completed"},
+            )[1],
+        ):
+            result = sana_decision_room.run_reminder_cycle(lambda: fake_db)
+        self.assertEqual(["schema", "materialize"], [name for name, _ in calls])
+        self.assertTrue(all(db is fake_db for _, db in calls))
+        self.assertEqual({"status": "completed"}, result)
+        fake_db.commit.assert_called_once()
+        fake_db.close.assert_called_once()
+
+    def test_scheduler_endpoint_rejects_missing_token(self):
+        client = sana_app.app.test_client()
+        response = client.post("/internal/execution-reminders/run")
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("UNAUTHORIZED", response.get_json()["error"])
+
+    def test_scheduler_endpoint_runs_shared_cycle_after_authentication(self):
+        client = sana_app.app.test_client()
+        with patch.object(
+            sana_app, "_valid_scheduler_token", return_value=True
+        ), patch(
+            "sana_decision_room.run_reminder_cycle",
+            return_value={"status": "completed", "created": 1},
+        ) as cycle:
+            response = client.post(
+                "/internal/execution-reminders/run",
+                headers={"Authorization": "Bearer test-token"},
+            )
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(response.get_json()["success"])
+        cycle.assert_called_once_with(sana_app._connect_pg)
 
     def test_sop_promotion_route_is_registered_before_direct_launch(self):
         rules = {rule.rule for rule in sana_app.app.url_map.iter_rules()}

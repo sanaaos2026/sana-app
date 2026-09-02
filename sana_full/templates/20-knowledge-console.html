@@ -33,8 +33,9 @@
     .badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}.badge{background:#F5F6FB;border-radius:12px;padding:2px 8px;color:#6E7580;font-size:10px}
     .form{display:grid;grid-template-columns:1fr 1fr;gap:9px}.form .wide{grid-column:1/-1}
     label{font-size:11px;font-weight:600;color:#0B132B;display:flex;flex-direction:column;gap:4px}
-    input,select{font:12px inherit;border:1px solid #DEE1EC;border-radius:7px;padding:8px 9px;background:#F9FAFC}
-    input:focus,select:focus{outline:none;border-color:#0EA5A5;background:#fff}
+    input,select,textarea{font:12px inherit;border:1px solid #DEE1EC;border-radius:7px;padding:8px 9px;background:#F9FAFC}
+    input:focus,select:focus,textarea:focus{outline:none;border-color:#0EA5A5;background:#fff}
+    textarea{resize:vertical;min-height:72px}
     button{border:0;border-radius:7px;background:#0B132B;color:#fff;padding:9px 14px;font:600 12px inherit;cursor:pointer}
     button.secondary{background:#F5F6FB;border:1px solid #DEE1EC;color:#0B132B}
     .actions{display:flex;gap:8px;align-items:center;margin-top:12px}.msg{font-size:11px;color:#0EA5A5}
@@ -47,6 +48,10 @@
     .cycle-controls{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.cycle-controls label{min-width:0}
     .run,.candidate,.alert{border-top:1px solid #EEF0F5;padding:10px 0}.run:first-child,.candidate:first-child,.alert:first-child{border-top:0}
     .alert{color:#9E3A2F}.diff{direction:ltr;text-align:left;white-space:pre-wrap;max-height:150px;overflow:auto;background:#F8F9FC;padding:8px;border-radius:6px;font:10px monospace}
+    .excerpt-card{border:1px solid #DEE1EC;border-radius:10px;padding:14px;margin-top:12px;background:#FCFCFE}
+    .excerpt-text{white-space:pre-wrap;background:#fff;border:1px solid #EEF0F5;border-radius:7px;padding:10px;margin:9px 0;font-size:12px;max-height:220px;overflow:auto}
+    .object-card{border-right:3px solid #0EA5A5;background:#fff;border-radius:7px;padding:10px;margin-top:9px}
+    .danger-note{background:#FFF4F2;border:1px solid #F1C0B9;color:#9E3A2F;border-radius:7px;padding:8px;font-size:11px;margin-top:8px}
     @media(max-width:700px){.grid{grid-template-columns:1fr}section.full{grid-column:auto}.form{grid-template-columns:1fr}.form .wide{grid-column:auto}}
   </style>
 </head>
@@ -129,6 +134,11 @@
         <div class="actions"><button onclick="runDriveSync()">مزامنة Metadata الآن</button><button class="secondary" onclick="loadDriveIndex()">تحديث الحالة</button><span id="driveMsg" class="msg"></span></div>
         <div id="driveFiles" style="margin-top:10px"></div>
         <p style="font-size:11px;color:#6E7580;margin-top:10px">المزامنة تقرأ Metadata فقط ولا تحذف أو تنقل أو تعيد تسمية أي ملف. الملفات غير المقروءة لا تدخل البحث؛ اختيار ملف لا يعني قراءة محتواه أو اعتماده.</p>
+      </section>
+      <section class="full">
+        <h3>مراجعة مقتطفات Drive وتحويلها إلى معرفة صغيرة</h3>
+        <p style="font-size:12px;color:#6E7580">اعتمد أو ارفض كل مقتطف بسبب ومراجع واضحة. عند الاعتماد أنشئ كائنًا أو أكثر؛ لا تتحول الوثيقة كاملة إلى كائن واحد.</p>
+        <div id="driveExcerpts" class="notice" style="margin-top:10px">جارٍ تحميل المقتطفات المعلقة...</div>
       </section>
     </div>
   </main>
@@ -276,6 +286,96 @@
         files.innerHTML=(fj.data||[]).map(x=>`<div class="source"><strong>${esc(x.name)}</strong><small>${esc(x.current_path||'—')} · ${esc(x.document_type||'—')} · ${esc(x.knowledge_classification||'UNCLASSIFIED')} · ${esc(x.lifecycle_status||'unreviewed')}</small><small>${x.web_view_link?`<a href="${esc(x.web_view_link)}" target="_blank" rel="noopener">فتح المصدر ↗</a>`:'لا يوجد رابط قابل للفتح'} · الخصوصية: ${esc(x.confidentiality)} · ${x.read_status==='read'?'مقروء':'غير مقروء'}</small>${!x.is_folder?`<button class="secondary" onclick="extractDriveFile('${esc(x.drive_file_id)}')">اختيار مقتطف للمراجعة الخاصة</button>`:''}</div>`).join('')||'<small>لا توجد ملفات مفهرسة بعد.</small>';
       }catch(e){box.className='notice error';box.textContent='تعذر تحميل فهرس Drive.'}
     }
+    const knowledgeTypeOptions=[
+      ['PROBLEM','مشكلة'],['CAUSE','سبب'],['DIAGNOSTIC_QUESTION','سؤال تشخيصي'],
+      ['EVIDENCE_REQUIREMENT','دليل مطلوب'],['KPI','مؤشر أداء'],['BENCHMARK','معيار مرجعي'],
+      ['DIAGNOSTIC_RULE','قاعدة تشخيص'],['DECISION_RULE','قاعدة قرار'],
+      ['OPPORTUNITY','فرصة'],['RECOMMENDATION','توصية'],['SOP','إجراء تشغيل'],
+      ['CASE','حالة'],['FRAMEWORK','إطار']
+    ];
+    const excerptDomKey=id=>String(id||'').replace(/[^A-Za-z0-9_-]/g,'');
+    function knowledgeObjectForm(){
+      return `<div class="object-card ko-object">
+        <div class="form">
+          <label>نوع المعرفة<select class="ko-type">${knowledgeTypeOptions.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>
+          <label>التصنيف<input class="ko-category" placeholder="مثال: onboarding أو sales"></label>
+          <label class="wide">عنوان الكائن الصغير<input class="ko-title" maxlength="180" placeholder="فكرة واحدة قابلة لإعادة الاستخدام"></label>
+          <label class="wide">المعرفة المستخلصة<textarea class="ko-statement" maxlength="3000" placeholder="اكتب قاعدة أو حقيقة أو إجراء واحدًا فقط"></textarea></label>
+          <label>تنطبق عندما<textarea class="ko-when" maxlength="1000"></textarea></label>
+          <label>لا تنطبق عندما<textarea class="ko-not-when" maxlength="1000"></textarea></label>
+        </div>
+        <div class="actions"><button type="button" class="secondary" onclick="this.closest('.ko-object').remove()">حذف هذا الكائن</button></div>
+      </div>`;
+    }
+    function addKnowledgeObject(excerptId){
+      document.querySelector(`#excerpt-${excerptDomKey(excerptId)} .knowledge-objects`).insertAdjacentHTML('beforeend',knowledgeObjectForm());
+    }
+    async function loadDriveExcerpts(){
+      const box=document.getElementById('driveExcerpts');
+      try{
+        const params=new URLSearchParams();
+        const pageParams=new URLSearchParams(window.location.search);
+        params.set('company_id',pageParams.get('company_id')||'{{ search_company_id|e }}');
+        const r=await fetch('/api/knowledge/drive/excerpts?'+params.toString()),j=await r.json();
+        if(!r.ok||!j.success)throw new Error(j.error||'LOAD_FAILED');
+        box.className='';
+        box.innerHTML=(j.data||[]).map(x=>{
+          const privateSource=['CLIENT_CONFIDENTIAL','RESTRICTED'].includes(x.confidentiality);
+          return `<article class="excerpt-card" id="excerpt-${excerptDomKey(x.excerpt_id)}">
+            <strong>${esc(x.name)}</strong>
+            <small style="display:block;color:#6E7580">${esc(x.section_locator)} · الشركة: ${esc(x.company_name||x.company_id||'عام داخلي')} · القضية: ${esc(x.case_title||x.case_id||'غير مرتبطة')}</small>
+            <small style="display:block;color:#6E7580">الخصوصية: ${esc(x.confidentiality)} · التصنيف: ${esc(x.knowledge_classification||'غير مصنف')} · البصمة: ${esc(x.content_hash)}</small>
+            ${x.web_view_link?`<small><a href="${esc(x.web_view_link)}" target="_blank" rel="noopener">فتح المصدر في Drive ↗</a></small>`:''}
+            <div class="excerpt-text">${esc(x.excerpt_text)}</div>
+            ${privateSource?`<div class="danger-note">هذا المصدر ${esc(x.confidentiality)}. الاعتماد محظور حتى تكتب نصًا منزوع الهوية وتوثق ما أزيل أو عُمّم.</div>
+              <div class="form" style="margin-top:9px">
+                <label class="wide">النص منزوع الهوية للنشر<textarea class="anonymized-text" placeholder="أعد كتابة المقتطف بلا أسماء أو معرفات أو أسرار عميل"></textarea></label>
+                <label class="wide">توثيق إخفاء الهوية<textarea class="anonymization-notes" placeholder="اذكر الحقول أو الأسماء التي أزيلت وطريقة التعميم"></textarea></label>
+              </div>`:''}
+            <div class="form" style="margin-top:9px">
+              <label class="wide">سبب القرار<textarea class="review-reason" placeholder="لماذا يصلح أو لا يصلح هذا المقتطف؟"></textarea></label>
+              <label class="wide">مراجع المراجعة<textarea class="review-references" placeholder="مرجع واحد في كل سطر: رابط، سياسة، أو معرف دليل"></textarea></label>
+            </div>
+            <h3 style="margin-top:14px">كائنات المعرفة الصغيرة</h3>
+            <div class="knowledge-objects">${knowledgeObjectForm()}</div>
+            <div class="actions">
+              <button type="button" class="secondary" onclick="addKnowledgeObject('${esc(x.excerpt_id)}')">+ كائن صغير آخر</button>
+              <button type="button" onclick="reviewDriveExcerpt('${esc(x.excerpt_id)}','approved')">اعتماد وإنشاء الكائنات</button>
+              <button type="button" class="secondary" onclick="reviewDriveExcerpt('${esc(x.excerpt_id)}','rejected')">رفض المقتطف</button>
+              <span class="msg review-msg"></span>
+            </div>
+          </article>`;
+        }).join('')||'<div class="notice">لا توجد مقتطفات معلقة للمراجعة.</div>';
+      }catch(e){box.className='notice error';box.textContent='تعذر تحميل مقتطفات Drive المعلقة.'}
+    }
+    async function reviewDriveExcerpt(excerptId,decision){
+      const card=document.getElementById('excerpt-'+excerptDomKey(excerptId));
+      const msg=card.querySelector('.review-msg');
+      const objects=[...card.querySelectorAll('.ko-object')].map(node=>({
+        library_type:node.querySelector('.ko-type').value,
+        category:node.querySelector('.ko-category').value.trim(),
+        title:node.querySelector('.ko-title').value.trim(),
+        statement:node.querySelector('.ko-statement').value.trim(),
+        applicable_when:node.querySelector('.ko-when').value.trim(),
+        do_not_apply_when:node.querySelector('.ko-not-when').value.trim()
+      }));
+      const payload={
+        decision,
+        reason:card.querySelector('.review-reason').value.trim(),
+        references:card.querySelector('.review-references').value.split('\n').map(x=>x.trim()).filter(Boolean),
+        anonymized_text:card.querySelector('.anonymized-text')?.value.trim()||'',
+        anonymization_notes:card.querySelector('.anonymization-notes')?.value.trim()||'',
+        objects:decision==='approved'?objects:[]
+      };
+      msg.textContent=decision==='approved'?'جارٍ الاعتماد وإنشاء الكائنات...':'جارٍ تسجيل الرفض...';
+      try{
+        const r=await fetch('/api/knowledge/drive/excerpts/'+encodeURIComponent(excerptId)+'/review',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),j=await r.json();
+        if(!r.ok||!j.success)throw new Error(j.message||j.error||'REVIEW_FAILED');
+        msg.textContent=decision==='approved'?`تم الاعتماد وإنشاء ${j.knowledge_objects.length} كائنات صغيرة.`:'تم تسجيل الرفض.';
+        await loadDriveExcerpts();
+        if(decision==='approved')searchKnowledge();
+      }catch(e){msg.textContent='تعذرت المراجعة: '+e.message}
+    }
     async function runDriveSync(){
       const msg=document.getElementById('driveMsg');msg.textContent='جارٍ قراءة Metadata...';
       try{const r=await fetch('/api/knowledge/drive/sync',{method:'POST'}),j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||'SYNC_FAILED');msg.textContent=`اكتملت المزامنة: ${j.files_indexed||0} ملفًا.`}
@@ -292,7 +392,7 @@
       }catch(e){msg.textContent='تعذرت قراءة الملف المختار: '+e.message}
       loadDriveIndex();
     }
-    loadSources(); searchKnowledge(); loadBackups(); loadResearchCycle(); loadDriveIndex();
+    loadSources(); searchKnowledge(); loadBackups(); loadResearchCycle(); loadDriveIndex(); loadDriveExcerpts();
   </script>
 </body>
 </html>

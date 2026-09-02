@@ -2226,6 +2226,59 @@ def review_source(db, source_id, decision, reviewer):
             "eligibility": eligibility}
 
 
+def create_drive_knowledge_objects(
+    db, *, excerpt, source, objects, published_text, provenance_link_id
+):
+    """إنشاء كائنات صغيرة من مقتطف معتمد، لا من وثيقة Drive كاملة."""
+    ensure_schema(db)
+    allowed_types = {key for key, _ in LIBRARY_TYPES}
+    if not isinstance(objects, list) or not objects or len(objects) > 12:
+        raise ValueError("KNOWLEDGE_OBJECTS_REQUIRED")
+    created = []
+    for item in objects:
+        if not isinstance(item, dict):
+            raise ValueError("KNOWLEDGE_OBJECT_INVALID")
+        library_type = str(item.get("library_type") or "").strip().upper()
+        category = str(item.get("category") or "").strip()
+        title = str(item.get("title") or "").strip()
+        statement = str(item.get("statement") or "").strip()
+        applicable_when = str(item.get("applicable_when") or "").strip()
+        do_not_apply_when = str(item.get("do_not_apply_when") or "").strip()
+        if library_type not in allowed_types:
+            raise ValueError("KNOWLEDGE_LIBRARY_TYPE_INVALID")
+        if not category or not title or not statement:
+            raise ValueError("KNOWLEDGE_OBJECT_FIELDS_REQUIRED")
+        if len(title) > 180 or len(category) > 120 or len(statement) > 3000:
+            raise ValueError("KNOWLEDGE_OBJECT_TOO_LARGE")
+        if len(applicable_when) > 1000 or len(do_not_apply_when) > 1000:
+            raise ValueError("KNOWLEDGE_OBJECT_SCOPE_TOO_LARGE")
+        object_id = "KO-DRIVE-" + uuid.uuid4().hex[:12].upper()
+        db.execute(
+            """INSERT INTO knowledge_objects
+               (object_id,library_type,category,title,problem,source,source_url,
+                evidence_quality,confidence_level,applicable_when,do_not_apply_when,
+                knowledge_level,version,last_reviewed,status,source_excerpt,
+                original_summary,source_file_id,provenance_link_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_DATE,'approved',?,?,?,?)""",
+            (
+                object_id, library_type, category, title, statement,
+                "مقتطف Drive معتمد ومنقح", None,
+                "مقتطف Drive اعتمد بمراجعة بشرية",
+                str(item.get("confidence_level") or "medium").strip(),
+                applicable_when or None, do_not_apply_when or None,
+                "L0", "drive-" + str(excerpt["content_hash"])[:12],
+                published_text, statement, None, None,
+            ),
+        )
+        created.append({
+            "object_id": object_id,
+            "title": title,
+            "library_type": library_type,
+            "category": category,
+        })
+    return created
+
+
 def sector_for_company(company):
     raw = " ".join(str(company.get(k) or "") for k in ("sector", "sector_other")).lower()
     if any(token in raw for token in ("ecommerce", "e-commerce", "retail", "تجزئة", "تجارة")):

@@ -698,9 +698,23 @@ CREATE TABLE IF NOT EXISTS drive_source_excerpts (
     extraction_status TEXT NOT NULL, company_id TEXT,
     case_id TEXT REFERENCES cases(case_id), created_by TEXT,
     review_status TEXT NOT NULL DEFAULT 'pending_review',
+    review_reason TEXT, review_references TEXT NOT NULL DEFAULT '[]',
+    anonymized_text TEXT, anonymization_notes TEXT, published_text TEXT,
+    reviewed_by TEXT, reviewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(drive_file_id,section_locator,content_hash)
 );
+CREATE TABLE IF NOT EXISTS drive_excerpt_reviews (
+    review_id TEXT PRIMARY KEY,
+    excerpt_id TEXT NOT NULL UNIQUE REFERENCES drive_source_excerpts(excerpt_id) ON DELETE CASCADE,
+    decision TEXT NOT NULL, reason TEXT NOT NULL,
+    references_json TEXT NOT NULL DEFAULT '[]',
+    anonymization_notes TEXT, reviewer TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (decision IN ('approved','rejected'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_drive_excerpt_reviews_excerpt
+    ON drive_excerpt_reviews(excerpt_id);
 CREATE TABLE IF NOT EXISTS drive_private_citations (
     citation_id TEXT PRIMARY KEY,
     drive_file_id TEXT NOT NULL REFERENCES drive_files(drive_file_id),

@@ -7217,6 +7217,28 @@ def drive_file_extract_api(drive_file_id):
     )
     return jsonify(result), (201 if result.get("success") else 400)
 
+@app.route("/api/knowledge/drive/excerpts", methods=["GET"])
+def drive_pending_excerpts_api():
+    from drive_index import list_pending_drive_excerpts
+    guard = _knowledge_admin_guard()
+    if guard:
+        return guard
+    account = current_account() or {}
+    company_id = (
+        account.get("company_id")
+        or request.args.get("company_id")
+        or default_company_id()
+    )
+    if company_id:
+        scope_guard = enforce_entity_company_scope(company_id)
+        if scope_guard:
+            return scope_guard
+    return jsonify({
+        "success": True,
+        "data": list_pending_drive_excerpts(
+            get_db(), company_id=company_id, limit=request.args.get("limit", 100)
+        ),
+    })
 @app.route("/api/knowledge/drive/context", methods=["GET"])
 def drive_context_files_api():
     from drive_index import select_context_files
@@ -7336,6 +7358,31 @@ def drive_object_provenance_api(object_id):
     return jsonify({"success": True, "data": provenance_for_object(get_db(), object_id)})
 
 
+@app.route("/api/knowledge/drive/excerpts/<excerpt_id>/review", methods=["PATCH"])
+def drive_excerpt_review_api(excerpt_id):
+    from drive_index import review_drive_excerpt
+    guard = _knowledge_admin_guard()
+    if guard:
+        return guard
+    account = current_account() or {}
+    body = request.get_json(silent=True) or {}
+    result = review_drive_excerpt(
+        get_db(), excerpt_id,
+        decision=body.get("decision"),
+        reason=body.get("reason"),
+        references=body.get("references"),
+        reviewer=account.get("account_id") or "admin-preview",
+        objects=body.get("objects"),
+        anonymized_text=body.get("anonymized_text"),
+        anonymization_notes=body.get("anonymization_notes"),
+        actor_company_id=account.get("company_id"),
+    )
+    status = 200 if result.get("success") else (
+        404 if result.get("error") == "EXCERPT_NOT_FOUND" else 409
+    )
+    return jsonify(result), status
+
+
 # تهيئة بيئة التطوير فقط. Railway لا يستدعي هذه الدالة تلقائيًا ولا ينفذ
 # أي DDL/seed عند النشر؛ Supabase الحالية هي قاعدة السجل الموجودة مسبقًا.
 _STARTUP_LOCK_KEY = 727310001  # رقم تعسفي ثابت خاص بإقلاع تطبيق سنع فقط
@@ -7374,8 +7421,6 @@ def _enforce_web_process_invariants():
             "Schedulers cannot run in the production web process: "
             + ", ".join(enabled)
         )
-
-
 _enforce_web_process_invariants()
 
 if __name__ == "__main__":
