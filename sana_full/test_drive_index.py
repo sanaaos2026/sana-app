@@ -1,6 +1,7 @@
 """حواجز فهرس Drive: قراءة Metadata، idempotency، الخصوصية، والسلسلة."""
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -8,6 +9,7 @@ import threading
 import unittest
 import uuid
 import time
+from contextlib import suppress
 from pathlib import Path
 from unittest.mock import patch
 from urllib.request import urlopen
@@ -901,6 +903,76 @@ class DriveExcerptBrowserTest(unittest.TestCase):
         cls._cleanup_fixture()
         cls.db.close()
 
+    def setUp(self):
+        self.page = None
+        self._trace_started = False
+        self._diagnostics_run_id = None
+        self._diagnostics_dir = None
+        self._diagnostics_screenshot = None
+        self._diagnostics_trace = None
+
+    def tearDown(self):
+        try:
+            if self._trace_started:
+                if self._outcome.success:
+                    self.page.context.tracing.stop()
+                    if self._diagnostics_dir:
+                        shutil.rmtree(self._diagnostics_dir, ignore_errors=True)
+                else:
+                    self._save_browser_failure_diagnostics()
+        finally:
+            if self.page:
+                with suppress(Exception):
+                    self.page.close()
+                self.page = None
+
+    def _start_browser_trace(self, page):
+        """ابدأ التتبع بعد المصادقة حتى لا تدخل بيانات تسجيل الدخول في الأثر."""
+        run_id = uuid.uuid4().hex
+        self._diagnostics_run_id = run_id
+        self._diagnostics_dir = (
+            BASE_DIR / ".browser-diagnostics" / f"drive-excerpt-{run_id}"
+        )
+        self._diagnostics_screenshot = (
+            self._diagnostics_dir / f"failure-{run_id}.png"
+        )
+        self._diagnostics_trace = self._diagnostics_dir / f"failure-{run_id}.zip"
+        page.context.tracing.start(
+            name=f"drive-excerpt-{run_id}",
+            screenshots=True,
+            snapshots=True,
+            sources=False,
+        )
+        self._trace_started = True
+
+    def _save_browser_failure_diagnostics(self):
+        diagnostics_dir = self._diagnostics_dir
+        if not diagnostics_dir:
+            return
+        diagnostics_dir.mkdir(parents=True, exist_ok=True)
+        errors = []
+        try:
+            self.page.screenshot(
+                path=str(self._diagnostics_screenshot),
+                full_page=True,
+            )
+        except Exception as exc:
+            errors.append(f"screenshot: {exc}")
+        try:
+            self.page.context.tracing.stop(path=str(self._diagnostics_trace))
+        except Exception as exc:
+            errors.append(f"trace: {exc}")
+        print(
+            "Drive browser failure diagnostics "
+            f"(run {self._diagnostics_run_id}):\n"
+            f"  screenshot: {self._diagnostics_screenshot}\n"
+            f"  trace: {self._diagnostics_trace}"
+            + (f"\n  capture errors: {'; '.join(errors)}" if errors else ""),
+            file=sys.stderr,
+            flush=True,
+        )
+        self._trace_started = False
+
     @classmethod
     def _stop_server(cls):
         if cls.server and cls.server.poll() is None:
@@ -976,6 +1048,8 @@ class DriveExcerptBrowserTest(unittest.TestCase):
         page.locator("#password").fill(self.password)
         page.locator("#submitBtn").click()
         page.wait_for_url("**/home", timeout=10_000)
+        self.page = page
+        self._start_browser_trace(page)
 
         page.goto(f"{self.base_url}/knowledge", wait_until="networkidle")
         card = page.locator(f"#excerpt-{self.excerpt_id}")

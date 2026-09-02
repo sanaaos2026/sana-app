@@ -18,5 +18,6 @@
 - [Sana PostgreSQL startup DDL](sana-postgres-startup-ddl.md) — concurrent app/test initialization can deadlock when schema DDL runs inside request paths; serialize compatibility migrations.
 - [Sana Google Drive backups](sana-drive-backups.md) — Replit Drive OAuth may replace a missing service-account key; restore requires an external trusted hash and Riyadh-date reconciliation.
 - [Sana periodic research security](sana-periodic-research-security.md) — external discovery uses prequalified domains, pinned public IPs, evidence rechecks, and a strict human review gate.
+- [Sana browser diagnostics](sana-browser-diagnostics.md) — start Playwright tracing after authentication so failure artifacts remain useful without recording login credentials.
 - [Integration capability verification](integration-capability-verification.md) — verify callable tools and a real read-only auth request before relying on an “added” integration.
 - [External production DATABASE_URL](external-production-database-url.md) — Replit’s managed-key restriction does not apply to secrets configured on an external production host.
