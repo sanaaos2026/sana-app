@@ -12,9 +12,19 @@ import subprocess
 import sys
 import time
 from urllib.request import urlopen
+from unittest.mock import patch
 
 
 class SanaScanReportAcceptanceTests(unittest.TestCase):
+    def setUp(self):
+        self.context = sana_app.app.app_context()
+        self.context.push()
+        self.db = sana_app.get_db()
+        self.db.execute("ALTER TABLE decisions ADD COLUMN IF NOT EXISTS scan_id TEXT")
+        self.db.execute("ALTER TABLE decisions ADD COLUMN IF NOT EXISTS evidence_ids TEXT")
+        self.db.commit()
+        suffix = uuid.uuid4().hex[:8].upper()
+        self.company_id = f"RPT{suffix}"
     def setUp(self):
         self.context = sana_app.app.app_context()
         self.context.push()
@@ -161,6 +171,13 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         self.assertEqual("80", initiative["target"])
         self.assertTrue(initiative["impact"])
         self.assertTrue(initiative["completeness"])
+        review = report["diagnostic_review"]
+        self.assertEqual(scan["scan_id"], review["snapshot"]["scan_id"])
+        self.assertEqual(self.case_id, review["snapshot"]["case_id"])
+        self.assertEqual("SANA-DIAGNOSTIC-REVIEW-v1", review["contract_version"])
+        self.assertTrue(all(source.get("source_type") for source in review["sources"]))
+        self.assertTrue(all(source.get("source_date") for source in review["client_evidence"]))
+        self.assertTrue(review["reference_knowledge"]["does_not_affect_scan"])
 
         html = sana_app.app.jinja_env.get_template(
             "14-passport-report.html"
@@ -224,10 +241,7 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
 
         report = sana_app._build_passport_context(self.company_id)
         self.assertEqual(self.case_id, report["scan_case"]["case_id"])
-        self.assertEqual(
-            [f"NOPHASE{suffix}"],
-            [item["decision_id"] for item in report["scan_unplanned_decisions"]],
-        )
+        self.assertEqual([], report["scan_unplanned_decisions"])
         report_decision_ids = {
             item["decision_id"] for item in report["scan_initiatives"]
             if item["decision_id"]
@@ -240,7 +254,20 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         self.assertNotIn("قضية أحدث غير مفحوصة", executive_report)
         self.assertNotIn("مشكلة أحدث", executive_report)
         self.assertNotIn("قرار لا يخص Scan", executive_report)
-        self.assertIn("قرارات لم تدخل خطة الـ90 يومًا", executive_report)
+        self.assertNotIn("قرار بلا مرحلة", executive_report)
+
+        exact_case = sana_app._build_scan_report_context(
+            self.company_id, case_id=newer_case_id
+        )
+        self.assertEqual("NOT_RUN", exact_case["scan_status"])
+        self.assertEqual(newer_case_id, exact_case["diagnostic_review"]["snapshot"]["case_id"])
+        self.assertNotEqual(
+            report["scan"]["scan_id"],
+            exact_case["diagnostic_review"]["snapshot"]["scan_id"],
+        )
+        self.assertTrue(
+            exact_case["scan_journey"]["case_url"].endswith(newer_case_id)
+        )
 
     def test_company_decisions_are_not_a_scan_plan_before_scan_runs(self):
         suffix = self.company_id.removeprefix("RPT")
@@ -396,6 +423,165 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         report = sana_app._build_passport_context(self.company_id)
         initiatives = {
             item["decision_id"]: item for item in report["scan_initiatives"]
+        }
+        self.assertTrue(initiatives[f"LINKED{suffix}"]["evidence"])
+        self.assertTrue(initiatives[f"LINKED{suffix}"]["completeness"])
+        self.assertEqual([], initiatives[f"UNLINKED{suffix}"]["evidence"])
+        self.assertFalse(initiatives[f"UNLINKED{suffix}"]["completeness"])
+        self.assertEqual([], initiatives[f"NONFACT{suffix}"]["evidence"])
+        self.assertFalse(initiatives[f"NONFACT{suffix}"]["completeness"])
+
+    def test_text_alias_and_case_api_use_the_same_snapshot_and_cta(self):
+        scan = run_scan(self.db, self.case_id)
+        context = sana_app._build_passport_context(self.company_id)
+        review = context["diagnostic_review"]
+        self.assertEqual(scan["scan_id"], review["snapshot"]["scan_id"])
+
+        with sana_app.app.test_request_context():
+            response = sana_app.passport_report_text(self.company_id)
+            payload = response.get_json()
+        text = payload["data"]["report_text"]
+        self.assertIn(scan["scan_id"], text)
+        self.assertIn(review["journey"]["action_label"], text)
+        self.assertIn("المعرفة المرجعية — ليست Evidence", text)
+        self.assertIn("N/A — Deferred", text)
+
+        with patch(
+            "sana_knowledge.contextual_reference_knowledge",
+            side_effect=RuntimeError("provider unavailable"),
+        ):
+            fallback = sana_app._build_scan_report_context(
+                self.company_id, case_id=self.case_id
+            )
+        self.assertFalse(
+            fallback["diagnostic_review"]["fallback"]["reference_knowledge_available"]
+        )
+        self.assertTrue(
+            fallback["diagnostic_review"]["fallback"]["deterministic"]
+        )
+        self.assertIn(
+            "تبقى نتيجة Scan قابلة للمراجعة",
+            fallback["reference_knowledge"]["knowledge_gap"],
+        )
+
+    def test_scan_excludes_other_open_cases_and_latest_rescan_is_stable(self):
+        suffix = self.company_id.removeprefix("RPT")
+        other_case_id = f"OPEN{suffix}"
+        self.db.execute(
+            """INSERT INTO cases
+               (case_id,company_id,case_title,case_status,declared_problem,real_question)
+               VALUES (?,?,?,?,?,?)""",
+            (
+                other_case_id, self.company_id, "قضية مفتوحة أخرى", "مفتوح",
+                "تعطل مختلف لا يخص القضية الحالية", "كيف نعالج التعطل الآخر؟",
+            ),
+        )
+        self.db.commit()
+
+        first = run_scan(self.db, self.case_id)
+        second = run_scan(self.db, self.case_id)
+        self.assertNotIn(
+            f"CASE:{other_case_id}:DECLARED_PROBLEM",
+            {item["source_id"] for item in second["classified_inputs"]},
+        )
+        latest = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual(second["scan_id"], latest["scan"]["scan_id"])
+        self.assertNotEqual(first["scan_id"], second["scan_id"])
+
+    def test_human_p0_review_transitions_snapshot_to_complete(self):
+        scan = run_scan(self.db, self.case_id)
+        self.assertEqual("REVIEW_REQUIRED", scan["status"])
+
+        with sana_app.app.test_request_context():
+            response, status_code = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, status_code)
+        decision = response.get_json()["data"]
+
+        completed = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        review = completed["diagnostic_review"]
+        self.assertEqual("COMPLETE", review["journey"]["status"])
+        self.assertEqual(scan["scan_id"], review["snapshot"]["scan_id"])
+        self.assertFalse(completed["scan"]["human_review_required"])
+        self.assertEqual(
+            decision["decision_id"],
+            completed["scan"]["human_review"]["decision_id"],
+        )
+        self.assertFalse(review["evidence_gate"]["final_score_allowed"])
+        self.assertEqual("N/A — Deferred", review["financial_value"]["label"])
+
+    def test_rescan_requires_and_completes_a_new_snapshot_review(self):
+        first_scan = run_scan(self.db, self.case_id)
+        with sana_app.app.test_request_context():
+            first_response, first_status = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, first_status)
+        first_decision = first_response.get_json()["data"]
+
+        second_scan = run_scan(self.db, self.case_id)
+        self.assertNotEqual(first_scan["scan_id"], second_scan["scan_id"])
+        before_review = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual("REVIEW_REQUIRED", before_review["scan_status"])
+
+        with sana_app.app.test_request_context():
+            second_response, second_status = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, second_status)
+        second_decision = second_response.get_json()["data"]
+        self.assertNotEqual(first_decision["decision_id"], second_decision["decision_id"])
+        self.assertEqual(first_scan["scan_id"], first_decision["scan_id"])
+        self.assertEqual(second_scan["scan_id"], second_decision["scan_id"])
+
+        after_review = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual("COMPLETE", after_review["scan_status"])
+        self.assertEqual(second_scan["scan_id"], after_review["scan"]["scan_id"])
+        }
+        self.assertTrue(initiatives[f"LINKED{suffix}"]["evidence"])
+        self.assertTrue(initiatives[f"LINKED{suffix}"]["completeness"])
+        self.assertEqual([], initiatives[f"UNLINKED{suffix}"]["evidence"])
+        self.assertFalse(initiatives[f"UNLINKED{suffix}"]["completeness"])
+        self.assertEqual([], initiatives[f"NONFACT{suffix}"]["evidence"])
+        self.assertFalse(initiatives[f"NONFACT{suffix}"]["completeness"])
+
+    def test_snapshot_stays_immutable_when_case_changes_and_decisions_are_rescoped(self):
+        first_scan = run_scan(self.db, self.case_id)
+        original_problem = first_scan["diagnostic_problem"]["statement"]
+        self.db.execute(
+            """INSERT INTO decisions
+               (decision_id,company_id,case_id,title,status,phase_label,scan_id)
+               VALUES (?,?,?,?,?,?,?)""",
+            ("FIRSTDEC", self.company_id, self.case_id, "قرار أول", "مقترح", "0-30", first_scan["scan_id"]),
+        )
+        self.db.execute(
+            "UPDATE cases SET declared_problem=?, real_question=? WHERE case_id=?",
+            ("مشكلة بعد الفحص", "سؤال بعد الفحص", self.case_id),
+        )
+        self.db.commit()
+        first_context = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual(original_problem, first_context["diagnostic_review"]["problem"]["statement"])
+        self.assertNotEqual("مشكلة بعد الفحص", first_context["diagnostic_review"]["problem"]["statement"])
+        self.assertIn(
+            "FIRSTDEC",
+            {item.get("decision_id") for item in first_context["scan_initiatives"]},
+        )
+
+        # A decision from the earlier snapshot must not enter the new snapshot's plan.
+        second_scan = run_scan(self.db, self.case_id)
+        second_context = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual(second_scan["scan_id"], second_context["scan"]["scan_id"])
+        self.assertNotIn(
+            "FIRSTDEC",
+            {item.get("decision_id") for item in second_context["scan_initiatives"]},
+        )
         }
         self.assertTrue(initiatives[f"LINKED{suffix}"]["evidence"])
         self.assertTrue(initiatives[f"LINKED{suffix}"]["completeness"])

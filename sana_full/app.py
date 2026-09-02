@@ -3495,8 +3495,7 @@ def company_services(company_id):
 
 @app.route("/api/cases/<case_id>")
 def case_detail(case_id):
-    from sana_knowledge import contextual_reference_knowledge, latest_diagnostic
-    from sana_scan import latest_scan
+    from sana_knowledge import latest_diagnostic
     db = get_db()
     case = db.execute("SELECT * FROM cases WHERE case_id=?", (case_id,)).fetchone()
     if not case:
@@ -3553,10 +3552,9 @@ def case_detail(case_id):
     # SOP docs — لا يوجد ربط مباشر بين methodology_docs والقضايا حالياً
     sop_docs = []  # قابل للتوسعة: أضف عمود case_id لـmethodology_docs لاحقاً
 
-    scan = latest_scan(db, case_id)
-    reference_knowledge = contextual_reference_knowledge(
-        db, company, case, (scan or {}).get("bottleneck"), limit=5
-    )
+    review_context = _build_scan_report_context(case["company_id"], case_id=case_id) or {}
+    scan = review_context.get("scan") or {}
+    reference_knowledge = review_context.get("reference_knowledge") or _reference_knowledge_fallback()
     return jsonify({
         "success": True,
         "data": {
@@ -3570,6 +3568,8 @@ def case_detail(case_id):
             "sop_docs":        sop_docs,
             "reports":         [],  # لا توجد جداول تقارير مرتبطة بالقضية حالياً
             "scan":             scan,
+            "diagnostic_review": review_context.get("diagnostic_review"),
+            "scan_journey":     review_context.get("scan_journey"),
             "knowledge_diagnostic": latest_diagnostic(db, case_id),
             "reference_knowledge": reference_knowledge,
         }
@@ -3668,13 +3668,14 @@ def _scan_journey_details(
     else:
         status = normalize_scan_status(status, has_run=has_run)
 
-    fallback_case = db.execute(
-        """SELECT case_id FROM cases
-           WHERE company_id=?
-           ORDER BY opened_at DESC, case_id DESC LIMIT 1""",
-        (company_id,),
-    ).fetchone()
-    case_id = case_id or (fallback_case["case_id"] if fallback_case else None)
+    if not case_id:
+        fallback_case = db.execute(
+            """SELECT case_id FROM cases
+               WHERE company_id=?
+               ORDER BY opened_at DESC, case_id DESC LIMIT 1""",
+            (company_id,),
+        ).fetchone()
+        case_id = fallback_case["case_id"] if fallback_case else None
     report_url = f"/company/{company_id}/scan-report"
     assessment_url = "/assessment"
     case_url = f"/case/{case_id}" if case_id else assessment_url
@@ -3702,8 +3703,8 @@ def _scan_journey_details(
             "tone": "review",
         },
         "COMPLETE": {
-            "label": "مكتمل — التقرير جاهز",
-            "message": "اكتملت مدخلات Scan واعتماد مخرجاته. استخدم التقرير التنفيذي لمتابعة الأثر.",
+            "label": "اكتملت المراجعة — التقرير جاهز",
+            "message": "اكتملت المراجعة البشرية لهذا snapshot. أي دليل ناقص ودرجة غير مكتملة يبقيان N/A — Deferred.",
             "action_label": "افتح التقرير التنفيذي",
             "action_url": report_url,
             "tone": "complete",
@@ -3773,6 +3774,9 @@ def passport_summary(company_id):
             "company": dict(company),
             "journey": journey,
             "scan": scan,
+            "diagnostic_review": (scan_context or {}).get("diagnostic_review"),
+            "reference_knowledge": (scan_context or {}).get("reference_knowledge")
+                or _reference_knowledge_fallback(),
             "scan_status": journey["status"],
             "operational_score": operational_score,
             "score_progress": {
@@ -4041,15 +4045,33 @@ def create_p0_case_decision(case_id):
     if guard:
         return guard
 
+    scan = latest_scan(db, case_id)
     existing = db.execute(
         """SELECT * FROM decisions WHERE company_id=? AND case_id=?
-           AND phase_label='P0' ORDER BY created_at DESC LIMIT 1""",
-        (case["company_id"], case_id),
+           AND phase_label='P0' AND scan_id=?
+           ORDER BY created_at DESC LIMIT 1""",
+        (case["company_id"], case_id, (scan or {}).get("scan_id")),
     ).fetchone()
     if existing:
+        if (
+            scan
+            and existing["scan_id"] == scan.get("scan_id")
+            and scan.get("status") == "REVIEW_REQUIRED"
+        ):
+            scan["status"] = "COMPLETE"
+            scan["human_review_required"] = False
+            scan["human_review"] = {
+                "status": "Completed",
+                "decision_id": existing["decision_id"],
+                "reviewed_at": datetime.utcnow().isoformat() + "Z",
+            }
+            db.execute(
+                "UPDATE scan_runs SET status='COMPLETE', result=? WHERE scan_id=?",
+                (json.dumps(scan, ensure_ascii=False), scan["scan_id"]),
+            )
+            db.commit()
         return jsonify({"success": True, "data": dict(existing), "meta": {"created": False}})
 
-    scan = latest_scan(db, case_id)
     proposed = (scan or {}).get("proposed_decision")
     bottleneck = (scan or {}).get("bottleneck")
     if not scan or scan.get("status") not in {"REVIEW_REQUIRED", "COMPLETE"} or not proposed or not bottleneck:
@@ -4118,6 +4140,17 @@ def create_p0_case_decision(case_id):
             json.dumps(evidence_ids, ensure_ascii=False),
         ),
     )
+    scan["status"] = "COMPLETE"
+    scan["human_review_required"] = False
+    scan["human_review"] = {
+        "status": "Completed",
+        "decision_id": decision_id,
+        "reviewed_at": datetime.utcnow().isoformat() + "Z",
+    }
+    db.execute(
+        "UPDATE scan_runs SET status='COMPLETE', result=? WHERE scan_id=?",
+        (json.dumps(scan, ensure_ascii=False), scan["scan_id"]),
+    )
     db.commit()
     decision = db.execute(
         "SELECT * FROM decisions WHERE decision_id=?", (decision_id,)
@@ -4127,110 +4160,101 @@ def create_p0_case_decision(case_id):
 
 @app.route("/api/companies/<company_id>/passport/report-text")
 def passport_report_text(company_id):
-    db = get_db()
-    company = db.execute("SELECT * FROM companies WHERE company_id=?", (company_id,)).fetchone()
-    if not company:
+    context = _build_passport_context(company_id)
+    if not context:
         return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
-
-    assets = db.execute("SELECT * FROM assets WHERE company_id=? ORDER BY current_score ASC",
-                         (company_id,)).fetchall()
-    decisions = db.execute(
-        "SELECT * FROM decisions WHERE company_id=? ORDER BY created_at DESC", (company_id,)
-    ).fetchall()
-    completed_tasks = db.execute(
-        "SELECT * FROM tasks WHERE company_id=? AND status='منجزة' ORDER BY completed_at ASC",
-        (company_id,)
-    ).fetchall()
-
-    journey = _scan_journey_details(company_id)
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    company = context["company"]
+    review = context["diagnostic_review"]
+    journey = review["journey"]
+    problem = review.get("problem") or {}
+    hypothesis = review.get("hypothesis")
+    inference = review.get("inference")
+    opportunity = review.get("opportunity")
+    gate = review["evidence_gate"]
 
     lines = [
         "══════════════════════════════════════════",
-        f"ملف Sana الموحد — {company['name']}",
+        f"مراجعة Sana Scan الموحدة — {company['name']}",
         "══════════════════════════════════════════",
         "",
-        f"تاريخ التصدير: {datetime.utcnow().strftime('%Y-%m-%d')}",
+        f"تاريخ التصدير: {context['export_date']}",
+        f"Snapshot: {review['snapshot']['scan_id'] or 'NOT_RUN'}",
         "",
         "❶  حالة Sana Scan",
         f"   الحالة: {journey['status']} — {journey['label']}",
         f"   الإجراء التالي: {journey['action_label']}",
-        "   Sana Score التشغيلي: N/A — Deferred حتى تكتمل المحاور وتُراجع بشريًا.",
+        (
+            f"   Sana Score التشغيلي: {context['operational_score']}/100"
+            if context["operational_score"] is not None
+            else "   Sana Score التشغيلي: N/A — Deferred حتى تكتمل المحاور وتُراجع بشريًا."
+        ),
         "   التقييم المالي: N/A — Deferred — لا توجد منهجية وأدلة مالية معتمدة.",
         "",
-        "❷  خريطة الأصول — مؤشرات المصدر فقط",
+        "❷  المشكلة والسؤال الحقيقي",
+        f"   المشكلة: {problem.get('statement') or 'غير محددة بعد'}",
+        f"   السؤال الحقيقي: {problem.get('real_question') or 'يُحدد بعد اكتمال Discovery'}",
+        f"   المصدر: {problem.get('source_id') or 'غير متاح'} · {problem.get('source_type') or 'Discovery'} · {problem.get('source_date') or 'تاريخ غير متاح'}",
+        "",
+        "❸  التشخيص والفرصة",
     ]
-    for a in assets:
-        lines.append(f"   {a['asset_name']}: راجع نتيجة Scan ومصادرها")
-
-    lines.append("")
-    lines.append("❸  الإنجازات المنجزة")
-    if completed_tasks:
-        by_phase = {}
-        for t in completed_tasks:
-            key = t["phase_label"] or "مهام منجزة أخرى"
-            by_phase.setdefault(key, []).append(t)
-        for phase, phase_tasks in by_phase.items():
-            lines.append(f"   ▸ {phase}")
-            for t in phase_tasks:
-                lines.append(f"      ✓ {t['title']}")
-                if t["value_note"]:
-                    lines.append(f"        القيمة: {t['value_note']}")
-        lines.append("")
+    lines.append(f"   الفرضية: {(hypothesis or {}).get('statement') or 'لا توجد فرضية بعد'}")
+    lines.append(f"   الاستنتاج: {(inference or {}).get('statement') or 'N/A — Deferred حتى يصل دليل مستقل'}")
+    lines.append(f"   الفرصة: {(opportunity or {}).get('statement') or 'N/A — Deferred'}")
+    lines.extend(["", "❹  بوابة الأدلة"])
+    if gate["missing_evidence"]:
+        lines.extend(f"   • {item}" for item in gate["missing_evidence"])
     else:
-        lines.append("   لا توجد إنجازات مسجَّلة بعد.")
-        lines.append("")
-
-    lines.append("❹  القرارات")
-    if decisions:
-        for d in decisions:
-            lines.append(f"   [{d['status']}] {d['title']}")
-            if d["recommended_action"]:
-                lines.append(f"      الإجراء الموصى به: {d['recommended_action']}")
-            if d["reason"]:
-                lines.append(f"      السبب: {d['reason']}")
-            if d["confidence_score"] is not None:
-                lines.append(f"      الثقة: {d['confidence_score']}٪")
-            lines.append("")
+        lines.append("   لا توجد بنود ناقصة في snapshot الحالي؛ المراجعة البشرية تبقى مطلوبة.")
+    lines.extend(["", "❺  مصادر العميل"])
+    if review["client_evidence"]:
+        for source in review["client_evidence"]:
+            lines.append(
+                f"   {source['source_id']} · {source['classification']} · "
+                f"{source['source_type']} · {source.get('source_date') or 'تاريخ غير متاح'}"
+            )
+            lines.append(f"      {source['statement']} — {source['source_ref']}")
     else:
-        lines.append("   لا توجد قرارات مسجَّلة بعد.")
-        lines.append("")
-
-    # ❺ التموضع النهائي وترتيب الخدمات — من أحدث قرار معتمد يحمل structured_data
-    positioning = next((d for d in decisions if d["structured_data"]), None)
-    if positioning:
-        sd = json.loads(positioning["structured_data"])
-        lines.append("❺  التموضع النهائي وترتيب الخدمات")
-        lines.append(f"   [{positioning['status']}] {positioning['title']}")
-        lines.append("")
-        lines.append("   الخدمات الرئيسية (Core):")
-        for s in sd.get("core_services", []):
-            flag = f" {s['flag']} ⭐" if s.get("flag") else ""
-            lines.append(f"      • {s['title']}{flag}")
-        lines.append("")
-        lines.append("   الخدمات الداعمة (Supporting):")
-        for s in sd.get("supporting_services", []):
-            lines.append(f"      • {s['title']}")
-        lines.append("")
-        lines.append("   الخدمات المتخصصة (Specialized — بالطلب فقط):")
-        for s in sd.get("specialized_services", []):
-            lines.append(f"      • {s['title']}")
-        if sd.get("excluded_note"):
-            lines.append("")
-            lines.append(f"   ملاحظة: {sd['excluded_note']}")
-        if sd.get("marketing_message"):
-            lines.append("")
-            lines.append(f"   الرسالة التسويقية: {sd['marketing_message']}")
-            for b in sd.get("marketing_bullets", []):
-                lines.append(f"      {b}")
-        lines.append("")
+        lines.append("   لا توجد أدلة عميل مرتبطة بالـ snapshot.")
+    lines.extend(["", "❻  المعرفة المرجعية — ليست Evidence"])
+    references = review["reference_knowledge"].get("references") or []
+    if references:
+        for ref in references:
+            lines.append(
+                f"   • {ref.get('title')} · {ref.get('source_version') or ref.get('version') or 'دون إصدار'}"
+            )
+            lines.append(
+                f"      سبب المطابقة: {' · '.join(ref.get('match_reasons') or []) or 'مرجع عام'}"
+            )
+            lines.append(
+                f"      الدليل المطلوب: {ref.get('required_client_evidence') or 'Fact أو Evidence خاص بالشركة'}"
+            )
+    else:
+        lines.append(f"   {review['reference_knowledge'].get('knowledge_gap')}")
 
     lines.append("══════════════════════════════════════════")
-    lines.append("أُنشئت بواسطة سنع — ليست معادلة SVS الرسمية، تقدير مبسّط للعرض فقط")
+    lines.append("أُنشئت بواسطة سنع — نتيجة حتمية قابلة للتتبع وليست تقييمًا ماليًا.")
     lines.append("══════════════════════════════════════════")
 
     return jsonify({"success": True, "data": {"report_text": "\n".join(lines)}})
 
-def _build_scan_report_context(company_id):
+def _reference_knowledge_fallback(message=None):
+    return {
+        "reference_only": True,
+        "does_not_affect_scan": True,
+        "context": {},
+        "references": [],
+        "knowledge_gap": message or (
+            "المعرفة المرجعية غير متاحة الآن. تبقى نتيجة Scan قابلة للمراجعة "
+            "من أدلة العميل وحدها، ولا يتغير القرار أو الدرجة."
+        ),
+        "conflicts": [],
+        "human_review_required": True,
+        "available": False,
+    }
+def _build_scan_report_context(company_id, case_id=None):
     """يبني حزمة Sana Scan التنفيذية من آخر فحص وقرارات الشركة.
 
     التقرير لا يملأ الخانات الناقصة بتخمينات. إذا لم يوجد Scan أو لم يعتمد
@@ -4244,12 +4268,20 @@ def _build_scan_report_context(company_id):
     if not company:
         return None
 
-    latest_scan_row = db.execute(
-        """SELECT scan_id, status, result, methodology_version, created_at
-           FROM scan_runs WHERE company_id=?
-           ORDER BY created_at DESC, scan_id DESC LIMIT 1""",
-        (company_id,),
-    ).fetchone()
+    if case_id:
+        latest_scan_row = db.execute(
+            """SELECT scan_id, status, result, methodology_version, created_at
+               FROM scan_runs WHERE company_id=? AND case_id=?
+               ORDER BY created_at DESC, scan_id DESC LIMIT 1""",
+            (company_id, case_id),
+        ).fetchone()
+    else:
+        latest_scan_row = db.execute(
+            """SELECT scan_id, status, result, methodology_version, created_at
+               FROM scan_runs WHERE company_id=?
+               ORDER BY created_at DESC, scan_id DESC LIMIT 1""",
+            (company_id,),
+        ).fetchone()
     scan = {}
     if latest_scan_row:
         try:
@@ -4265,17 +4297,41 @@ def _build_scan_report_context(company_id):
         scan["status"] = scan.get("status") or latest_scan_row["status"]
 
     latest_case = None
-    if scan.get("case_id"):
+    canonical_case_id = scan.get("case_id") or (case_id if not latest_scan_row else None)
+    if latest_scan_row:
+        problem_snapshot = scan.get("diagnostic_problem") or {}
+        problem_source = next(
+            (
+                item for item in (scan.get("classified_inputs") or [])
+                if item.get("source_id") == problem_snapshot.get("source_id")
+            ),
+            {},
+        )
+        latest_case = {
+            "case_id": canonical_case_id,
+            "case_title": problem_snapshot.get("title")
+                or problem_source.get("case_title")
+                or problem_source.get("statement"),
+            "declared_problem": problem_snapshot.get("statement")
+                or problem_source.get("statement"),
+            "real_question": problem_snapshot.get("real_question"),
+            "case_status": None,
+            "case_type": None,
+            "confidence_score": problem_source.get("confidence"),
+            "opened_at": problem_snapshot.get("source_date")
+                or problem_source.get("source_date"),
+        }
+    elif canonical_case_id:
         latest_case = db.execute(
             """SELECT case_id, case_title, declared_problem, real_question,
-                      case_status, confidence_score
+                      case_status, case_type, confidence_score, opened_at
                FROM cases WHERE company_id=? AND case_id=?""",
-            (company_id, scan["case_id"]),
+            (company_id, canonical_case_id),
         ).fetchone()
-    if not latest_case:
+    if not latest_case and not latest_scan_row and not case_id:
         latest_case = db.execute(
             """SELECT case_id, case_title, declared_problem, real_question,
-                      case_status, confidence_score
+                      case_status, case_type, confidence_score, opened_at
                FROM cases WHERE company_id=?
                ORDER BY opened_at DESC, case_id DESC LIMIT 1""",
             (company_id,),
@@ -4291,6 +4347,7 @@ def _build_scan_report_context(company_id):
             "statement": source.get("statement") or "مصدر دون وصف",
             "source_ref": source.get("source_ref") or source.get("source_type") or "غير محدد",
             "source_type": source.get("source_type") or "غير محدد",
+            "source_date": source.get("source_date"),
             "asset_id": source.get("asset_id"),
             "confidence": source.get("confidence"),
             "information_type": source.get("information_type") or "Narrative",
@@ -4329,7 +4386,7 @@ def _build_scan_report_context(company_id):
         company_id,
         status=status,
         has_run=bool(latest_scan_row),
-        case_id=scan.get("case_id"),
+        case_id=scan.get("case_id") or canonical_case_id,
         missing_evidence=scan.get("missing_evidence") or [],
     )
 
@@ -4368,12 +4425,12 @@ def _build_scan_report_context(company_id):
         return None
 
     decisions = []
-    if scan.get("case_id"):
+    if scan.get("case_id") and scan.get("scan_id"):
         decisions = [
             dict(row) for row in db.execute(
                 """SELECT * FROM decisions WHERE company_id=? AND case_id=?
-                   ORDER BY created_at DESC, decision_id DESC""",
-                (company_id, scan["case_id"]),
+                   AND scan_id=? ORDER BY created_at DESC, decision_id DESC""",
+                (company_id, scan["case_id"], scan["scan_id"]),
             ).fetchall()
         ]
     initiatives = []
@@ -4500,6 +4557,73 @@ def _build_scan_report_context(company_id):
             0, "لا نغلق بوابة الأدلة: البنود الناقصة أدناه تظل N/A — Deferred حتى تصل مصادرها."
         )
 
+    reference_knowledge = _safe_contextual_reference_knowledge(
+        db, company, latest_case, bottleneck
+    )
+    problem = None
+    if latest_case:
+        snapshot_problem = scan.get("diagnostic_problem") or {}
+        problem = {
+            "title": latest_case["case_title"],
+            "statement": snapshot_problem.get("statement")
+                or latest_case["declared_problem"]
+                or latest_case["case_title"],
+            "real_question": snapshot_problem.get("real_question")
+                or (None if latest_scan_row else latest_case["real_question"]),
+            "source_id": snapshot_problem.get("source_id")
+                or f"CASE:{latest_case['case_id']}:DECLARED_PROBLEM",
+            "source_type": "Discovery / Case",
+            "source_date": snapshot_problem.get("source_date")
+                or latest_case["opened_at"],
+        }
+    hypothesis = hypotheses[0] if hypotheses else None
+    inference = inferences[0] if inferences else None
+    diagnostic_review = {
+        "contract_version": "SANA-DIAGNOSTIC-REVIEW-v1",
+        "snapshot": {
+            "scan_id": scan.get("scan_id"),
+            "case_id": scan.get("case_id") or (latest_case["case_id"] if latest_case else None),
+            "company_id": company_id,
+            "created_at": scan.get("created_at"),
+            "methodology_version": scan.get("methodology_version"),
+        },
+        "journey": scan_journey,
+        "problem": problem,
+        "hypothesis": hypothesis,
+        "inference": inference,
+        "bottleneck": bottleneck,
+        "opportunity": opportunity,
+        "proposed_decision": (
+            proposed_decision if status in {"REVIEW_REQUIRED", "COMPLETE"} else None
+        ),
+        "evidence_gate": {
+            "open": status in {"NOT_RUN", "INCOMPLETE"},
+            "missing_evidence": list(scan.get("missing_evidence") or []),
+            "next_required": scan_journey["action_label"],
+            "decision_allowed": status in {"REVIEW_REQUIRED", "COMPLETE"},
+            "final_score_allowed": status in {"REVIEW_REQUIRED", "COMPLETE"}
+                and all(
+                    item.get("status") == "COMPLETE" and item.get("score") is not None
+                    for item in (scan.get("asset_scores") or [])
+                )
+                and bool(scan.get("asset_scores")),
+        },
+        "sources": citations,
+        "client_evidence": evidence_citations,
+        "reference_knowledge": reference_knowledge,
+        "financial_value": {
+            "status": "DEFERRED",
+            "value": None,
+            "label": "N/A — Deferred",
+        },
+        "fallback": {
+            "deterministic": True,
+            "ai_required": False,
+            "ai_used": bool(scan.get("ai_used")),
+            "reference_knowledge_available": reference_knowledge.get("available", True),
+        },
+    }
+
     return {
         "scan": scan,
         "scan_status": status,
@@ -4550,6 +4674,8 @@ def _build_scan_report_context(company_id):
             else None
         ),
         "scan_review_note": scan_journey["message"],
+        "reference_knowledge": reference_knowledge,
+        "diagnostic_review": diagnostic_review,
     }
 def _build_passport_context(company_id):
     """يُعيد dict جاهزًا لـ render_template('14-passport-report.html', ...)
@@ -4621,13 +4747,8 @@ def _build_passport_context(company_id):
         "total": 0,
     }
     context["score_ready"] = context["operational_score"] is not None
-    from sana_knowledge import contextual_reference_knowledge
-    context["reference_knowledge"] = contextual_reference_knowledge(
-        db,
-        company,
-        context.get("scan_case"),
-        context.get("scan_bottleneck"),
-        limit=5,
+    context["reference_knowledge"] = context.get(
+        "reference_knowledge", _reference_knowledge_fallback()
     )
     return context
 
@@ -7737,19 +7858,15 @@ def _enforce_web_process_invariants():
             "Schedulers cannot run in the production web process: "
             + ", ".join(enabled)
         )
-_enforce_web_process_invariants()
 
-if __name__ == "__main__":
-    print("=" * 60)
-    print("سنع — الخادم يعمل الآن")
-    print("افتح المتصفح على: http://localhost:5000")
-    print("=" * 60)
-    port = int(os.environ.get("PORT", 5000))
-    is_dev = (
-        os.environ.get("REPLIT_DEPLOYMENT") != "1"
-        and os.environ.get("SANA_ENV", "").strip().lower() not in {"production", "prod"}
-    )
-    is_serving_process = not is_dev or os.environ.get("WERKZEUG_RUN_MAIN") == "true"
-    if os.environ.get("SANA_ENV", "").strip().lower() not in {"production", "prod"}:
-        _start_startup_initialization(is_serving_process)
-    app.run(debug=is_dev, use_reloader=is_dev, host="0.0.0.0", port=port)
+def _safe_contextual_reference_knowledge(db, company, case, bottleneck):
+    try:
+        from sana_knowledge import contextual_reference_knowledge
+        bundle = contextual_reference_knowledge(
+            db, company, case, bottleneck, limit=5
+        )
+        bundle["available"] = True
+        return bundle
+    except Exception:
+        db.rollback()
+        return _reference_knowledge_fallback()

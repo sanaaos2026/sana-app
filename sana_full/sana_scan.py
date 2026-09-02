@@ -6,6 +6,7 @@
 """
 import json
 import uuid
+from datetime import datetime
 
 from database_config import acquire_schema_lock
 from sana_reliability import (
@@ -295,6 +296,7 @@ def _source_item(row):
         "statement": row["title"],
         "source_type": row["source_type"],
         "source_ref": row["source_ref"] or row["source_type"] or row["evidence_id"],
+        "source_date": row["date_collected"],
         "asset_id": row["asset_id"],
         "confidence": row["confidence"],
         "information_type": row["information_type"] or "Narrative",
@@ -659,7 +661,7 @@ def run_scan(db, case_id):
     assets = _canonical_assets(asset_rows)
     evidence_rows = db.execute(
         """SELECT evidence_id, asset_id, title, source_type, source_ref,
-                  evidence_type, confidence, information_type,
+                  evidence_type, confidence, date_collected, information_type,
                   verification_status, source_category, period_start, period_end,
                   raw_value, normalized_value, unit, topic_key, seasonality_context
            FROM evidence WHERE case_id=? ORDER BY date_collected, evidence_id""",
@@ -670,8 +672,11 @@ def run_scan(db, case_id):
         "source_id": f"CASE:{case_id}:DECLARED_PROBLEM",
         "classification": "Evidence",
         "statement": case["declared_problem"] or case["real_question"] or case["case_title"],
+        "case_title": case["case_title"],
+        "real_question": case["real_question"],
         "source_type": "Case",
         "source_ref": "القضية: المشكلة المعلنة",
+        "source_date": case["opened_at"],
         "asset_id": case["related_asset_id"],
         "confidence": case["confidence_score"],
         "information_type": "Narrative",
@@ -686,35 +691,6 @@ def run_scan(db, case_id):
         "seasonality_context": None,
     }
     sources.append(case_source)
-    open_cases = db.execute(
-        """SELECT case_id, case_title, declared_problem, related_asset_id
-           FROM cases WHERE company_id=?
-             AND case_status IN ('Open','مفتوح','قيد التنفيذ')""",
-        (case["company_id"],),
-    ).fetchall()
-    for open_case in open_cases:
-        if open_case["case_id"] == case_id:
-            continue
-        sources.append({
-            "source_id": f"CASE:{open_case['case_id']}:DECLARED_PROBLEM",
-            "classification": "Evidence",
-            "statement": open_case["declared_problem"] or open_case["case_title"],
-            "source_type": "Open Case",
-            "source_ref": f"قضية مفتوحة: {open_case['case_id']}",
-            "asset_id": open_case["related_asset_id"],
-            "confidence": None,
-            "information_type": "Narrative",
-            "verification_status": "UNVERIFIED",
-            "source_category": "CASE",
-            "period_start": None,
-            "period_end": None,
-            "raw_value": None,
-            "normalized_value": None,
-            "unit": None,
-            "topic_key": "declared_problem",
-            "seasonality_context": None,
-        })
-
     triangulation = triangulate_sources(sources)
     contradicted_ids = {
         source_id
@@ -966,9 +942,22 @@ def run_scan(db, case_id):
             "ولا تختلط Actual وForecast وTarget، ولا يُحسم التعارض تلقائيًا؛ "
             "المعرفة العامة لا تدخل Evidence ولا تغيّر التشخيص أو الدرجة أو القرار."
         ),
+        "diagnostic_problem": {
+            "title": case["case_title"],
+            "statement": case["declared_problem"] or case["real_question"] or case["case_title"],
+            "real_question": case["real_question"],
+            "source_id": case_source["source_id"],
+            "source_type": case_source["source_type"],
+            "source_date": case_source["source_date"],
+        },
     }
 
-    scan_id = "SCAN-" + uuid.uuid4().hex[:10].upper()
+    scan_id = (
+        "SCAN-"
+        + datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+        + "-"
+        + uuid.uuid4().hex[:6].upper()
+    )
     db.execute(
         """INSERT INTO scan_runs
            (scan_id, case_id, company_id, status, result, methodology_version)

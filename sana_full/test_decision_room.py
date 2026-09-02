@@ -161,6 +161,8 @@ class DecisionRoomAcceptanceTests(unittest.TestCase):
                 "value": value,
                 "source_ref": f"ledger:{company_id}:{key}",
                 "confidence": 90,
+                "verification_status": "VERIFIED",
+                "source_category": "SYSTEM",
             }
             for key, *_ in METRIC_DEFINITIONS
         }

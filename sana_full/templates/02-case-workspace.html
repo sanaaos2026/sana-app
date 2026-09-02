@@ -231,7 +231,8 @@ function renderScanSection(scan){
   const status = scan ? scan.status : 'NOT_RUN';
   const statusLabel = status === 'REVIEW_REQUIRED'
     ? 'جاهز للمراجعة البشرية'
-    : status === 'INCOMPLETE' ? 'غير مكتمل' : 'لم يُشغّل بعد';
+    : status === 'INCOMPLETE' ? 'غير مكتمل'
+    : status === 'COMPLETE' ? 'اكتملت المراجعة — التقرير جاهز' : 'لم يُشغّل بعد';
   let body = '';
   if(!scan){
     body = `<div class="knowledge-status blocked">شغّل Sana Scan لجمع SDS-001 والأدلة والأصول الخمسة في تشخيص واحد.</div>`;
@@ -636,7 +637,7 @@ function render(d){
       <span class="dot"></span>
       <div style="flex:1;">
         <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
-          <div>${e.title} <span class="conf-tag">— ${e.evidence_type || 'Evidence'} · ${e.source_ref || e.source_type} · ثقة ${e.confidence}٪</span></div>
+          <div>${e.title} <span class="conf-tag">— ${e.evidence_type || 'Evidence'} · ${e.source_type || 'مصدر'} · ${e.source_ref || 'مرجع غير محدد'} · ${e.date_collected || 'تاريخ غير متاح'} · ثقة ${e.confidence}٪</span></div>
           <button class="ai-btn" onclick="analyzeEvidence('${e.evidence_id}')">🧠 حلّل</button>
         </div>
         <div id="ai-evidence-${e.evidence_id}">${e.ai_analysis ? `<div class="ai-note">🧠 ${e.ai_analysis}</div>` : ''}</div>

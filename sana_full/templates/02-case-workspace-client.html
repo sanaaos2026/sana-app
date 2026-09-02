@@ -20,6 +20,7 @@ section{background:#fff;border:1px solid var(--line);border-radius:12px;padding:
 h2{font-size:14px;color:var(--navy);margin:0 0 12px}.item{padding:10px 0;border-bottom:1px solid #EEF0F4;font-size:13px;line-height:1.7}.item:last-child{border-bottom:0}
 .meta{font-size:11px;color:var(--muted);margin-top:4px}.empty{color:var(--muted);font-size:13px}
 .next{border-right:4px solid var(--gold)}.btn{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:700;font-size:13px;border:0;font-family:inherit;cursor:pointer}.field{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;margin:6px 0}.error{color:#B23A2E;font-size:12px;min-height:18px;margin-top:7px}
+.state{border-right:4px solid var(--teal)}.state.warning{border-color:var(--gold)}.pill{display:inline-block;padding:3px 9px;border-radius:20px;background:#E4F7F6;color:#087e7d;font-size:10px;font-weight:700}.gate{background:#FFF9EB;border:1px solid #F1D68A;border-radius:9px;padding:12px;color:#765B00;font-size:12px;line-height:1.8}.finding{padding:12px;border:1px solid var(--line);border-radius:9px;margin-top:9px}.finding strong{color:var(--navy)}.sources{margin:7px 0 0;padding-right:18px}.reference{background:#F8F9FB}.reference .meta{color:#765B00}.deferred{background:#F5F6FB;border-radius:8px;padding:10px;color:var(--muted);font-size:12px}
 </style>
 </head>
 <body>
@@ -41,18 +42,32 @@ function render(d){
   const decisions=d.decisions||[], tasks=d.tasks||[], evidence=d.evidence||[];
   const activeDecision=decisions.find(x=>x.status==='مقترح'||x.status==='معتمد')||decisions[0];
   const activeTask=tasks.find(x=>x.status!=='منجزة')||tasks[0];
-  const scan=d.scan,scanReady=scan&&['REVIEW_REQUIRED','COMPLETE'].includes(scan.status);
+  const review=d.diagnostic_review||{},journey=review.journey||{status:'NOT_RUN',label:'لم يُشغّل بعد',message:'لم تُجمع نتيجة Sana Scan بعد.',action_label:'شغّل Sana Scan'},gate=review.evidence_gate||{open:true,missing_evidence:[]};
+  const scan=d.scan,scanReady=scan&&['REVIEW_REQUIRED','COMPLETE'].includes(journey.status);
+  const sourceMap=Object.fromEntries((review.sources||[]).map(x=>[String(x.source_id),x]));
+  const findingCard=(label,item)=>item?`<div class="finding"><strong>${label} · ${esc(item.classification||'')}</strong><div>${esc(item.statement)}</div><div class="meta">المصادر: ${(item.source_ids||[]).map(id=>{const s=sourceMap[String(id)]||{};return `${esc(id)} (${esc(s.source_type||'مصدر')} · ${esc(s.source_date||'تاريخ غير متاح')})`}).join('، ')||'لا يوجد مصدر'}</div></div>`:'';
   let action='';
   if(activeTask){action=`<a class="btn" href="/home">افتح خطوة اليوم</a>`}
   else if(activeDecision){action=`<a class="btn" href="/home">راجع القرار واعتمده</a>`}
   else if(!scan){action=`<button class="btn" onclick="runAnalysis()">حلّل الأدلة الحالية</button><div id="actionError" class="error"></div>`}
   else if(!scanReady){action=`<input id="evidenceTitle" class="field" placeholder="أضف حقيقة أو دليلًا جديدًا"><input id="sourceRef" class="field" placeholder="مرجع المصدر: ملف، تقرير، أو ملاحظة موثقة"><button class="btn" onclick="addAndAnalyze()">حفظ الدليل وإعادة التحليل</button><div id="actionError" class="error"></div>`}
   else {action=`<button class="btn" onclick="buildDecision()">إنشاء ملف قرار للمراجعة</button><div id="actionError" class="error"></div>`}
+  const refs=(review.reference_knowledge||{}).references||[];
   document.getElementById('app').innerHTML=`
-    <div class="eyebrow">فرصة تحسين</div>
+    <div class="eyebrow">مراجعة تشخيصية واحدة · فرصة تحسين</div>
     <h1>${esc(d.case.title||'ملف القرار')}</h1>
     <p class="lead">${esc(d.case.real_question||d.case.declared_problem||'نجمع الدليل قبل اعتماد أي قرار.')}</p>
-    <section><h2>الدليل المتاح</h2>${rows(evidence,e=>`<div class="item">${esc(e.title)}<div class="meta">${esc(e.source_type||'مصدر مسجل')} · الثقة ${esc(e.confidence??'—')}%</div></div>`,'لا يوجد دليل كافٍ بعد. الخطوة التالية هي إضافة دليل حقيقي.')}</section>
+    <section class="state ${journey.status==='INCOMPLETE'?'warning':''}"><span class="pill">${esc(journey.status)}</span><h2>${esc(journey.label)}</h2><div class="lead" style="margin:0">${esc(journey.message)}</div><div class="meta">Snapshot: ${esc((review.snapshot||{}).scan_id||'NOT_RUN')} · ${esc((review.snapshot||{}).methodology_version||'بانتظار التشغيل')}</div></section>
+    <section><h2>المشكلة ← الفرضية ← الاستنتاج ← الفرصة</h2>
+      <div class="item"><strong>المشكلة:</strong> ${esc((review.problem||{}).statement||d.case.declared_problem||'غير محددة')}<div class="meta">${esc((review.problem||{}).source_id||'Discovery')} · ${esc((review.problem||{}).source_date||'تاريخ غير متاح')}</div></div>
+      ${findingCard('الفرضية',review.hypothesis)}
+      ${findingCard('الاستنتاج',review.inference)}
+      ${findingCard('الفرصة المقترحة',review.opportunity)}
+    </section>
+    <section><h2>بوابة الأدلة</h2>${gate.open?`<div class="gate"><strong>الاستنتاج والقرار والدرجة النهائية مؤجلة.</strong><ul>${(gate.missing_evidence||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>أضف Fact أو Evidence مستقلًا ثم أعد Scan.</li>'}</ul></div>`:'<div class="deferred">اكتملت بوابة المدخلات في هذا snapshot، وتبقى المراجعة البشرية مطلوبة قبل التنفيذ.</div>'}</section>
+    <section><h2>دليل العميل ومصادره</h2>${rows(review.client_evidence||[],e=>`<div class="item"><strong>${esc(e.source_id)}</strong> — ${esc(e.statement)}<div class="meta">${esc(e.classification)} · ${esc(e.source_type)} · ${esc(e.source_ref)} · ${esc(e.source_date||'تاريخ غير متاح')}</div></div>`,'لا يوجد دليل عميل مؤهل بعد.')}</section>
+    <section class="reference"><h2>المعرفة المرجعية — ليست Evidence</h2><div class="deferred">لا تغيّر هذه المواد Scan أو الدرجة أو القرار.</div>${rows(refs,r=>`<div class="item"><strong>${esc(r.title)}</strong><div>${esc(r.original_summary||r.problem||'')}</div><div class="meta">الإصدار ${esc(r.source_version||r.version||'—')} · سبب المطابقة: ${esc((r.match_reasons||[]).join(' · ')||'مرجع عام')}<br>الدليل المطلوب: ${esc(r.required_client_evidence||'Fact أو Evidence خاص بالشركة')}</div></div>`,esc((review.reference_knowledge||{}).knowledge_gap||'لا توجد معرفة مرجعية متاحة الآن؛ يستمر Scan بأدلة العميل.'))}</section>
+    <section><h2>القيمة</h2><div class="deferred">Sana Score والقيمة المالية: ${esc((review.financial_value||{}).label||'N/A — Deferred')} عند نقص الدليل، ولا تُعرض نسبة نمو مصطنعة.</div></section>
     <section><h2>ملف القرار</h2>${activeDecision?`<div class="item"><strong>${esc(activeDecision.title)}</strong><div>${esc(activeDecision.reason||'بانتظار اكتمال السبب المدعوم.')}</div><div class="meta">الحالة: ${esc(activeDecision.status)}</div></div>`:'<p class="empty">لم يُقترح قرار بعد؛ لن يعرض سنع حكمًا بلا دليل.</p>'}</section>
     <section class="next"><h2>الخطوة التالية</h2>${activeTask?`<div class="item"><strong>${esc(activeTask.title)}</strong><div class="meta">الحالة: ${esc(activeTask.status)}${activeTask.due_date?' · الموعد: '+esc(activeTask.due_date):''}</div></div>`:'<p class="empty">أكمل الخطوة التالية ليظهر قرار قابل للمراجعة.</p>'}${action}</section>`;
 }

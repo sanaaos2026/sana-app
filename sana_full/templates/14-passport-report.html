@@ -187,6 +187,7 @@
       <div class="answer-card">
         <div class="answer-label">الوضع الآن</div>
         <div class="answer-value">{% if scan_case %}{{ scan_case.declared_problem or scan_case.case_title }}{% else %}لا توجد قضية تشخيصية محفوظة{% endif %}</div>
+        {% if diagnostic_review.problem %}<div class="source-ref">{{ diagnostic_review.problem.source_id }} · {{ diagnostic_review.problem.source_type }} · {{ diagnostic_review.problem.source_date or 'تاريخ غير متاح' }}</div>{% endif %}
       </div>
       <div class="answer-card">
         <div class="answer-label">السؤال الحقيقي</div>
@@ -200,7 +201,7 @@
     <div class="report-meta">
       <span><b>اكتمال المحاور:</b> {{ scan.score_complete_count or 0 }} / {{ scan.score_total_count or 0 }}</span>
       <span><b>الأدلة المطلوبة:</b> {{ scan_missing_evidence|length }}</span>
-      <span><b>المراجعة البشرية:</b> {% if scan.human_review_required or scan_has_run %}مطلوبة{% else %}غير متاحة{% endif %}</span>
+      <span><b>المراجعة البشرية:</b> {% if scan.status == 'COMPLETE' %}مكتملة لهذا snapshot{% elif scan.human_review_required or scan_has_run %}مطلوبة{% else %}غير متاحة{% endif %}</span>
     </div>
   </section>
 
@@ -283,7 +284,7 @@
       {% for source in scan_citations %}
       <li class="source-item">
         <span class="source-id">{{ source.source_id }}</span>
-        <span class="source-copy"><b>{{ source.classification }}</b> — {{ source.statement }}<span class="source-ref">{{ source.source_ref }} · {{ source.source_category }} · {{ source.information_type }} · {{ source.verification_status }}{% if source.period_start %} · {{ source.period_start }}—{{ source.period_end }}{% endif %}{% if source.confidence is not none %} · ثقة {{ source.confidence }}٪{% endif %}</span></span>
+        <span class="source-copy"><b>{{ source.classification }}</b> — {{ source.statement }}<span class="source-ref">{{ source.source_type }} · {{ source.source_ref }} · {{ source.source_date or 'تاريخ غير متاح' }} · {{ source.source_category }} · {{ source.information_type }} · {{ source.verification_status }}{% if source.period_start %} · {{ source.period_start }}—{{ source.period_end }}{% endif %}{% if source.confidence is not none %} · ثقة {{ source.confidence }}٪{% endif %}</span></span>
       </li>
       {% endfor %}
     </ul>
@@ -443,12 +444,12 @@
       <div class="sec-title">خريطة الأصول</div>
       <div class="sec-note">من الأضعف للأقوى</div>
     </div>
-    {% if assets_sorted %}
-      {% for a in assets_sorted %}
+    {% if scan.asset_scores %}
+      {% for a in scan.asset_scores %}
       <div class="asset-row">
         <div class="asset-name">{{ a.asset_name }}</div>
-        <div class="asset-track"><div class="asset-fill" style="width:{{ [a.current_score, 1]|max }}%; background:{{ asset_colors[loop.index0] }};"></div></div>
-        <div class="asset-val">{{ a.current_score }}/100</div>
+        <div class="asset-track"><div class="asset-fill" style="width:{{ [a.score or 0, 1]|max if a.score is not none else 1 }}%; background:{{ asset_colors[loop.index0] }};"></div></div>
+        <div class="asset-val">{% if a.score is not none %}{{ a.score }}/100{% else %}N/A — Deferred{% endif %}</div>
       </div>
       {% endfor %}
     {% else %}
@@ -539,7 +540,7 @@
   </div>
   {% endif %}
 
-  <footer>سنع — وضوح يصنع النمو · تقدير مبسّط للعرض فقط، ليس محرك SVS الرسمي</footer>
+  <footer>سنع — مراجعة تشخيصية قابلة للتتبع · التقييم المالي N/A — Deferred</footer>
 
 </div>
 </body>

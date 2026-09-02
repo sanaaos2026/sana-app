@@ -287,8 +287,10 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         self.assertIn("حلّل الأدلة الحالية", decision_html)
         self.assertIn("حفظ الدليل وإعادة التحليل", decision_html)
         self.assertIn("إنشاء ملف قرار للمراجعة", decision_html)
-        self.assertNotIn("Sana Scan", decision_html)
-        self.assertNotIn("المعرفة المرجعية المرتبطة", decision_html)
+        self.assertIn("Sana Scan", decision_html)
+        self.assertIn("المعرفة المرجعية — ليست Evidence", decision_html)
+        self.assertNotIn("Knowledge Console", decision_html)
+        self.assertNotIn("Research Library", decision_html)
 
         for legacy_path, legal_target in (
             ("/growth-os", "/home"),

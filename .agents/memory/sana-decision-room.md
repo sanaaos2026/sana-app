@@ -26,3 +26,9 @@ P0 completion must append one sourced Result and one explicit Impact Review agai
 **Why:** Marking a task complete or applying an expected score delta is not proof that the business outcome improved, and overwriting the review would erase the decision trail.
 
 **How to apply:** Close a P0 task only with a result summary, source reference, impact outcome, and reviewer note. Keep unsupported financial or growth effects `N/A — Deferred`; change scores only through separately qualified evidence.
+
+Human review is bound to an exact diagnostic snapshot, not merely to a case. A rescan creates a new review obligation and must never inherit completion or decision linkage from an older snapshot.
+
+**Why:** Treating P0 review as one-per-case can make a newer result appear reviewed when only an older evidence set was approved, or can trap the newer snapshot behind an unrelated prior decision.
+
+**How to apply:** Make review and decision idempotency company-, case-, and snapshot-scoped. Preserve older decision links, and keep unresolved asset scores and financial value `N/A — Deferred` even after the current snapshot's human review completes.
