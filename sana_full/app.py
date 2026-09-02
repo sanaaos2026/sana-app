@@ -8556,3 +8556,14 @@ def _safe_contextual_reference_knowledge(db, company, case, bottleneck):
     except Exception:
         db.rollback()
         return _reference_knowledge_fallback()
+
+
+if __name__ == "__main__":
+    _enforce_web_process_invariants()
+    _start_startup_initialization(is_serving_process=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", "5000")),
+        debug=False,
+        use_reloader=False,
+    )

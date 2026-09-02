@@ -10,7 +10,7 @@ class AdminDashboardP0Tests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         sana_app.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
-        sana_app.init_db(force=True)
+        sana_app.init_db()
         cls.db = sana_app._connect_pg()
         cls.suffix = uuid.uuid4().hex[:8].upper()
         cls.company_a = f"ADM{cls.suffix}A"

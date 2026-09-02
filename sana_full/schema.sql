@@ -1037,6 +1037,46 @@ CREATE TABLE IF NOT EXISTS gos_learning_links (
 );
 
 -- Revenue Cycle — opportunities يبقى سجل الصفقة الوحيد.
+-- هذان الجدولان يجب أن يسبقا جداول Revenue Cycle التي تشير إليهما بمفاتيح خارجية.
+CREATE TABLE IF NOT EXISTS leads (
+    lead_id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL REFERENCES companies(company_id),
+    name TEXT NOT NULL,
+    company_name TEXT,
+    email TEXT,
+    phone TEXT,
+    source TEXT,
+    service_interest TEXT,
+    status TEXT NOT NULL DEFAULT 'جديد',
+    owner_id TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS opportunities (
+    opp_id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL REFERENCES companies(company_id),
+    lead_id TEXT REFERENCES leads(lead_id),
+    title TEXT NOT NULL,
+    stage TEXT NOT NULL DEFAULT 'عميل محتمل',
+    amount NUMERIC,
+    probability INTEGER,
+    expected_close_date DATE,
+    next_action TEXT,
+    next_action_due DATE,
+    outcome_reason TEXT,
+    owner_id TEXT,
+    delivery_task_id TEXT,
+    archived SMALLINT NOT NULL DEFAULT 0,
+    archived_at TIMESTAMPTZ,
+    archived_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_opp_company ON opportunities(company_id);
+CREATE INDEX IF NOT EXISTS idx_opp_stage ON opportunities(company_id,stage);
+CREATE INDEX IF NOT EXISTS idx_opp_due ON opportunities(company_id,next_action_due);
+
 ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS revenue_stage_id TEXT;
 ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS service_name TEXT;
 ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS channel_name TEXT;
