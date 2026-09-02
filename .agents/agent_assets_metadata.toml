@@ -63,3 +63,17 @@ mtime_ms = 1788316657413
 storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:006dab94-1067-4dc5-9ecc-403bde77f22c/4d345853-7b02-4887-8976-9fb083508517/d0a2a15b-28da-4145-a6a0-1c9dc7b708f2"
 storage_version_token = "1788316677936917"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "ODiiE4vnSxyCbsPfoc9N0"
+uri = "file://.local/secure_exports/sana-app-deploy-key-v4.pub"
+type = "unspecified"
+title = "Sana app Deploy Key v4 — public key"
+description = "Public SSH key only. Add this file in GitHub repository Settings → Deploy keys with Allow write access. The private key is not included."
+logical_id = "de127c64-9556-4547-a6d1-6ee47716b537"
+content_hash = "sha256:ed1ab3d948ed34908d22824cfee63ff38e00e3c8ae4dd37ed503ec055c8c3fb9"
+size = 100
+mtime_ms = 1788318382429
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:006dab94-1067-4dc5-9ecc-403bde77f22c/de127c64-9556-4547-a6d1-6ee47716b537/ac116fe0-6af0-4757-9d8e-37ea03d1d7d1"
+storage_version_token = "1788318388341568"
+content_type = "application/octet-stream"
