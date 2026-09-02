@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>سنع — Business Growth OS</title>
+  <style>
+    :root{--ink:#0B132B;--muted:#6E7580;--line:#DEE1EC;--paper:#F5F6FB;--teal:#0EA5A5;--gold:#F2B233;--red:#B23A2E}
+    *{box-sizing:border-box} body{margin:0;background:var(--paper);color:#333940;font-family:Arial,"Tahoma",sans-serif;line-height:1.6}
+    header{background:var(--ink);color:#fff;padding:22px max(20px,calc((100% - 1100px)/2));display:flex;justify-content:space-between;align-items:center}
+    header a{color:#fff;text-decoration:none;opacity:.8;font-size:13px}.brand{font-size:18px;font-weight:700}.eyebrow{color:var(--gold);font-size:11px;letter-spacing:1.5px;text-transform:uppercase}
+    main{max-width:1100px;margin:0 auto;padding:28px 20px 70px} h1{color:var(--ink);font-size:28px;margin:4px 0 8px} h2{color:var(--ink);font-size:18px;margin:0 0 15px} h3{color:var(--ink);font-size:15px;margin:0 0 8px}
+    .intro{color:var(--muted);max-width:750px;margin-bottom:22px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:18px}.wide{grid-column:1/-1}
+    .profiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.profile{border:1px solid var(--line);border-radius:9px;padding:12px;cursor:pointer;background:#fff}.profile.active{border:2px solid var(--teal);padding:11px;background:#F2FBFB}.profile strong{display:block;color:var(--ink);font-size:14px}.profile small{color:var(--muted)}
+    label{display:block;color:var(--muted);font-size:12px;margin:10px 0 4px} input,select,textarea{width:100%;border:1px solid var(--line);border-radius:7px;padding:9px;font:inherit;font-size:13px;background:#fff} textarea{min-height:70px;resize:vertical}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.btn{border:0;border-radius:7px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer}.primary{background:var(--ink);color:#fff}.secondary{background:#E1F5F5;color:#087b7b}.notice{border-radius:8px;padding:10px 12px;background:#FFF8E7;color:#795b12;font-size:12px;margin-top:12px}.notice.error{background:#FDECEA;color:var(--red)}.notice.ok{background:#E1F5F5;color:#087b7b}
+    .metric{display:grid;grid-template-columns:1.1fr .8fr 1.2fr;gap:8px;align-items:end;border-bottom:1px solid var(--line);padding:9px 0}.metric:first-child{border-top:1px solid var(--line)}.metric-name{font-weight:700;font-size:13px;color:var(--ink)}.metric-name small{display:block;color:var(--muted);font-weight:400;font-size:11px}.metric input{padding:7px}.metric .na{color:var(--muted);font-size:12px;padding:8px 0}.list{display:grid;gap:8px}.item{border:1px solid var(--line);border-radius:8px;padding:11px;font-size:12px}.item strong{color:var(--ink)}.tag{display:inline-block;background:#EBEDF5;color:var(--muted);border-radius:14px;padding:2px 8px;font-size:11px;margin-left:5px}.tag.teal{background:#E1F5F5;color:#087b7b}.tag.red{background:#FDECEA;color:var(--red)}
+    @media(max-width:760px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.profiles{grid-template-columns:1fr 1fr}.metric{grid-template-columns:1fr 1fr}.metric input:last-child{grid-column:1/-1}}
+  </style>
+</head>
+<body>
+  <header><div><div class="eyebrow">SANA / BUSINESS GROWTH OS</div><div class="brand">نواة النمو القابلة للإثبات</div></div><a href="/home">العودة إلى CEO Home</a></header>
+  <main>
+    <h1>Business Growth OS</h1>
+    <p class="intro">طبقة تشغيلية تحفظ الحقائق والافتراضات والتوقعات والآراء والتعارضات، وتمنع استخدام رقم بلا مصدر. اختر نوع المشروع أولًا؛ محرك الأدلة والقرار لا يتغير.</p>
+    <div id="message"></div>
+    <section class="card">
+      <h2>نوع المشروع</h2>
+      <div id="profiles" class="profiles"><div class="notice">جارٍ تحميل الإعدادات...</div></div>
+      <div id="profile-detail" class="notice" style="display:none"></div>
+    </section>
+    <div class="grid">
+      <section class="card">
+        <h2>سجل الحقيقة التشغيلية</h2>
+        <form id="truth-form">
+          <label>ما الذي نسجله؟</label><input name="subject" required placeholder="مثال: عدد العملاء المحتملين في مايو">
+          <div class="row"><div><label>التصنيف</label><select name="classification"><option>Fact</option><option>Assumption</option><option>Forecast</option><option>Opinion</option><option>Conflict</option></select></div><div><label>القيمة</label><input name="value" required placeholder="رقم أو نص"></div></div>
+          <div class="row"><div><label>تاريخ الجمع / الملاحظة</label><input type="date" name="observed_at" required></div><div><label>درجة الثقة (0–100)</label><input type="number" name="confidence" min="0" max="100" value="80" required></div></div>
+          <label>المصدر</label><input name="source_ref" required placeholder="رابط، تقرير، نظام، أو مقابلة">
+          <label>الوحدة (اختياري)</label><input name="unit" placeholder="عدد، ريال، %، يوم">
+          <button class="btn primary" type="submit">حفظ الحقيقة</button>
+        </form>
+      </section>
+      <section class="card">
+        <h2>الحقائق المسجلة</h2>
+        <div id="truth-list" class="list"><div class="notice">لا توجد بيانات محملة بعد.</div></div>
+      </section>
+    </div>
+    <section class="card">
+      <h2>إنشاء Baseline مؤرخ</h2>
+      <p class="intro">اترك المؤشر بلا قيمة إذا لم يتوفر دليل. سيظهر كـ <b>N/A — Deferred</b> ويصبح Baseline غير قابل للاستخدام في قرار أو تجربة.</p>
+      <form id="baseline-form">
+        <div class="row"><div><label>بداية فترة القياس</label><input type="date" name="period_start" required></div><div><label>نهاية فترة القياس</label><input type="date" name="period_end" required></div></div>
+        <div class="row"><div><label>تاريخ الملاحظة</label><input type="date" name="observed_at" required></div><div><label>الثقة العامة (0–100)</label><input type="number" name="confidence" min="0" max="100" value="80" required></div></div>
+        <label>مصدر Baseline العام</label><input name="source_ref" required placeholder="تقرير المبيعات أو نظام الحسابات">
+        <div id="metrics"></div>
+        <button class="btn primary" type="submit">حفظ Baseline</button>
+      </form>
+    </section>
+    <section class="card">
+      <h2>Baseline المسجل</h2><div id="baseline-list" class="list"><div class="notice">لا توجد Baselines بعد.</div></div>
+    </section>
+  </main>
+  <script>
+    const companyId={{ default_company_id|tojson }};
+    const apiBase=`/api/companies/${encodeURIComponent(companyId)}/growth-os`;
+    const metricDefs=[
+      ["leads","Leads","العملاء المحتملون"],["qualified_leads","Qualified Leads","العملاء المؤهلون"],["meetings","Meetings","الاجتماعات"],["proposals","Proposals","العروض"],["close_rate","Close Rate","معدل الإغلاق"],["sales_cycle","Sales Cycle","دورة البيع"],["average_contract_value","Average Contract Value","متوسط قيمة العقد"],["revenue","Revenue","الإيراد"],["gross_margin","Gross Margin","الهامش الإجمالي"],["cac","CAC","تكلفة اكتساب العميل"],["retention","Retention","الاحتفاظ"],["collection_rate","Collection Rate","معدل التحصيل"]
+    ];
+    const $=s=>document.querySelector(s);
+    function show(text,kind="ok"){const el=$("#message");el.className=`notice ${kind}`;el.textContent=text;setTimeout(()=>el.textContent="",4500)}
+    function today(){return new Date().toISOString().slice(0,10)}
+    function renderMetrics(){ $("#metrics").innerHTML=metricDefs.map(([key,en,ar])=>`<div class="metric"><div class="metric-name">${en}<small>${ar}</small></div><input data-metric="${key}" class="metric-value" type="number" step="any" placeholder="غير متاح"><input data-source="${key}" class="metric-source" placeholder="مصدر الرقم (مطلوب إن أُدخل)"></div>`).join("") }
+    function renderProfiles(profiles,current){$("#profiles").innerHTML=profiles.map(p=>`<button class="profile ${p.profile_key===current.profile_key?"active":""}" data-profile="${p.profile_key}"><strong>${p.label}</strong><small>${p.label_ar}</small></button>`).join("");profiles.forEach(p=>document.querySelector(`[data-profile="${p.profile_key}"]`).onclick=()=>selectProfile(p.profile_key));const p=profiles.find(x=>x.profile_key===current.profile_key)||current;$("#profile-detail").style.display="block";$("#profile-detail").innerHTML=`المراحل: ${p.stages.join(" → ")}<br>المؤشرات: ${p.metrics.length} مؤشر | حقول العرض: ${p.offer_fields.join("، ")}`}
+    async function load(){renderMetrics();document.querySelector('[name="observed_at"]').value=today();document.querySelector('[name="period_start"]').value=today();document.querySelector('[name="period_end"]').value=today();try{const r=await fetch(apiBase);const j=await r.json();if(!j.success)throw Error(j.message||j.error);renderProfiles(j.data.canonical_map?await (await fetch("/api/growth-os/profiles")).then(x=>x.json()).then(x=>x.data):[],j.data.profile);renderTruth(j.data.truth_records);renderBaselines(j.data.baselines)}catch(e){show(e.message,"error")}}
+    async function selectProfile(key){try{const r=await fetch(`${apiBase}/profile`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({profile_key:key})});const j=await r.json();if(!j.success)throw Error(j.message||j.error);const profiles=await (await fetch("/api/growth-os/profiles")).then(x=>x.json());renderProfiles(profiles.data,j.data);show("تم تحديث نوع المشروع")}catch(e){show(e.message,"error")}}
+    function renderTruth(rows){$("#truth-list").innerHTML=rows.length?rows.map(x=>`<div class="item"><span class="tag">${x.classification}</span><strong>${x.subject}</strong><br>${typeof x.value==="object"?JSON.stringify(x.value):x.value} ${x.unit||""}<br><span class="tag teal">المصدر: ${x.source_ref}</span> <span class="tag">الثقة: ${x.confidence}</span> <span class="tag">${x.observed_at}</span></div>`).join(""):`<div class="notice">لا توجد بيانات محملة بعد.</div>`}
+    function renderBaselines(rows){$("#baseline-list").innerHTML=rows.length?rows.map(x=>`<div class="item"><strong>${x.period_start} → ${x.period_end}</strong> <span class="tag ${x.usable?"teal":"red"}">${x.usable?"قابل للاستخدام":"غير مكتمل — لا يُستخدم في قرار"}</span><br>المصدر: ${x.source_ref} | المؤشرات المتاحة: ${x.metrics.filter(m=>m.availability==="available").length}/12</div>`).join(""):`<div class="notice">لا توجد Baselines بعد.</div>`}
+    $("#truth-form").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);const body=Object.fromEntries(f);body.confidence=Number(body.confidence);try{const r=await fetch(`${apiBase}/truth`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const j=await r.json();if(!j.success)throw Error(j.message||j.error);e.target.reset();e.target.confidence.value=80;renderTruth((await (await fetch(apiBase)).json()).data.truth_records);show("تم حفظ الحقيقة مع مصدرها")}catch(x){show(x.message,"error")}};
+    $("#baseline-form").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),metrics={};metricDefs.forEach(([key])=>{const value=document.querySelector(`[data-metric="${key}"]`).value,source=document.querySelector(`[data-source="${key}"]`).value;metrics[key]={value:value===""?null:Number(value),source_ref:source||null}});const body=Object.fromEntries(f);body.confidence=Number(body.confidence);body.metrics=metrics;try{const r=await fetch(`${apiBase}/baselines`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const j=await r.json();if(!j.success)throw Error(j.message||j.error);renderBaselines((await (await fetch(apiBase)).json()).data.baselines);show(j.data.usable?"تم حفظ Baseline قابل للاستخدام":"تم حفظ Baseline، لكنه غير مكتمل — المفقود ليس صفرًا")}catch(x){show(x.message,"error")}};
+    load();
+  </script>
+</body>
+</html>

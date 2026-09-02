@@ -1,0 +1,1 @@
+web: gunicorn --chdir sana_full --bind 0.0.0.0:$PORT --workers 1 --access-logfile - --error-logfile - wsgi:app

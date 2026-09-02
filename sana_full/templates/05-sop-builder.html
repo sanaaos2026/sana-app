@@ -128,6 +128,15 @@
   .outro-card .outro-sub{ color:rgba(255,255,255,0.65); font-size:13.5px; line-height:1.7; max-width:400px; margin:0 auto 22px; }
   .outro-assets{ display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin-bottom:18px; }
   .outro-asset-chip{ background:rgba(14,165,165,0.22); color:#7EEAEA; border-radius:20px; padding:5px 13px; font-size:12px; font-weight:600; }
+  .application-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:24px; margin-bottom:16px; display:none; }
+  .application-card.visible{ display:block; }
+  .application-card h2{ color:#0B132B; font-size:18px; margin-bottom:6px; }
+  .application-card .sub{ margin-bottom:18px; }
+  .application-result{ display:none; margin-top:14px; border-radius:8px; padding:12px 14px; font-size:13px; }
+  .application-result.visible{ display:block; }
+  .application-result.improved{ background:#EAF8F1; color:#17663A; border:1px solid #B8E2CB; }
+  .application-result.not-improved{ background:#FFF5F1; color:#8A351E; border:1px solid #F2C6B7; }
+  .application-result.unchanged{ background:#F5F6FB; color:#505866; border:1px solid #DEE1EC; }
 
   /* ── رسالة انسيابية "تم توثيق أصل" ── */
   .asset-toast{ position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:#0EA5A5; color:#fff; padding:12px 22px; border-radius:8px; font-size:13px; font-weight:600; opacity:0; transition:opacity .35s; pointer-events:none; z-index:999; white-space:nowrap; }
@@ -488,6 +497,47 @@
     </div>
   </div>
 
+  <div class="application-card" id="applicationCard">
+    <span class="eyebrow">قياس أثر النسخة</span>
+    <h2>وثّق نتيجة تطبيق هذا الـSOP</h2>
+    <p class="sub">الترقية إلى Automatable تبقى مقفلة حتى تسجل النسخة نتيجتين أفضل من Baseline موثق.</p>
+    <div class="field">
+      <div class="field-label"><span>Baseline وKPI</span></div>
+      <select id="applicationMetric"></select>
+    </div>
+    <div class="two-col">
+      <div class="field">
+        <div class="field-label"><span>مرجع التطبيق الفعلي</span></div>
+        <input type="text" id="applicationRef" placeholder="مثال: طلب #1042 أو تشغيل سبتمبر-02">
+      </div>
+      <div class="field">
+        <div class="field-label"><span>اتجاه التحسن</span></div>
+        <select id="applicationDirection">
+          <option value="">اختر من دون تخمين</option>
+          <option value="higher_is_better">الأعلى أفضل</option>
+          <option value="lower_is_better">الأقل أفضل</option>
+        </select>
+      </div>
+      <div class="field">
+        <div class="field-label"><span>النتيجة الفعلية</span></div>
+        <input type="text" id="applicationValue" inputmode="decimal" placeholder="مثال: 16">
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="field">
+        <div class="field-label"><span>مصدر النتيجة</span></div>
+        <input type="text" id="applicationSource" placeholder="مثال: CRM: تقرير سبتمبر">
+      </div>
+      <div class="field">
+        <div class="field-label"><span>تاريخ القياس</span></div>
+        <input type="date" id="applicationObservedAt">
+      </div>
+    </div>
+    <button class="btn btn-primary" id="recordApplicationBtn" onclick="recordApplication()">سجّل التطبيق وقارن بالـBaseline</button>
+    <button class="btn btn-secondary" id="promoteAutomatableBtn" onclick="promoteAutomatable()" disabled>ترقية إلى Automatable</button>
+    <div class="application-result" id="applicationResult"></div>
+  </div>
+
 </main>
 
 <div class="asset-toast" id="assetToast">✅ تم توثيق أصل جديد</div>
@@ -515,6 +565,8 @@ document.querySelectorAll('.concept-nav a, #outroPassportLink').forEach(a => {
 
 let companyAssets = [];
 let generatedText = "";
+let savedSop = null;
+let savedEvidenceIds = [];
 
 // Feature 4 — تعبئة حقل q1 من ?rec= عند القدوم من زر توصية
 (function prefillFromRec() {
@@ -813,7 +865,29 @@ async function saveFinal(){
   try{
     const results = await Promise.all(saves);
     const jsons   = await Promise.all(results.map(r => r.json()));
-    const ok      = jsons.every(j => j.success);
+    let ok      = jsons.every(j => j.success);
+    if(ok){
+      const evidenceIds=jsons.map(j=>j.data&&j.data.evidence_id).filter(Boolean);
+      const sopRes=await fetch(`/api/companies/${COMPANY_ID}/execution/sops${CQS}`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          title:name,owner_role:val('q3'),maturity:'Manual',approve:true,
+          steps:(val('q5')||'').split('\n').map(x=>x.trim()).filter(Boolean),
+          checklist:(val('q7')||'').split('\n').map(x=>x.replace(/^[-•]\\s*/,'').trim()).filter(Boolean),
+          sla:val('q4a')+' → '+val('q4b'),kpi:val('q7'),
+          reusable_template:generatedText,evidence_ids:evidenceIds,
+          result:{status:'manual_capture',source_ref:'sop-builder:user-input'},
+          repetitions:0,source_ref:'sop-builder:user-input'
+        })
+      });
+      const sopJson=await sopRes.json();
+      ok=sopJson.success;
+      if(ok){
+        savedSop=sopJson.data;
+        savedEvidenceIds=evidenceIds;
+      }
+      if(!ok) showStatus(sopJson.error||'تعذر حفظ SOP المنظم.',true);
+    }
 
     if(ok){
       // إظهار الختام
@@ -827,6 +901,7 @@ async function saveFinal(){
       document.getElementById('formCard').style.display = 'none';
       showAssetToast();
       showToast('📚 أضفت أصلًا معرفيًا جديدًا');
+      await prepareApplicationCard();
     } else {
       showStatus('تعذر حفظ بعض السجلات — حاول مجددًا.', true);
       btn.disabled = false;
@@ -836,6 +911,109 @@ async function saveFinal(){
     showStatus('تعذر الاتصال بالخادم.', true);
     btn.disabled = false;
     btn.textContent = '📚 حفظ هذا الإجراء في ملف الشركة';
+  }
+}
+
+async function prepareApplicationCard(){
+  const card=document.getElementById('applicationCard');
+  const select=document.getElementById('applicationMetric');
+  try{
+    const res=await fetch(`/api/companies/${COMPANY_ID}/growth-os/baselines${CQS}`);
+    const json=await res.json();
+    const baselines=(json.success?json.data:[]).filter(b=>b.usable);
+    const options=[];
+    baselines.forEach(b=>{
+      (b.metrics||[]).filter(m=>m.availability==='available'&&m.classification==='Fact').forEach(m=>{
+        options.push(`<option value="${b.baseline_id}|${m.metric_key}">${m.label_ar} — Baseline ${Number(m.value_numeric)} (${b.period_start} إلى ${b.period_end})</option>`);
+      });
+    });
+    select.innerHTML=options.length?options.join(''):'<option value="">لا يوجد Baseline كامل موثق</option>';
+    document.getElementById('applicationObservedAt').value=new Date().toISOString().slice(0,10);
+    card.classList.add('visible');
+    if(!options.length){
+      document.getElementById('recordApplicationBtn').disabled=true;
+      showApplicationResult('يلزم Baseline كامل ومصدر Fact قبل تسجيل الأثر.','unchanged');
+    }
+  }catch(e){
+    card.classList.add('visible');
+    showApplicationResult('تعذر تحميل Baseline. لا يمكن إجراء مقارنة غير موثقة.','unchanged');
+  }
+}
+
+function showApplicationResult(message,status){
+  const el=document.getElementById('applicationResult');
+  el.textContent=message;
+  el.className=`application-result visible ${status==='not_improved'?'not-improved':status}`;
+}
+
+async function recordApplication(){
+  if(!savedSop) return;
+  const metricChoice=val('applicationMetric').split('|');
+  const applicationRef=val('applicationRef');
+  const direction=val('applicationDirection');
+  const value=val('applicationValue');
+  const source=val('applicationSource');
+  const observedAt=val('applicationObservedAt');
+  if(metricChoice.length!==2||!applicationRef||!direction||value===''||!source||!observedAt){
+    showApplicationResult('أكمل مرجع التطبيق وKPI واتجاه التحسن والنتيجة ومصدرها وتاريخها.','unchanged');
+    return;
+  }
+  const btn=document.getElementById('recordApplicationBtn');
+  btn.disabled=true;
+  try{
+    const evidenceRes=await fetch(`/api/companies/${COMPANY_ID}/evidence${CQS}`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        title:`نتيجة تطبيق ${savedSop.version_id} — ${applicationRef}: ${value} بتاريخ ${observedAt}`,
+        source_type:'SOP application result',confidence:90,
+        evidence_type:'Fact',source_ref:source
+      })
+    });
+    const evidenceJson=await evidenceRes.json();
+    if(!evidenceJson.success) throw new Error(evidenceJson.message||evidenceJson.error||'تعذر حفظ دليل النتيجة');
+    const resultEvidenceId=evidenceJson.data.evidence_id;
+    const res=await fetch(`/api/companies/${COMPANY_ID}/execution/sops/${savedSop.sop_id}/applications${CQS}`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        version_id:savedSop.version_id,application_ref:applicationRef,
+        baseline_id:metricChoice[0],kpi:metricChoice[1],
+        direction,evidence_ids:[resultEvidenceId],result_evidence_id:resultEvidenceId,
+        source_ref:source,
+        result:{value:Number(value),source_ref:source,observed_at:observedAt,evidence_id:resultEvidenceId}
+      })
+    });
+    const json=await res.json();
+    if(!json.success) throw new Error(json.error||'تعذر تسجيل التطبيق');
+    const data=json.data;
+    const label=data.comparison_status==='improved'?'تحسن موثق':data.comparison_status==='not_improved'?'لم يتحسن':'لم يتغير';
+    showApplicationResult(`${label}: Baseline ${data.baseline_value} ← النتيجة ${data.result_value} (الفرق ${data.delta}). النجاحات الموثقة ${data.readiness.successful_applications} من 2.`,data.comparison_status);
+    document.getElementById('promoteAutomatableBtn').disabled=!data.readiness.automatable;
+    document.getElementById('applicationValue').value='';
+    document.getElementById('applicationSource').value='';
+    document.getElementById('applicationRef').value='';
+  }catch(e){
+    showApplicationResult(e.message,'not_improved');
+  }finally{
+    btn.disabled=false;
+  }
+}
+
+async function promoteAutomatable(){
+  if(!savedSop) return;
+  const btn=document.getElementById('promoteAutomatableBtn');
+  btn.disabled=true;
+  try{
+    const res=await fetch(`/api/companies/${COMPANY_ID}/execution/sops/${savedSop.sop_id}/promote${CQS}`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({version_id:savedSop.version_id,maturity:'Automatable'})
+    });
+    const json=await res.json();
+    if(!json.success) throw new Error(json.error||'تعذر الترقية');
+    showApplicationResult('تم اعتماد النسخة Automatable بعد نتيجتين ناجحتين موثقتين.','improved');
+    btn.textContent='تمت الترقية إلى Automatable';
+  }catch(e){
+    showApplicationResult(e.message,'not_improved');
+    btn.disabled=false;
   }
 }
 

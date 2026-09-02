@@ -22,9 +22,15 @@
   .num{ font-family:'Space Grotesk', sans-serif; }
   a{ color:inherit; text-decoration:none; }
 
-  .concept-nav{ background:#080E1F; padding:10px 20px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
-  .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
+   .concept-nav{ background:#080E1F; padding:10px 20px; display:flex; gap:6px; justify-content:center; align-items:center; flex-wrap:wrap; }
+   .concept-nav a{ font-size:11.5px; color:rgba(255,255,255,0.5); padding:6px 12px; border-radius:20px; }
   .concept-nav a.active{ background:rgba(242,178,51,0.15); color:#F2B233; font-weight:600; }
+   .legacy-nav{position:relative;color:rgba(255,255,255,.5);font-size:11.5px}
+   .legacy-nav summary{cursor:pointer;list-style:none;padding:6px 12px;border-radius:20px}
+   .legacy-nav summary::-webkit-details-marker{display:none}
+   .legacy-nav[open] summary{background:rgba(255,255,255,.08);color:#fff}
+   .legacy-nav-links{position:absolute;z-index:3;top:34px;right:0;display:grid;min-width:145px;padding:5px;background:#0B132B;border:1px solid rgba(255,255,255,.12);border-radius:8px;box-shadow:0 8px 20px rgba(0,0,0,.2)}
+   .legacy-nav-links a{display:block;border-radius:5px}
 
   header{ background:#080E1F; padding:16px 28px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.08); }
   .brand{ display:flex; align-items:center; gap:10px; color:#fff; font-weight:600; }
@@ -32,7 +38,11 @@
   .company-chip{ background:rgba(255,255,255,0.06); color:#fff; padding:5px 12px; border-radius:20px; font-size:12.5px; display:flex; align-items:center; gap:6px; }
   .company-chip .dot{ width:6px; height:6px; border-radius:50%; background:#4CAF7D; }
 
-  .context-bar{ background:#fff; border-bottom:1px solid #DEE1EC; padding:10px 28px; display:flex; justify-content:space-between; font-size:12px; color:#6E7580; }
+   .context-bar{ background:#fff; border-bottom:1px solid #DEE1EC; padding:10px 28px; display:flex; justify-content:space-between; font-size:12px; color:#6E7580; }
+   .secondary-tools{position:relative}
+   .secondary-tools summary{cursor:pointer;list-style:none;color:#6E7580;font-weight:600}
+   .secondary-tools summary::-webkit-details-marker{display:none}
+   .secondary-tools-links{position:absolute;z-index:2;top:24px;right:0;display:flex;gap:10px;min-width:270px;padding:10px;background:#fff;border:1px solid #DEE1EC;border-radius:8px;box-shadow:0 8px 20px rgba(11,19,43,.1)}
   .state-badge{ background:#EBEDF5; padding:3px 10px; border-radius:20px; }
 
   main{ max-width:1000px; margin:0 auto; padding:28px 20px 60px; }
@@ -76,6 +86,50 @@
   #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; }
   #toast.show{ opacity:1; }
   .skeleton{ color:#9AA0AB; font-size:13px; padding:20px 0; text-align:center; }
+   .today-card{background:#0B132B;border:0;border-radius:14px;padding:24px;color:#fff;margin-bottom:18px}
+   .today-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}
+   .today-label{font-size:10.5px;color:#F2B233;font-weight:700;letter-spacing:.08em}
+   .today-status{font-size:11px;color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.18);border-radius:20px;padding:4px 9px;white-space:nowrap}
+   .today-title{font-size:20px;font-weight:700;line-height:1.5;margin-bottom:8px}
+   .today-reason{font-size:13px;color:rgba(255,255,255,.68);line-height:1.75;max-width:720px}
+   .today-evidence{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:18px 0}
+   .today-evidence-item{background:rgba(255,255,255,.08);border-radius:9px;padding:10px 12px;font-size:12px;line-height:1.6}
+   .today-evidence-item.missing{border-right:3px solid #F2B233}
+   .today-evidence-label{display:block;color:rgba(255,255,255,.45);font-size:10.5px;margin-bottom:2px}
+   .today-evidence-source{display:block;color:rgba(255,255,255,.42);font-size:10.5px;margin-top:3px}
+   .today-action{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border-radius:9px;padding:12px 14px;color:#0B132B}
+   .today-action-copy{font-size:12.5px;line-height:1.55}
+   .today-action-copy strong{display:block;font-size:13.5px}
+   .today-action-btn{background:#F2B233;color:#0B132B;border:0;border-radius:7px;padding:10px 16px;font:600 13px 'IBM Plex Sans Arabic';cursor:pointer;white-space:nowrap}
+   .today-action-btn:hover{background:#ffc44d}
+   .today-task{font-size:12px;color:rgba(255,255,255,.65);margin-top:13px;padding-top:12px;border-top:1px solid rgba(255,255,255,.13)}
+   .room-details{border:0;background:transparent;padding:0;margin:0 0 18px}
+   .room-details>summary{background:#fff;border:1px solid #DEE1EC;border-radius:10px;padding:12px 16px;color:#0B132B;font-size:13px;font-weight:600;cursor:pointer;list-style:none}
+   .room-details>summary::-webkit-details-marker{display:none}
+   .room-details>summary::before{content:'＋';color:#0EA5A5;margin-left:7px}
+   .room-details[open]>summary::before{content:'−'}
+   .room-details .room-grid{margin-top:14px}
+   .room-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+  .room-card{margin:0;min-height:150px;position:relative}
+  .room-card.wide{grid-column:1/-1}
+  .room-label{font-size:10.5px;color:#0EA5A5;font-weight:700;letter-spacing:.04em;margin-bottom:9px}
+  .room-value{font-size:16px;font-weight:700;color:#0B132B;line-height:1.55}
+  .room-meta{font-size:11.5px;color:#6E7580;margin-top:8px;line-height:1.7}
+  .room-empty{background:#F8F9FC;border:1px dashed #C7CBD1;padding:12px;border-radius:8px;color:#6E7580;font-size:12.5px}
+  .metrics3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .metric-mini{background:#F5F6FB;border-radius:9px;padding:12px}
+  .metric-mini strong{display:block;font-family:'Space Grotesk';font-size:20px;color:#0B132B}
+  .action-link{display:inline-block;margin-top:12px;color:#0EA5A5;font-size:12.5px;font-weight:700}
+  .reminder-strip{background:#FFF8E8;border:1px solid #F2B233;border-radius:10px;padding:12px 14px;margin-bottom:14px}
+  .reminder-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .reminder-list{display:grid;gap:8px;margin-top:10px}
+  .reminder-item{background:#fff;border-radius:8px;padding:10px 12px;font-size:12px}
+  .reminder-actions{display:flex;gap:6px;margin-top:7px}
+  .reminder-actions button{border:1px solid #DEE1EC;background:#F5F6FB;border-radius:6px;padding:4px 8px;font-family:inherit;cursor:pointer}
+  @media(max-width:700px){
+    main{padding:18px 12px 50px}.room-grid{grid-template-columns:1fr}.room-card.wide{grid-column:auto}
+     .metrics3{grid-template-columns:1fr}.today-evidence{grid-template-columns:1fr}.today-action{align-items:stretch;flex-direction:column}.today-action-btn{width:100%}.context-bar{padding:9px 12px}.concept-nav{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap}
+  }
 
   /* ── صندوق اللمحة الأولية — يظهر فقط إذا اكتمل Discovery ── */
   #glimpse-banner{ display:none; }
@@ -123,27 +177,11 @@
 <body>
 
 <div class="concept-nav">
-  <a href="/">① الدخول</a>
-  <a href="/home" class="active">② CEO Home</a>
-  <a href="/case/new" id="caseNavLink">③ القضية</a>
-  <a href="/passport">④ جواز الشركة</a>
+  <a href="/home{{ context_query }}" class="active">اليوم</a>
+  <a href="/case/new{{ context_query }}" id="caseNavLink">ملف القرار</a>
+  <a href="/passport{{ context_query }}">الأصول</a>
+  <a href="/logout">تسجيل الخروج</a>
 </div>
-<script>
-(function(){
-  var qs = window.location.search;
-  if(!qs) return;
-  var current = new URLSearchParams(qs);
-  document.querySelectorAll('.concept-nav a').forEach(function(a){
-    var href = a.getAttribute('href');
-    if(href === '/') return;
-    var url = new URL(href, window.location.origin);
-    ['company_id','view','admin_key'].forEach(function(k){
-      if(current.has(k)) url.searchParams.set(k, current.get(k));
-    });
-    a.setAttribute('href', url.pathname + url.search);
-  });
-})();
-</script>
 
 <header>
   <div class="brand">
@@ -158,14 +196,21 @@
 </header>
 
 <div class="context-bar">
-  <div>الرئيسية</div>
+  <div>مساحة شركتك</div>
+  {% if is_admin_preview %}
   <div id="adminTools" style="display:flex; gap:10px; align-items:center;">
     <span class="state-badge">قيد التنفيذ</span>
     <span class="state-badge">النضج: Level 2</span>
-    <a href="/case/new" onclick="this.href='/case/new'+CQS" style="color:#0EA5A5; font-weight:600;">+ تشخيص جديد</a>
-    <a href="/sop-builder" onclick="this.href='/sop-builder'+CQS" style="color:#6E7580; font-weight:600;">📄 بناء SOP</a>
-    <a href="/assessment" onclick="this.href='/assessment'+CQS" style="color:#6E7580; font-weight:600;">📊 تقييم سريع</a>
+    <details class="secondary-tools">
+      <summary>أدوات إضافية⌄</summary>
+      <div class="secondary-tools-links">
+        <a href="/case/new" onclick="this.href='/case/new'+CQS" style="color:#0EA5A5; font-weight:600;">+ تشخيص جديد</a>
+        <a href="/sop-builder" onclick="this.href='/sop-builder'+CQS" style="color:#6E7580; font-weight:600;">📄 بناء SOP</a>
+        <a href="/assessment" onclick="this.href='/assessment'+CQS" style="color:#6E7580; font-weight:600;">📊 تقييم سريع</a>
+      </div>
+    </details>
   </div>
+  {% endif %}
 </div>
 
 <!-- لمحة أولية — تظهر فقط إذا اكتمل Discovery (main_goal غير فارغ) -->
@@ -196,34 +241,17 @@
 <div id="toast"></div>
 
 <script>
-const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "{{ default_company_id }}";
-const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
-const ADMIN_KEY = new URLSearchParams(window.location.search).get('admin_key');
+const COMPANY_ID = {{ company_id|tojson }};
+const CQS = {{ context_query|tojson }};
+const ADMIN_PREVIEW = {{ is_admin_preview|tojson }};
 
 function barClass(score){ if(score<40) return 'weak'; if(score<65) return 'mid'; return 'strong'; }
 
-// يحافظ على اختيار الشركة (والوضع الحالي) عند التنقّل بين الصفحات
-const CQS = (() => {
-  const p = new URLSearchParams();
-  if(COMPANY_ID !== 'C001') p.set('company_id', COMPANY_ID);
-  if(VIEW === 'client') p.set('view', 'client');
-  if(ADMIN_KEY) p.set('admin_key', ADMIN_KEY);
-  const s = p.toString();
-  return s ? `?${s}` : '';
-})();
-
-if(VIEW === 'client'){
-  // وضع العميل: بيانات شركته فقط، بدون أدوات الإدارة العامة أو التبديل بين الشركات
-  document.getElementById('adminTools').style.display = 'none';
-  document.getElementById('viewModeBadge').style.display = 'inline-block';
-} else {
-  // وضع صاحب سنع: يمكنه التبديل بين كل الشركات المسجلة
-  loadCompanySwitcher();
-}
+if(ADMIN_PREVIEW) loadCompanySwitcher();
 
 async function loadCompanySwitcher(){
   try{
-    const res = await fetch('/api/companies');
+    const res = await fetch(`/api/companies${apiQS()}`);
     const json = await res.json();
     if(!json.success || !json.data.length) return;
     const sel = document.getElementById('companySwitcher');
@@ -235,25 +263,145 @@ async function loadCompanySwitcher(){
 }
 
 function switchCompany(companyId){
-  const p = new URLSearchParams();
-  if(companyId !== 'C001') p.set('company_id', companyId);
-  if(ADMIN_KEY) p.set('admin_key', ADMIN_KEY);
-  const s = p.toString();
-  window.location.href = `/home${s ? '?' + s : ''}`;
+  if(!ADMIN_PREVIEW) return;
+  const p = new URLSearchParams(CQS.slice(1));
+  p.set('company_id', companyId);
+  window.location.href = `/home?${p.toString()}`;
 }
 
 // يُبقي استدعاءات fetch للـ API الخاصة بالشركة تعمل في وضع العرض الداخلي للمشرف
 // (?admin_key=...)، بنفس طريقة CQS الحالية للروابط — دون أي تغيير في السلوك
 // لحساب عميل حقيقي مسجَّل الدخول (لا يضيف شيئًا إذا ADMIN_KEY غير موجود).
 function apiQS(){
-  return ADMIN_KEY ? `?admin_key=${encodeURIComponent(ADMIN_KEY)}` : '';
+  return CQS;
 }
 
 async function loadData(){
-  const res = await fetch(`/api/companies/${COMPANY_ID}/summary${apiQS()}`);
+  const res = await fetch(`/api/companies/${COMPANY_ID}/decision-room${apiQS()}`);
   const json = await res.json();
   if(!json.success){ document.getElementById('app').innerHTML = '<p>تعذر تحميل البيانات</p>'; return; }
-  render(json.data);
+  renderDecisionRoom(json.data);
+}
+
+function safe(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
+function emptyCard(item){return `<div class="room-empty">${safe(item.missing||'البيانات المطلوبة غير مكتملة.')}</div>`;}
+function evidenceMeta(item){
+  if(!item||item.status==='missing') return '';
+  const source=item.source_ref||'';
+  const observed=item.observed_at||item.created_at||'';
+  const confidence=item.confidence!=null?` · الثقة ${item.confidence}%`:'';
+  return `<div class="room-meta">المصدر: ${safe(source||'غير متاح')} · الفترة/الرصد: ${safe(String(observed).slice(0,10)||'غير متاح')}${confidence}</div>`;
+}
+function withContext(href){
+  if(!href) return '#';
+  return `${href}${CQS ? (href.includes('?') ? '&' : '?') + CQS.slice(1) : ''}`;
+}
+function renderTodayEvidence(items){
+  return (items||[]).map(item => `<div class="today-evidence-item ${item.status==='missing'?'missing':''}">
+    <span class="today-evidence-label">${safe(item.label)}</span>
+    ${safe(item.value || (item.status==='missing' ? 'غير متاح بعد' : '—'))}
+    ${item.source_ref ? `<span class="today-evidence-source">المصدر: ${safe(item.source_ref)}</span>` : ''}
+  </div>`).join('');
+}
+const TODAY_STATUS_LABELS = {
+  new_company: 'شركة جديدة',
+  evidence_needed: 'الدليل أولًا',
+  decision_pending: 'بانتظار الاعتماد',
+  measure: 'القياس الآن',
+  execute: 'قيد التنفيذ',
+  risk_review: 'مراجعة التنفيذ',
+  monitor: 'متابعة',
+};
+function renderDecisionRoom(d){
+  const s=d.current_state;
+  document.getElementById('companyName').textContent=s.company;
+  const metricCards=(d.top_metrics||[]).map(m=>`<div class="metric-mini">
+    <span>${safe(m.label)}</span><strong>${Number(m.value).toLocaleString('ar-SA')}</strong>
+    <small>${safe(m.unit)} · ${safe(m.source_ref)} · ${String(m.observed_at).slice(0,10)} · ثقة ${m.confidence}%</small>
+  </div>`).join('') + Array(d.top_metrics_missing||0).fill(
+    `<div class="metric-mini"><span>مؤشر غير متاح</span><strong style="font-size:13px">N/A — Deferred</strong><small>يلزم Baseline كامل ومصدر وثقة.</small></div>`
+  ).join('');
+  const b=d.bottleneck,o=d.opportunity,x=d.running_experiment,dec=d.decision_today,t=d.next_task,r=d.urgent_risk;
+  const today=d.today||{};
+  const todayAction=today.action||{};
+  const todayActionHtml=todayAction.kind==='approve_decision'
+    ? `<button class="today-action-btn" onclick="approveGrowthDecision('${safe(todayAction.decision_id)}')">${safe(todayAction.label||'راجع القرار')}</button>`
+    : `<a class="today-action-btn" href="${withContext(todayAction.href)}">${safe(todayAction.label||'افتح المسار')}</a>`;
+  const todayTask=today.task
+    ? `<div class="today-task">أول مهمة: <strong>${safe(today.task.title)}</strong> · المالك: ${safe(today.task.owner_user_id)} · الموعد: ${safe(today.task.due_date)}</div>`
+    : '';
+  document.getElementById('app').innerHTML=`
+    <span class="eyebrow">اليوم</span>
+    <h1>اليوم: قرار واحد، ثم خطوة واحدة.</h1>
+    <section class="today-card">
+      <div class="today-head">
+        <div class="today-label">${safe(today.label||'حالة اليوم')}</div>
+        <div class="today-status">${safe(TODAY_STATUS_LABELS[today.status]||today.status||'—')}</div>
+      </div>
+      <div class="today-title">${safe(today.title||'لا توجد حالة متاحة')}</div>
+      <div class="today-reason">${safe(today.reason||'')}</div>
+      <div class="today-evidence">${renderTodayEvidence(today.evidence)}</div>
+      <div class="today-action">
+        <div class="today-action-copy"><strong>الإجراء التالي</strong>${safe(todayAction.label||'—')}</div>
+        ${todayActionHtml}
+      </div>
+      ${todayTask}
+      <div id="reminderInbox"></div>
+    </section>
+    <details class="room-details">
+      <summary>تفاصيل فرصة التحسين وملف القرار</summary>
+      <div class="room-grid">
+      <section class="room-card wide"><div class="room-label">1 · الوضع الحالي</div>
+        <div class="room-value">${safe(s.profile_label)}</div>
+        <div class="room-meta">حالة الدليل: ${s.baseline_status==='complete'?'مكتمل':'غير مكتمل'}
+        ${s.baseline_period?` · ${s.baseline_period.start} — ${s.baseline_period.end}`:''}</div>
+      </section>
+      <section class="room-card wide"><div class="room-label">2 · أهم 3 مؤشرات</div><div class="metrics3">${metricCards}</div></section>
+      <section class="room-card"><div class="room-label">3 · أكبر اختناق</div>
+        ${b.status==='missing'?emptyCard(b):`<div class="room-value">${safe(b.problem)}</div>${evidenceMeta(b)}`}
+      </section>
+      <section class="room-card"><div class="room-label">4 · أهم فرصة</div>
+        ${o.status==='missing'?emptyCard(o):`<div class="room-value">${safe(o.title)}</div><div class="room-meta">قيمة العقد الموثقة: ${Number(o.contract_value||0).toLocaleString('ar-SA')}</div>${evidenceMeta(o)}`}
+      </section>
+      <section class="room-card"><div class="room-label">5 · التجربة الجارية</div>
+        ${x.status==='missing'?emptyCard(x):`<div class="room-value">${safe(x.hypothesis)}</div><div class="room-meta">المالك: ${safe(x.owner)} · KPI: ${safe(x.kpi)}</div>${evidenceMeta(x)}`}
+      </section>
+      <section class="room-card"><div class="room-label">6 · ملف القرار اليوم</div>
+        ${dec.status==='missing'?emptyCard(dec):`<div class="room-value">${safe(dec.action)}</div><div class="room-meta">${safe(dec.reason)}</div>${evidenceMeta(dec)}
+         <div class="room-meta" style="margin-top:12px;color:#0E7C7B;">الإجراء الوحيد لهذا القرار موجود في بطاقة «اليوم» أعلاه.</div>`}
+      </section>
+      <section class="room-card"><div class="room-label">7 · الخطوة التالية</div>
+        ${t.status==='missing'?emptyCard(t):`<div class="room-value">${safe(t.title)}</div><div class="room-meta">المسؤول: ${safe(t.owner_user_id)} · المعتمد: ${safe(t.approver_user_id)}<br>الموعد: ${safe(t.due_date)} · مقياس النجاح: ${safe(t.kpi)} · ${safe(t.status)}</div>
+         <div class="room-meta" style="margin-top:12px;color:#0E7C7B;">الإجراء الوحيد للتنفيذ موجود في بطاقة «اليوم» أعلاه.</div>`}
+      </section>
+      <section class="room-card"><div class="room-label">8 · الخطر الذي يحتاج انتباهًا</div>
+        ${r.status==='missing'?emptyCard(r):`<div class="room-value">${safe(r.title)}</div><div class="room-meta">الأثر: ${safe(r.impact)} · الاحتمال ${r.probability}/5 · الشدة ${r.severity}/5<br>المالك: ${safe(r.owner_id)} · التخفيف: ${safe(r.mitigation_plan)}</div>${evidenceMeta(r)}`}
+      </section>
+      </div>
+    </details>`;
+  loadReminders();
+}
+async function loadReminders(){
+  const box=document.getElementById('reminderInbox'); if(!box)return;
+  const res=await fetch(`/api/companies/${COMPANY_ID}/execution/reminders${apiQS()}`);
+  const json=await res.json();
+  if(!json.success||!json.data.length){box.innerHTML='';return;}
+  const unread=json.data.filter(x=>x.status==='unread');
+  box.innerHTML=`<div class="reminder-strip"><div class="reminder-head"><strong>تنبيهات التنفيذ (${unread.length} جديدة)</strong><span>داخلية فقط — لا تغيّر الحالة</span></div>
+    <div class="reminder-list">${json.data.slice(0,5).map(x=>`<div class="reminder-item"><strong>${safe(x.title)}</strong><div>${safe(x.message)}</div>
+      <div class="reminder-actions">${x.status==='unread'?`<button onclick="setReminder('${x.reminder_id}','read')">تمت القراءة</button>`:''}<button onclick="setReminder('${x.reminder_id}','dismissed')">إخفاء</button></div></div>`).join('')}</div></div>`;
+}
+async function setReminder(id,status){
+  const res=await fetch(`/api/companies/${COMPANY_ID}/execution/reminders/${id}${apiQS()}`,{
+    method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})
+  });
+  const json=await res.json();
+  if(json.success)loadReminders();else showToast(json.error||'تعذر تحديث التنبيه',true);
+}
+async function approveGrowthDecision(id){
+  const res=await fetch(`/api/companies/${COMPANY_ID}/growth-os/decisions/${id}/approve${apiQS()}`,{method:'POST'});
+  const json=await res.json();
+  if(json.success){showToast('تم اعتماد القرار');loadData();}else showToast(json.error||'تعذر الاعتماد');
 }
 
 let lastSuggestions = null;
@@ -354,10 +502,12 @@ function render(d){
              ${topDecision.due_date ? ` · 📅 الموعد: ${topDecision.due_date}` : ''}
              ${(!topDecision.owner_name && !topDecision.due_date) ? 'لم يُحدَّد مسؤول أو موعد لهذا القرار.' : ''}
            </div>`
-        : `<div style="display:flex; gap:8px; margin:12px 0;">
-             <input id="ownerInput" type="text" placeholder="المسؤول عن التنفيذ (اختياري)" style="flex:1; padding:9px 10px; border:1px solid #DEE1EC; border-radius:8px; font-size:13px; font-family:'IBM Plex Sans Arabic';">
-             <input id="dueDateInput" type="date" style="padding:9px 10px; border:1px solid #DEE1EC; border-radius:8px; font-size:13px; font-family:'IBM Plex Sans Arabic';">
-           </div>`
+        : `<div style="display:flex; gap:8px; margin:12px 0 8px;">
+             <input id="ownerInput" type="text" required placeholder="المسؤول عن التنفيذ *" aria-label="المسؤول عن التنفيذ" style="flex:1; padding:9px 10px; border:1px solid #DEE1EC; border-radius:8px; font-size:13px; font-family:'IBM Plex Sans Arabic';">
+             <input id="dueDateInput" type="date" aria-label="الموعد النهائي" required style="padding:9px 10px; border:1px solid #DEE1EC; border-radius:8px; font-size:13px; font-family:'IBM Plex Sans Arabic';">
+           </div>
+            <input id="metricInput" type="text" required placeholder="مقياس النجاح * (مثال: رفع التحويل من 5% إلى 10%)" aria-label="مقياس النجاح" style="width:100%; padding:9px 10px; border:1px solid #DEE1EC; border-radius:8px; font-size:13px; font-family:'IBM Plex Sans Arabic'; box-sizing:border-box;">
+           <div id="approvalError" role="alert" style="font-size:12px;color:#B23A2E;min-height:18px;margin-top:5px;"></div>`
       }
       <button class="btn btn-primary" onclick="approveDecision('${topDecision.decision_id}')" ${alreadyApproved?'disabled':''}>
         ${alreadyApproved ? 'تم الاعتماد ✓' : 'اعتماد القرار'}
@@ -436,16 +586,30 @@ function renderSuggestPanel(){
 async function approveDecision(id){
   const ownerEl = document.getElementById('ownerInput');
   const dueEl = document.getElementById('dueDateInput');
-  const res = await fetch(`/api/decisions/${id}/approve${apiQS()}`, {
-    method:'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      owner_name: ownerEl ? ownerEl.value : '',
-      due_date: dueEl ? dueEl.value : '',
-    })
-  });
-  const json = await res.json();
-  if(json.success){ showToast('تم اعتماد القرار — أُنشئت مهمة تنفيذية تلقائيًا'); loadData(); }
+  const metricEl = document.getElementById('metricInput');
+  const errorEl = document.getElementById('approvalError');
+  const owner = ownerEl ? ownerEl.value.trim() : '';
+  const due = dueEl ? dueEl.value.trim() : '';
+  const metric = metricEl ? metricEl.value.trim() : '';
+  if(!owner){ errorEl.textContent = 'المسؤول عن التنفيذ مطلوب لاعتماد القرار.'; return; }
+  if(!due){ errorEl.textContent = 'الموعد النهائي مطلوب لاعتماد القرار.'; return; }
+  if(!metric){ errorEl.textContent = 'مقياس النجاح مطلوب لاعتماد القرار.'; return; }
+  errorEl.textContent = '';
+  try {
+    const res = await fetch(`/api/decisions/${id}/approve${apiQS()}`, {
+      method:'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({owner_name: owner, due_date: due, success_metric: metric})
+    });
+    const json = await res.json();
+    if(json.success){
+      showToast('تم اعتماد القرار — أُنشئت مهمة تنفيذية تلقائيًا'); loadData();
+    } else {
+      errorEl.textContent = json.message || 'تعذر الاعتماد — لم تتغير حالة القرار. حاول مرة أخرى.';
+    }
+  } catch(e) {
+    errorEl.textContent = 'تعذر الاتصال بالخادم — لم تتغير حالة القرار. حاول مرة أخرى.';
+  }
 }
 
 let scoreExplainLoaded = false;

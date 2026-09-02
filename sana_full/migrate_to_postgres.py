@@ -18,7 +18,9 @@ import psycopg2
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SQLITE_PATH = os.path.join(BASE_DIR, "sana.db")
-DATABASE_URL = os.environ["DATABASE_URL"]
+from database_config import resolve_database_url
+
+DATABASE_URL = resolve_database_url()
 
 # ترتيب الجداول يحترم المفاتيح الأجنبية: الآباء أولاً
 TABLES_IN_ORDER = [

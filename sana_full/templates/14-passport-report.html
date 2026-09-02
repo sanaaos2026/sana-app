@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>جواز الشركة — {{ company.name }}</title>
+<title>تقرير Sana Scan التنفيذي — {{ company.name }}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -81,12 +81,66 @@
   .disclaimer{ font-size:10.5px; color:var(--muted); margin-top:8px; }
 
   footer{ text-align:center; padding:26px 20px 10px; font-size:11px; color:var(--muted); }
+  .report-kicker{ font-family:'IBM Plex Mono'; direction:ltr; color:var(--teal); font-size:10px; letter-spacing:.7px; margin-bottom:7px; }
+  .status-pill{ display:inline-block; border-radius:20px; padding:4px 10px; font-size:11px; font-weight:700; background:#E4F7F6; color:#087e7d; }
+  .status-pill.warning{ background:#FFF3D6; color:#8a6d1f; }
+  .status-pill.incomplete{ background:#FFF3D6; color:#8a6d1f; }
+  .status-pill.neutral{ background:#EEF1F7; color:#526078; }
+  .status-pill.complete{ background:#DDF7EF; color:#08745F; }
+  .journey-state{ border:1px solid var(--line); border-radius:10px; padding:13px 15px; margin-top:16px; background:#FAFBFC; }
+  .journey-state.warning{ border-color:#F0D48A; background:#FFFDF7; }
+  .journey-state.review,.journey-state.complete{ border-color:#B8E5E1; background:#F6FFFD; }
+  .journey-state-title{ font-family:'Cairo'; color:var(--navy); font-weight:800; font-size:13px; margin-bottom:3px; }
+  .journey-state-copy{ color:var(--muted); font-size:12px; }
+  .executive-lede{ font-size:15px; line-height:2; color:var(--navy); font-weight:600; margin-bottom:16px; }
+  .answer-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+  .answer-card{ border:1px solid var(--line); border-radius:10px; padding:13px 14px; background:#fff; }
+  .answer-card.wide{ grid-column:1 / -1; background:#F8FBFC; border-color:#D9EEEE; }
+  .answer-label{ color:var(--muted); font-size:11px; margin-bottom:4px; font-weight:600; }
+  .answer-value{ color:var(--navy); font-size:13px; line-height:1.85; }
+  .finding{ border-right:3px solid var(--gold); padding:10px 13px; margin-bottom:10px; background:#FFFCF5; border-radius:7px; }
+  .finding.inference{ border-right-color:var(--teal); background:#F5FCFC; }
+  .finding.hypothesis{ border-right-color:#9BA3B5; background:#F8F9FB; }
+  .finding-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:4px; }
+  .finding-title{ font-size:13px; font-weight:700; color:var(--navy); }
+  .classification{ font-family:'IBM Plex Mono'; direction:ltr; font-size:9px; color:var(--muted); border:1px solid var(--line); border-radius:12px; padding:2px 7px; white-space:nowrap; }
+  .finding-text{ font-size:12.5px; line-height:1.85; }
+  .source-list{ list-style:none; }
+  .source-item{ display:flex; gap:8px; align-items:flex-start; padding:7px 0; border-bottom:1px solid #F0F1F4; font-size:11.5px; }
+  .source-item:last-child{ border-bottom:0; }
+  .source-id{ min-width:92px; font-family:'IBM Plex Mono'; direction:ltr; color:var(--teal); font-size:9px; }
+  .source-copy{ color:var(--ink); }
+  .source-ref{ display:block; color:var(--muted); font-size:10.5px; }
+  .missing-list{ margin:0; padding-right:18px; color:#8a6d1f; font-size:12px; }
+  .missing-list li{ margin-bottom:5px; }
+  .not-do{ display:flex; gap:9px; align-items:flex-start; padding:8px 0; font-size:12px; }
+  .not-do:before{ content:'×'; display:block; width:19px; height:19px; border-radius:50%; background:#FCE8E8; color:#C23B3F; text-align:center; line-height:18px; font-weight:700; flex-shrink:0; }
+  .phase{ border:1px solid var(--line); border-radius:10px; margin-bottom:14px; overflow:hidden; }
+  .phase-head{ display:flex; justify-content:space-between; align-items:center; background:#F8F9FB; padding:11px 14px; }
+  .phase-name{ font-family:'Cairo'; font-size:14px; font-weight:800; color:var(--navy); }
+  .phase-purpose{ color:var(--muted); font-size:11px; }
+  .initiative{ padding:14px; border-top:1px solid var(--line); }
+  .initiative-title{ font-size:13px; font-weight:700; color:var(--navy); margin-bottom:9px; }
+  .initiative-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:7px 14px; }
+  .initiative-field{ font-size:11px; line-height:1.75; }
+  .initiative-field b{ color:var(--muted); font-weight:500; display:block; }
+  .initiative-field span{ color:var(--ink); }
+  .initiative-status{ display:inline-block; color:#087e7d; background:#E4F7F6; border-radius:12px; padding:2px 8px; font-size:10px; }
+  .initiative-status.pending{ color:#8a6d1f; background:#FFF3D6; }
+  .initiative-evidence{ margin-top:9px; padding-top:8px; border-top:1px dashed var(--line); font-size:10.5px; color:var(--muted); }
+  .initiative-evidence span{ color:var(--ink); }
+  .empty-phase{ padding:13px 14px; color:var(--muted); font-size:11.5px; }
+  .appendix-label{ font-family:'IBM Plex Mono'; direction:ltr; color:var(--muted); font-size:10px; letter-spacing:.5px; margin-bottom:14px; }
+  .report-meta{ display:flex; flex-wrap:wrap; gap:8px 18px; color:var(--muted); font-size:11px; margin-top:12px; }
+  .report-meta b{ color:var(--ink); font-weight:600; }
 
   @media print{
     body{ background:#fff; }
     .wrap{ max-width:100%; }
     .next-step{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .quality-box{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .report-page-break{ page-break-before:always; }
+    .phase,.finding,.answer-card{ break-inside:avoid; }
   }
 </style>
 </head>
@@ -101,32 +155,281 @@
       </div>
       <div class="export-date">EXPORTED {{ export_date }}</div>
     </div>
-    <h1>جواز الشركة</h1>
+    <div class="report-kicker">SANA SCAN · EXECUTIVE DIAGNOSTIC v1.0</div>
+    <h1>تقرير Sana Scan التنفيذي</h1>
     <div class="company-name">{{ company.name }}{% if company.sector %} — {{ company.sector }}{% endif %}</div>
+    <div class="report-meta">
+      <span><b>الحالة:</b> <span class="status-pill {{ scan_journey.tone if scan_journey else ('incomplete' if scan_status != 'REVIEW_REQUIRED' else '') }}">{{ scan_status_label }}</span></span>
+      {% if scan.scan_id %}<span><b>رقم الفحص:</b> <span class="mono">{{ scan.scan_id }}</span></span>{% endif %}
+      {% if scan.methodology_version %}<span><b>المنهجية:</b> {{ scan.methodology_version }}</span>{% endif %}
+    </div>
+    {% if scan_journey %}
+    <div class="journey-state {{ scan_journey.tone }}">
+      <div class="journey-state-title">{{ scan_journey.label }}</div>
+      <div class="journey-state-copy">{{ scan_journey.message }} الإجراء التالي: {{ scan_journey.action_label }}.</div>
+    </div>
+    {% endif %}
   </header>
 
-  <!-- 1. القيمة -->
+  <!-- الملخص التنفيذي -->
+  <section>
+    <div class="sec-head">
+      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M8 8 H40 V40 H8 Z" stroke="#0B132B" stroke-width="3"/><path d="M15 17 H33 M15 24 H33 M15 31 H26" stroke="#F2B233" stroke-width="3" stroke-linecap="round"/></svg>
+      <div class="sec-title">الملخص التنفيذي</div>
+      <div class="sec-note">ما يحتاج المدير معرفته أولًا</div>
+    </div>
+    <div class="executive-lede">{{ scan_executive_answer }}</div>
+    <div class="answer-grid">
+      <div class="answer-card">
+        <div class="answer-label">الوضع الآن</div>
+        <div class="answer-value">{% if scan_case %}{{ scan_case.declared_problem or scan_case.case_title }}{% else %}لا توجد قضية تشخيصية محفوظة{% endif %}</div>
+      </div>
+      <div class="answer-card">
+        <div class="answer-label">السؤال الحقيقي</div>
+        <div class="answer-value">{% if scan_case and scan_case.real_question %}{{ scan_case.real_question }}{% else %}يُحدد بعد اكتمال Discovery{% endif %}</div>
+      </div>
+      <div class="answer-card wide">
+        <div class="answer-label">الفرصة ذات الأولوية</div>
+        <div class="answer-value">{% if scan_opportunity %}{{ scan_opportunity.statement }}{% else %}لا توجد فرصة مثبتة بعد؛ لا ننتقل للتنفيذ قبل إغلاق بوابة الأدلة.{% endif %}</div>
+      </div>
+    </div>
+    <div class="report-meta">
+      <span><b>اكتمال المحاور:</b> {{ scan.score_complete_count or 0 }} / {{ scan.score_total_count or 0 }}</span>
+      <span><b>الأدلة المطلوبة:</b> {{ scan_missing_evidence|length }}</span>
+      <span><b>المراجعة البشرية:</b> {% if scan.human_review_required or scan_has_run %}مطلوبة{% else %}غير متاحة{% endif %}</span>
+    </div>
+  </section>
+
+  <!-- جودة الصورة التشخيصية -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-title">جودة الصورة التشخيصية</div>
+      <div class="sec-note">قبل تحويل الادعاء إلى قرار</div>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="num">{{ scan_diagnostic_quality.verified_count or 0 }}</div><div class="lbl">معلومات مثبتة</div></div>
+      <div class="stat"><div class="num">{{ scan_diagnostic_quality.self_reported_count or 0 }}</div><div class="lbl">إفادات ذاتية</div></div>
+      <div class="stat"><div class="num">{{ scan_diagnostic_quality.open_conflicts_count or 0 }}</div><div class="lbl">تعارضات مفتوحة</div></div>
+    </div>
+    <div class="quality-box">
+      <div class="quality-top"><span class="t">قوة الدليل / موثوقية البيانات</span><span class="v">{{ scan_diagnostic_quality.evidence_strength or 'WEAK' }} · {{ scan_diagnostic_quality.data_reliability or 'LOW' }}</span></div>
+      {% if scan_diagnostic_baseline %}
+      <div class="quality-hint">
+        فترة الأساس: {{ scan_diagnostic_baseline.baseline_start }} — {{ scan_diagnostic_baseline.baseline_end }}
+        · المقارنة: {{ scan_diagnostic_baseline.comparison_start or 'غير محددة' }} — {{ scan_diagnostic_baseline.comparison_end or 'غير محددة' }}
+        · الموسمية: {{ scan_diagnostic_baseline.seasonality_context or 'غير محددة' }}
+      </div>
+      {% else %}
+      <div class="quality-hint">فترة الأساس غير محددة؛ لا تُستخدم القياسات في قرار قابل للاعتماد.</div>
+      {% endif %}
+    </div>
+    {% if scan_open_conflicts %}
+      {% for conflict in scan_open_conflicts %}
+      <div class="finding hypothesis" style="margin-top:10px;">
+        <div class="finding-head"><div class="finding-title">{{ conflict.topic_key }}</div><div class="classification">CONTRADICTED</div></div>
+        <div class="finding-text">{{ conflict.verification_question }}</div>
+      </div>
+      {% endfor %}
+    {% endif %}
+    <div class="answer-grid" style="margin-top:12px;">
+      <div class="answer-card"><div class="answer-label">قرارات ممكنة الآن</div><div class="answer-value">{{ scan_decisions_available_now|length }}</div></div>
+      <div class="answer-card"><div class="answer-label">قرارات تنتظر دليلًا</div><div class="answer-value">{{ scan_decisions_waiting_for_evidence|length }}</div></div>
+    </div>
+  </section>
+
+  <!-- التشخيص -->
+  <section>
+    <div class="sec-head">
+      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><circle cx="22" cy="22" r="13" stroke="#0B132B" stroke-width="3"/><path d="M32 32 L42 42" stroke="#F2B233" stroke-width="4" stroke-linecap="round"/><path d="M16 22 H28" stroke="#0EA5A5" stroke-width="3" stroke-linecap="round"/></svg>
+      <div class="sec-title">التشخيص: دليل أم فرضية؟</div>
+    </div>
+    {% if scan_bottleneck %}
+    <div class="finding {% if scan_bottleneck.classification == 'Inference' %}inference{% else %}hypothesis{% endif %}">
+      <div class="finding-head"><div class="finding-title">الاختناق المرشح: {{ scan_bottleneck.title }}</div><div class="classification">{{ scan_bottleneck.classification }}</div></div>
+      <div class="finding-text">{{ scan_bottleneck.statement }}</div>
+      <div class="source-ref">قوة الدليل: {{ scan_bottleneck.evidence_strength or 'WEAK' }} · موثوقية البيانات: {{ scan_bottleneck.data_reliability or 'LOW' }}</div>
+    </div>
+    {% endif %}
+    {% for finding in scan_findings %}
+      {% if finding != scan_bottleneck and finding.classification in ['Hypothesis','Inference','Recommendation'] %}
+      <div class="finding {% if finding.classification == 'Inference' %}inference{% elif finding.classification == 'Hypothesis' %}hypothesis{% endif %}">
+        <div class="finding-head"><div class="finding-title">{{ finding.title }}</div><div class="classification">{{ finding.classification }}</div></div>
+        <div class="finding-text">{{ finding.statement }}</div>
+        <div class="source-ref">قوة الدليل: {{ finding.evidence_strength or 'WEAK' }} · موثوقية البيانات: {{ finding.data_reliability or 'LOW' }}</div>
+      </div>
+      {% endif %}
+    {% endfor %}
+    {% if scan_missing_evidence %}
+    <div class="quality-box" style="margin-top:14px;">
+      <div class="quality-top"><span class="t">بوابة الأدلة المفتوحة</span><span class="v">{{ scan_missing_evidence|length }} بند</span></div>
+      <ul class="missing-list">{% for item in scan_missing_evidence %}<li>{{ item }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- الأدلة -->
+  <section>
+    <div class="sec-head">
+      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M12 7 H30 L37 14 V41 H12 Z" stroke="#0B132B" stroke-width="3"/><path d="M30 7 V15 H37" stroke="#F2B233" stroke-width="3"/><path d="M17 23 H32 M17 30 H32" stroke="#0EA5A5" stroke-width="2.5" stroke-linecap="round"/></svg>
+      <div class="sec-title">الأدلة ومصادرها</div>
+      <div class="sec-note">كل استنتاج قابل للتتبع</div>
+    </div>
+    {% if scan_citations %}
+    <ul class="source-list">
+      {% for source in scan_citations %}
+      <li class="source-item">
+        <span class="source-id">{{ source.source_id }}</span>
+        <span class="source-copy"><b>{{ source.classification }}</b> — {{ source.statement }}<span class="source-ref">{{ source.source_ref }} · {{ source.source_category }} · {{ source.information_type }} · {{ source.verification_status }}{% if source.period_start %} · {{ source.period_start }}—{{ source.period_end }}{% endif %}{% if source.confidence is not none %} · ثقة {{ source.confidence }}٪{% endif %}</span></span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="no-data">لا توجد أدلة مرتبطة بآخر Scan.</div>
+    {% endif %}
+  </section>
+
+  <!-- الأولويات وما لا نفعله -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-title">المعرفة المرجعية المرتبطة</div>
+      <div class="sec-note">سياق عام منفصل عن أدلة العميل ونتيجة Scan</div>
+    </div>
+    <div class="quality-box" style="margin-bottom:14px;">
+      <div class="quality-hint">هذه المراجع لا تصبح Evidence للعميل، ولا تغيّر التشخيص أو الدرجة أو القرار. يلزم تحقق من دليل الحالة ومراجعة بشرية قبل التطبيق.</div>
+    </div>
+    {% if reference_knowledge.knowledge_gap %}
+      <div class="finding hypothesis"><div class="finding-title">فجوة معرفية</div><div class="finding-text">{{ reference_knowledge.knowledge_gap }}</div></div>
+    {% endif %}
+    {% for ref in reference_knowledge.references %}
+      <div class="finding hypothesis">
+        <div class="finding-head"><div class="finding-title">{{ ref.title }}</div><div class="classification">REFERENCE ONLY</div></div>
+        <div class="finding-text">{{ ref.original_summary or ref.problem }}</div>
+        {% if ref.quote %}<div class="source-ref">«{{ ref.quote }}»</div>{% endif %}
+        <div class="report-meta">
+          <span><b>سبب المطابقة:</b> {{ ref.match_reasons|join(' · ') }}</span>
+          <span><b>المصدر/الإصدار:</b> {{ ref.publisher or ref.source }} · {{ ref.source_version or ref.version }}</span>
+          <span><b>المراجعة التالية:</b> {{ ref.review_due_at or 'غير محددة' }}</span>
+        </div>
+        <div class="source-ref"><b>الدليل المطلوب قبل التطبيق:</b> {{ ref.required_client_evidence }}</div>
+      </div>
+    {% endfor %}
+    {% for conflict in reference_knowledge.conflicts %}
+      <div class="quality-box"><div class="quality-top"><span class="t">تعارض للمراجعة البشرية</span><span class="v">{{ conflict.conflicting_version }}</span></div><div class="quality-hint">{{ conflict.conflict_note }}</div></div>
+    {% endfor %}
+  </section>
+
+  <!-- الأولويات وما لا نفعله -->
+  <section>
+    <div class="sec-head">
+      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M8 12 H40 M8 24 H40 M8 36 H40" stroke="#0B132B" stroke-width="3"/><circle cx="14" cy="12" r="4" fill="#F2B233"/><circle cx="30" cy="24" r="4" fill="#0EA5A5"/><circle cx="22" cy="36" r="4" fill="#F2B233"/></svg>
+      <div class="sec-title">الأولوية والانضباط</div>
+    </div>
+    {% if scan_opportunity %}
+    <div class="finding inference">
+      <div class="finding-head"><div class="finding-title">الأولوية: {{ scan_opportunity.priority or 'تحتاج مراجعة' }}</div><div class="classification">Recommendation</div></div>
+      <div class="finding-text">{{ scan_opportunity.statement }}</div>
+      <div class="report-meta"><span><b>الأثر:</b> {{ scan_opportunity.impact or 'غير موثق' }}</span><span><b>الجهد:</b> {{ scan_opportunity.effort or 'غير موثق' }}</span><span><b>الثقة:</b> {{ scan_opportunity.confidence or 'غير موثقة' }}</span></div>
+    </div>
+    {% else %}
+    <div class="no-data">لا توجد أولوية تنفيذية مثبتة بعد.</div>
+    {% endif %}
+    <div style="margin-top:15px;">
+      <div class="answer-label">ما لا نفعله الآن</div>
+      {% for item in scan_what_not_do %}<div class="not-do">{{ item }}</div>{% endfor %}
+    </div>
+  </section>
+
+  <!-- خطة 90 يومًا -->
+  <section class="report-page-break">
+    <div class="sec-head">
+      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><rect x="8" y="10" width="32" height="30" rx="3" stroke="#0B132B" stroke-width="3"/><path d="M15 7 V15 M33 7 V15 M8 20 H40" stroke="#F2B233" stroke-width="3"/><path d="M16 27 H32 M16 33 H27" stroke="#0EA5A5" stroke-width="2.5" stroke-linecap="round"/></svg>
+      <div class="sec-title">خطة التنفيذ — 90 يومًا</div>
+      <div class="sec-note">قرار → مسؤول → موعد → KPI → دليل → أثر</div>
+    </div>
+    <div class="report-meta" style="margin-bottom:14px;"><span><b>القاعدة:</b> لا تُعد المبادرة مكتملة إلا بوجود مسؤول وموعد وKPI ودليل وأثر متوقع.</span></div>
+    {% for phase in scan_phases %}
+    <div class="phase">
+      <div class="phase-head"><div class="phase-name">{{ phase.id }}</div><div class="phase-purpose">{{ phase.title }}</div></div>
+      {% if phase.initiatives %}
+        {% for initiative in phase.initiatives %}
+        <div class="initiative">
+          <div class="initiative-title">{{ initiative.task }}</div>
+          <div class="initiative-grid">
+            <div class="initiative-field"><b>القرار المرتبط</b><span>{{ initiative.decision_title }}{% if initiative.decision_id %} <span class="mono">({{ initiative.decision_id }})</span>{% endif %}</span></div>
+            <div class="initiative-field"><b>الحالة</b><span class="initiative-status{% if not initiative.completeness %} pending{% endif %}">{{ initiative.status }}</span></div>
+            <div class="initiative-field"><b>المسؤول</b><span>{{ initiative.owner }}</span></div>
+            <div class="initiative-field"><b>الموعد</b><span>{{ initiative.due_date }}</span></div>
+            <div class="initiative-field"><b>KPI النجاح</b><span>{{ initiative.kpi }}</span></div>
+            <div class="initiative-field"><b>الأساس → الهدف</b><span>{{ initiative.baseline }} → {{ initiative.target }}</span></div>
+            <div class="initiative-field" style="grid-column:1 / -1;"><b>الأثر المتوقع</b><span>{{ initiative.impact }}</span></div>
+          </div>
+          <div class="initiative-evidence"><b>الدليل المطلوب / المرتبط:</b> {% for evidence in initiative.evidence %}<span>{{ evidence.source_id }} — {{ evidence.statement }}{% if not loop.last %} · {% endif %}</span>{% else %}<span>غير محدد — يلزم ربط مصدر</span>{% endfor %}</div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-phase">لا توجد مبادرة معتمدة لهذه المرحلة بعد. لا نملأ الفراغ بتوقعات؛ يُحدد القرار بعد مراجعة نتائج المرحلة السابقة.</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if scan_unplanned_decisions %}
+    <div class="quality-box" style="margin-top:14px;">
+      <div class="quality-top"><span class="t">قرارات لم تدخل خطة الـ90 يومًا</span><span class="v">{{ scan_unplanned_decisions|length }}</span></div>
+      <ul class="missing-list">
+        {% for decision in scan_unplanned_decisions %}
+        <li><span class="mono">{{ decision.decision_id }}</span> — {{ decision.title }}: {{ decision.reason }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- جلسة النتائج -->
+  <section>
+    <div class="sec-head">
+      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M8 10 H40 V34 H27 L20 41 V34 H8 Z" stroke="#0B132B" stroke-width="3"/><path d="M15 18 H33 M15 25 H27" stroke="#F2B233" stroke-width="3" stroke-linecap="round"/></svg>
+      <div class="sec-title">ملاحظة جلسة النتائج</div>
+    </div>
+    <div class="executive-lede" style="font-size:13px;">{{ scan_review_note }}</div>
+    <div class="answer-value">التسلسل المقترح: أين أنتم؟ ← ماذا وجدنا؟ ← ماذا تقول الأدلة؟ ← ما الاختناق؟ ← ما تكلفة الاستمرار؟ ← ما أول قرار؟ ← ماذا يحدث خلال 90 يومًا؟</div>
+  </section>
+
+  <!-- ملحق جواز الشركة للحفاظ على المخرج السابق -->
+  <section class="report-page-break">
+    <div class="appendix-label">APPENDIX · BUSINESS PASSPORT</div>
+    <div class="sec-head">
+      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M8 8 H40 V40 H8 Z" stroke="#0B132B" stroke-width="3"/><path d="M15 17 H33 M15 24 H33 M15 31 H26" stroke="#F2B233" stroke-width="3" stroke-linecap="round"/></svg>
+      <div class="sec-title">ملحق: جواز الشركة</div>
+      <div class="sec-note">مؤشرات الأصل والقيمة — ليست بديلًا عن التشخيص</div>
+    </div>
+  </section>
+
+  <!-- 1. المؤشر التشغيلي (لا يوجد تقييم مالي تقديري) -->
   <section>
     <div class="sec-head">
       <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M24 4 L44 24 L24 44 L4 24 Z" stroke="#0B132B" stroke-width="3" fill="none"/><rect x="19" y="19" width="10" height="10" fill="#F2B233"/></svg>
-      <div class="sec-title">القيمة</div>
+      <div class="sec-title">المؤشر التشغيلي</div>
     </div>
+    {% if operational_score is not none %}
     <div class="stat-row">
-      <div class="stat"><div class="num">{{ "{:,.0f}".format(current_value) }}</div><div class="lbl">القيمة الحالية</div></div>
-      <div class="stat"><div class="num">{{ "{:,.0f}".format(potential_value) }}</div><div class="lbl">القيمة الممكنة</div></div>
-      <div class="stat"><div class="num">{{ "{:,.0f}".format(gap) }}</div><div class="lbl">الفجوة</div></div>
+      <div class="stat"><div class="num">{{ operational_score }}</div><div class="lbl">Sana Score التشغيلي / 100</div></div>
+      <div class="stat"><div class="num">{{ score_progress.complete }}</div><div class="lbl">محاور مكتملة</div></div>
+      <div class="stat"><div class="num">{{ score_progress.total }}</div><div class="lbl">إجمالي المحاور</div></div>
     </div>
     <div class="quality-box">
       <div class="quality-top">
-        <span class="t">درجة جودة الجواز</span>
-        <span class="v">{{ avg_score }}<span style="font-size:11px;color:#c9a44c;">/100</span></span>
+        <span class="t">اكتمال Sana Score</span>
+        <span class="v">{{ score_progress.complete }}<span style="font-size:11px;color:#c9a44c;">/{{ score_progress.total }}</span></span>
       </div>
-      <div class="bar-track"><div class="bar-fill" style="width:{{ avg_score }}%;"></div></div>
-      <div class="quality-hint">{{ score_hint }}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:{{ (score_progress.complete / score_progress.total * 100) if score_progress.total else 0 }}%;"></div></div>
+      <div class="quality-hint">مؤشر تشغيلي مشروط بنتيجة Scan، وليس تقييمًا ماليًا أو ضمانًا للأثر.</div>
     </div>
-    {% if not score_ready %}
-    <div class="disclaimer" style="margin-top:10px;">⚠ الأرقام تقديرية مبسّطة — تحتاج دليل واحد وتقييم سريع لتفعيل الحساب الكامل.</div>
+    {% else %}
+    <div class="journey-state warning">
+      <div class="journey-state-title">Sana Score: N/A — Deferred</div>
+      <div class="journey-state-copy">{{ score_hint }} اكتمال المحاور: {{ score_progress.complete }} / {{ score_progress.total }}.</div>
+    </div>
     {% endif %}
+    <div class="disclaimer">{{ financial_value_note }}</div>
   </section>
 
   <!-- 2. خريطة الأصول -->

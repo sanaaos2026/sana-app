@@ -1,0 +1,130 @@
+أوقف التوسع والمراجعات الشاملة في Task #41.
+
+من هذه اللحظة اعتمد وضع RESCUE / MINIMUM P0 CLOSURE.
+
+لا تعِد اختبار أو تعديل الأجزاء التالية ما لم تلمس ملفاتها مباشرة:
+- DriveMirror / Backup
+- Knowledge Sources / Versions / Conflicts
+- Research الخارجي
+- Decision Room
+- Task #42
+- Scan Report
+- المصادقة العامة
+- العزل العام
+- Capability Gap
+- أي Feature مستقبلية
+
+اعتبرها ثابتة لهذه المهمة.
+
+الهدف الوحيد الآن هو إغلاق Vertical Slice التالية:
+
+Drive Metadata Catalog
+→ اختيار ملف واحد
+→ Private Review Source
+→ Provenance / Citation
+
+نفذ فقط الآتي:
+
+1. Drive Catalog
+- قراءة Metadata فقط.
+- Pagination.
+- Upsert حسب Drive File ID.
+- عدم حذف الملفات القديمة.
+- حفظ آخر Sync.
+- إظهار Permission / Network failure بوضوح.
+- المزامنة Read Only.
+
+2. Master Index
+- إذا وجد: استخدمه ولا تنشئ نسخة.
+- إذا لم يوجد ولم يكن إنشاؤه ضروريًا الآن:
+  سجل manual_required بدل تعطيل Task #41.
+- لا توسع هذه النقطة أكثر.
+
+3. Selected File
+- اختر ملف Drive واحدًا فقط.
+- اقرأ الملف المختار فقط.
+- لا تقرأ مجلد العميل كاملًا.
+- أدخله إلى Private Review / Pending Review.
+- لا تحوله إلى Knowledge معتمدة تلقائيًا.
+- احفظ:
+  Drive File ID
+  URL
+  source
+  version/hash
+  extracted chunk
+  company/case relation عند وجودها.
+
+4. Provenance
+أثبت فقط هذه السلسلة:
+
+Drive File
+→ Research/Knowledge Source
+→ Chunk
+→ Citation / Provenance
+
+ولا توسع إلى Knowledge Graph أو استخراج واسع الآن.
+
+5. Isolation
+- شركة A لا يمكنها اختيار أو قراءة ملف شركة B.
+- تحقق الملكية قبل قراءة الملف.
+
+6. الاختبارات
+لا تشغّل الحزمة الكاملة.
+
+شغّل فقط 3 اختبارات قبول مركزة:
+
+A.
+Catalog pagination + idempotent sync
+
+B.
+Permission failure + read-only behavior
+
+C.
+Selected file → private review → provenance + company isolation
+
+اختبار Master Index منفصل فقط إذا كان ضمن الإغلاق الفوري.
+
+7. ممنوع في هذه المهمة الآن:
+- Full Drive ingestion
+- فهرسة كل مكتبات سنع
+- Capability Gap
+- تنبيهات Drive
+- Full knowledge extraction
+- External Research
+- إعادة مراجعة Backup
+- إعادة مراجعة Decision Room
+- إعادة تشغيل جميع اختبارات النظام
+- مراجعات أمنية شاملة جديدة بعد نجاح الاختبارات المركزة
+
+8. إذا ظهرت مشكلة خارج Vertical Slice:
+لا تصلحها الآن إلا إذا كانت تمنع الإغلاق مباشرة.
+سجلها Backlog.
+
+9. Definition of Done لهذه المهمة في P0:
+
+Task #41 تعتبر مكتملة عندما نستطيع إثبات:
+
+Drive
+→ Metadata Catalog
+→ File Selected
+→ File Read
+→ Private Review
+→ Provenance
+
+مع:
+- pagination
+- idempotency
+- permission failure
+- read-only sync
+- company isolation
+
+ثم توقف.
+
+10. في النهاية أعطني تقريرًا من 4 أقسام فقط:
+
+DONE
+DEFERRED
+TESTS PASSED
+KNOWN NON-BLOCKING GAPS
+
+لا تبدأ دورة Review جديدة إلا إذا فشل أحد اختبارات القبول الثلاثة.

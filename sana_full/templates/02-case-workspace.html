@@ -50,8 +50,9 @@
   .evidence-item .dot{ width:6px; height:6px; border-radius:50%; background:#0EA5A5; margin-top:6px; flex-shrink:0; }
   .evidence-item .conf-tag{ font-family:'Space Grotesk'; font-size:11px; color:#6E7580; }
 
-  .add-form{ display:flex; gap:8px; margin-top:12px; }
-  .add-form input{ flex:1; padding:9px 12px; border:1px solid #DEE1EC; border-radius:7px; font-family:'IBM Plex Sans Arabic'; font-size:13px; }
+  .add-form{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .add-form input{ flex:1; min-width:180px; padding:9px 12px; border:1px solid #DEE1EC; border-radius:7px; font-family:'IBM Plex Sans Arabic'; font-size:13px; }
+  .add-form select{ padding:9px 12px; border:1px solid #DEE1EC; border-radius:7px; background:#fff; font-family:'IBM Plex Sans Arabic'; font-size:13px; }
   .add-form button{ padding:9px 16px; background:#0EA5A5; color:#fff; border:none; border-radius:7px; font-size:13px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans Arabic'; }
 
   .decision-box{ border:1px solid #DEE1EC; border-radius:10px; padding:16px; background:#F5F6FB; }
@@ -66,6 +67,42 @@
   .ai-btn:hover{ border-color:#F2B233; }
   .ai-note{ font-size:12px; color:#0EA5A5; margin-top:4px; line-height:1.6; }
   .ai-error{ font-size:12px; color:#B23A2E; margin-top:4px; line-height:1.6; }
+  .profile-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+  .profile-field{ display:flex; flex-direction:column; gap:6px; }
+  .profile-field.full{ grid-column:1 / -1; }
+  .profile-field label{ font-size:12px; font-weight:600; color:#0B132B; }
+  .profile-field input{
+    width:100%; border:1.5px solid #DEE1EC; border-radius:8px; padding:10px 12px;
+    font-family:inherit; font-size:13px; direction:ltr; text-align:left; background:#F9FAFC;
+  }
+  .profile-field input:focus{ outline:none; border-color:#0EA5A5; background:#fff; }
+  .profile-meta{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .profile-chip{ background:#F5F6FB; color:#6E7580; border-radius:20px; padding:4px 10px; font-size:11.5px; }
+  .profile-actions{ display:flex; align-items:center; gap:12px; margin-top:14px; }
+  .profile-msg{ font-size:12px; color:#0EA5A5; min-height:18px; }
+  @media (max-width:620px){ .profile-grid{ grid-template-columns:1fr; } .profile-field.full{ grid-column:auto; } }
+  .knowledge-section{ border-color:#BFE5E3; }
+  .knowledge-pipeline{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:8px 0 14px; }
+  .knowledge-step{ background:#F1FBFA; color:#0E7C7B; border-radius:20px; padding:4px 9px; font-size:11px; font-weight:600; }
+  .knowledge-arrow{ color:#9AA0AB; font-size:12px; }
+  .knowledge-status{ border-radius:8px; padding:11px 12px; margin-top:8px; font-size:12.5px; line-height:1.7; }
+  .knowledge-status.supported{ background:#F0FAF5; border:1px solid #B7E4C7; color:#176B42; }
+  .knowledge-status.blocked{ background:#FFF9EB; border:1px solid #F1D68A; color:#765B00; }
+  .knowledge-finding{ background:#F8FAFC; border:1px solid #E4E8EF; border-radius:9px; padding:13px; margin-top:10px; }
+  .knowledge-finding-title{ color:#0B132B; font-weight:700; font-size:13px; margin-bottom:5px; }
+  .knowledge-finding-text{ color:#6E7580; font-size:12px; line-height:1.7; }
+  .knowledge-list{ margin:7px 0 0; padding-right:18px; color:#333940; font-size:12px; line-height:1.8; }
+  .knowledge-meta{ display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+  .knowledge-meta span{ background:#fff; border:1px solid #DEE1EC; color:#6E7580; border-radius:15px; padding:3px 8px; font-size:10.5px; }
+  .knowledge-search{ border-top:1px solid #EEF0F5; margin-top:16px; padding-top:14px; }
+  .knowledge-search-row{ display:flex; gap:8px; }
+  .knowledge-search-row input{ flex:1; border:1px solid #DEE1EC; border-radius:7px; padding:8px 10px; font-family:inherit; font-size:12px; }
+  .knowledge-search-row button{ padding:8px 12px; background:#F5F6FB; border:1px solid #DEE1EC; border-radius:7px; color:#0B132B; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+  .knowledge-search-result{ padding:8px 0; border-bottom:1px solid #EEF0F5; font-size:12px; }
+  .knowledge-search-result:last-child{ border-bottom:none; }
+  .knowledge-search-result strong{ color:#0B132B; }
+  .knowledge-search-result small{ display:block; color:#6E7580; margin-top:2px; }
+  .knowledge-libraries{ color:#6E7580; font-size:11.5px; margin-top:7px; }
   .ai-case-btn{ margin-top:14px; width:100%; padding:11px; background:#0B132B; color:#fff; border:none; border-radius:8px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans Arabic'; }
   .ai-case-btn:hover{ background:#131c3d; }
   #toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0B132B; color:#fff; padding:12px 22px; border-radius:8px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; }
@@ -97,27 +134,10 @@
 <body>
 
 <div class="concept-nav">
-  <a href="/">① الدخول</a>
-  <a href="/home">② CEO Home</a>
-  <a href="/case/{{ case_id }}" class="active">③ القضية</a>
-  <a href="/passport">④ جواز الشركة</a>
+  <a href="/home{{ context_query }}">اليوم</a>
+  <a href="/case/{{ case_id }}{{ context_query }}" class="active">ملف القرار</a>
+  <a href="/passport{{ context_query }}">الأصول</a>
 </div>
-<script>
-(function(){
-  var qs = window.location.search;
-  if(!qs) return;
-  var current = new URLSearchParams(qs);
-  document.querySelectorAll('.concept-nav a').forEach(function(a){
-    var href = a.getAttribute('href');
-    if(href === '/') return;
-    var url = new URL(href, window.location.origin);
-    ['company_id','view','admin_key'].forEach(function(k){
-      if(current.has(k)) url.searchParams.set(k, current.get(k));
-    });
-    a.setAttribute('href', url.pathname + url.search);
-  });
-})();
-</script>
 
 <header>
   <a href="/home" class="back" id="backLink">← الرئيسية</a>
@@ -128,7 +148,7 @@
             background:rgba(242,178,51,0.15); color:#F2B233; border:1px solid rgba(242,178,51,0.3);
             border-radius:8px; padding:7px 13px; font-size:12.5px; font-weight:600;
             white-space:nowrap; cursor:pointer; font-family:'IBM Plex Sans Arabic';">
-    ⚡ الخطوة التالية
+    تفاصيل الخطوة
   </a>
 </header>
 
@@ -140,9 +160,15 @@
 
 <script>
 const CASE_ID = "{{ case_id }}";
-const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
-const ADMIN_KEY = new URLSearchParams(window.location.search).get('admin_key');
+const CONTEXT_QUERY = {{ context_query|tojson }};
 let CASE_COMPANY_ID = null;
+
+function escHtml(value){
+  return String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 function renderAiAssessment(text, confidence){
   // ⚠ تحسين عرض فقط — لا يغيّر التحليل نفسه، فقط يقسّمه لنقاط قابلة للمسح السريع
@@ -163,19 +189,227 @@ function renderAiAssessment(text, confidence){
   `;
 }
 
+function renderKnowledgeResult(result){
+  if(!result) return `<div class="knowledge-status blocked">لم يُشغّل تشخيص مكتبة سنع بعد. شغّله قبل طلب العرض بالذكاء الاصطناعي.</div>`;
+  const supported = result.supported_findings || [];
+  let html = `<div class="knowledge-status ${result.status === 'SUPPORTED' ? 'supported' : 'blocked'}">
+    <strong>${escHtml(result.message || '')}</strong>
+    <div style="margin-top:3px;">المصدر: ${escHtml(result.knowledge_path || 'Sana Knowledge')}</div>
+  </div>`;
+  supported.forEach(f => {
+    const recommendations = (f.recommendation || []).map(x => `<li>${escHtml(x)}</li>`).join('');
+    const kpis = (f.kpis || []).map(x => `<li>${escHtml(x)}</li>`).join('');
+    html += `<div class="knowledge-finding">
+      <div class="knowledge-finding-title">${escHtml(f.title)}</div>
+      <div class="knowledge-finding-text">${escHtml(f.problem || '')}</div>
+      <div class="knowledge-meta">
+        <span>المستوى ${escHtml(f.knowledge_level || 'L0')}</span>
+        <span>الثقة ${escHtml(f.confidence_level || '—')}</span>
+        <span>الدليل: ${escHtml((f.evidence_ids || []).join('، ') || '—')}</span>
+        <span>${escHtml(f.source || '')} · ${escHtml(f.version || '')}</span>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:#0B132B;margin-top:10px;">القرار المدعوم</div>
+      <div class="knowledge-finding-text">${escHtml((f.decision_rule || {}).decision || '')}</div>
+      ${recommendations ? `<div style="font-size:12px;font-weight:600;color:#0B132B;margin-top:9px;">التوصية</div><ul class="knowledge-list">${recommendations}</ul>` : ''}
+      ${kpis ? `<div style="font-size:12px;font-weight:600;color:#0B132B;margin-top:9px;">مؤشرات للقياس (دون Benchmark مفترض)</div><ul class="knowledge-list">${kpis}</ul>` : ''}
+    </div>`;
+  });
+  const missing = result.missing_evidence || [];
+  const questions = result.diagnostic_questions || [];
+  if(missing.length){
+    html += `<div style="margin-top:11px;font-size:12px;font-weight:600;color:#765B00;">المطلوب قبل قرار نهائي</div>
+      <ul class="knowledge-list">${missing.map(x => `<li>${escHtml(x)}</li>`).join('')}</ul>`;
+  }
+  if(questions.length){
+    html += `<div style="margin-top:9px;font-size:12px;font-weight:600;color:#765B00;">أسئلة إضافية</div>
+      <ul class="knowledge-list">${questions.slice(0,4).map(x => `<li>${escHtml(x)}</li>`).join('')}</ul>`;
+  }
+  return html;
+}
+
+function renderScanSection(scan){
+  const status = scan ? scan.status : 'NOT_RUN';
+  const statusLabel = status === 'REVIEW_REQUIRED'
+    ? 'جاهز للمراجعة البشرية'
+    : status === 'INCOMPLETE' ? 'غير مكتمل' : 'لم يُشغّل بعد';
+  let body = '';
+  if(!scan){
+    body = `<div class="knowledge-status blocked">شغّل Sana Scan لجمع SDS-001 والأدلة والأصول الخمسة في تشخيص واحد.</div>`;
+  } else {
+    const quality = scan.diagnostic_quality || {};
+    const baseline = scan.diagnostic_baseline || {};
+    const bottleneck = scan.bottleneck;
+    const opportunity = scan.opportunity;
+    const decision = scan.proposed_decision;
+    body += `<div class="knowledge-status ${status === 'REVIEW_REQUIRED' ? 'supported' : 'blocked'}">
+      <strong>${escHtml(statusLabel)}</strong>
+      <div style="margin-top:3px;">${escHtml(scan.methodology_version || '')}</div>
+      <div style="margin-top:3px;">الدرجات المكتملة: ${scan.score_complete_count || 0}/${scan.score_total_count || 5}</div>
+    </div>`;
+    body += `<div class="knowledge-finding">
+      <div class="knowledge-finding-title">جودة الصورة التشخيصية</div>
+      <div class="knowledge-meta">
+        <span>مثبتة: ${quality.verified_count || 0}</span>
+        <span>إفادات ذاتية: ${quality.self_reported_count || 0}</span>
+        <span>تعارضات مفتوحة: ${quality.open_conflicts_count || 0}</span>
+        <span>ناقصة: ${quality.missing_count || 0}</span>
+        <span>قوة الدليل: ${escHtml(quality.evidence_strength || 'WEAK')}</span>
+        <span>موثوقية البيانات: ${escHtml(quality.data_reliability || 'LOW')}</span>
+      </div>
+      <div class="knowledge-finding-text" style="margin-top:8px;">
+        فترة الأساس: ${escHtml(baseline.baseline_start || 'غير محددة')} — ${escHtml(baseline.baseline_end || 'غير محددة')}
+        · المقارنة: ${escHtml(baseline.comparison_start || 'غير محددة')} — ${escHtml(baseline.comparison_end || 'غير محددة')}
+        · الموسمية: ${escHtml(baseline.seasonality_context || 'غير محددة')}
+      </div>
+    </div>`;
+    if(bottleneck){
+      body += `<div class="knowledge-finding">
+        <div class="knowledge-finding-title">الاختناق المرشح · ${escHtml(bottleneck.classification)}</div>
+        <div class="knowledge-finding-text">${escHtml(bottleneck.statement)}</div>
+        <div class="knowledge-meta"><span>المصادر: ${escHtml((bottleneck.source_ids || []).join('، '))}</span><span>بانتظار مراجعة بشرية</span></div>
+      </div>`;
+    }
+    if(opportunity){
+      body += `<div class="knowledge-finding">
+        <div class="knowledge-finding-title">الفرصة · ${escHtml(opportunity.priority || '')}</div>
+        <div class="knowledge-finding-text">${escHtml(opportunity.statement)}</div>
+        <div class="knowledge-meta"><span>الأثر ${escHtml(opportunity.impact || '—')}</span><span>الجهد ${escHtml(opportunity.effort || '—')}</span><span>الثقة ${escHtml(opportunity.confidence || '—')}</span></div>
+      </div>`;
+    }
+    if(decision){
+      body += `<div class="knowledge-finding">
+        <div class="knowledge-finding-title">القرار المقترح — غير معتمد</div>
+        <div class="knowledge-finding-text">${escHtml(decision.statement)}</div>
+        <div class="knowledge-meta"><span>${escHtml(decision.decision_status || '')}</span><span>المصادر: ${escHtml((decision.source_ids || []).join('، '))}</span></div>
+      </div>`;
+    }
+    body += `<div style="margin-top:12px;font-size:12px;font-weight:600;color:#0B132B;">درجات الأصول الخمسة</div>`;
+    (scan.asset_scores || []).forEach(asset => {
+      const components = (asset.components || []).map(component =>
+        `<li>${escHtml(component.label)}: <span class="num">${component.points > 0 ? '+' : ''}${component.points}</span> — ${escHtml((component.source_ids || []).join('، '))}</li>`
+      ).join('');
+      const missing = (asset.missing_evidence || []).map(item => `<li>${escHtml(item)}</li>`).join('');
+      body += `<div class="knowledge-finding">
+        <div class="knowledge-finding-title">${escHtml(asset.asset_name)} · ${escHtml(asset.score_label)}</div>
+        <div class="knowledge-finding-text">${escHtml(asset.explanation)}</div>
+        ${components ? `<ul class="knowledge-list">${components}</ul>` : ''}
+        ${missing ? `<div style="font-size:12px;color:#765B00;margin-top:6px;">ما ينقص الدرجة:</div><ul class="knowledge-list">${missing}</ul>` : ''}
+      </div>`;
+    });
+    if((scan.missing_evidence || []).length){
+      body += `<div style="margin-top:11px;font-size:12px;font-weight:600;color:#765B00;">الأدلة الناقصة</div>
+        <ul class="knowledge-list">${scan.missing_evidence.map(item => `<li>${escHtml(item)}</li>`).join('')}</ul>`;
+    }
+    if((scan.open_conflicts || []).length){
+      body += `<div style="margin-top:11px;font-size:12px;font-weight:600;color:#765B00;">تعارضات مفتوحة</div>
+        <ul class="knowledge-list">${scan.open_conflicts.map(item => `<li>${escHtml(item.verification_question)}</li>`).join('')}</ul>`;
+    }
+    body += `<div class="knowledge-finding">
+      <div class="knowledge-finding-title">القرارات</div>
+      <div class="knowledge-finding-text">يمكن اتخاذه الآن: ${(scan.decisions_available_now || []).length || 'لا شيء قبل اكتمال البوابة'}</div>
+      <div class="knowledge-finding-text">ينتظر دليلًا: ${(scan.decisions_waiting_for_evidence || []).length}</div>
+    </div>`;
+  }
+  return `<section class="knowledge-section">
+    <h2>Sana Scan — التشخيص الموحد</h2>
+    <p style="font-size:12.5px;color:#6E7580;line-height:1.7;">
+      SDS-001 + الأدلة + الأصول الخمسة. لا تظهر درجة بلا تفسير، ولا فرضية أو استنتاج بلا مصادر.
+    </p>
+    <div class="knowledge-pipeline">
+      <span class="knowledge-step">Fact</span><span class="knowledge-step">Evidence</span>
+      <span class="knowledge-step">Hypothesis</span><span class="knowledge-step">Inference</span>
+      <span class="knowledge-step">Recommendation</span>
+    </div>
+    <div id="scan-output">${body}</div>
+    <details style="margin-top:14px;" ${!(scan && scan.diagnostic_baseline_valid) ? 'open' : ''}>
+      <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#0B132B;">معايرة فترة القضية</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px;">
+        <label style="font-size:11px;">بداية الأساس<input class="profile-input" id="caseBaselineStart" type="date" value="${escHtml(scan?.diagnostic_baseline?.baseline_start || '')}"></label>
+        <label style="font-size:11px;">نهاية الأساس<input class="profile-input" id="caseBaselineEnd" type="date" value="${escHtml(scan?.diagnostic_baseline?.baseline_end || '')}"></label>
+        <label style="font-size:11px;">بداية المقارنة<input class="profile-input" id="caseComparisonStart" type="date" value="${escHtml(scan?.diagnostic_baseline?.comparison_start || '')}"></label>
+        <label style="font-size:11px;">نهاية المقارنة<input class="profile-input" id="caseComparisonEnd" type="date" value="${escHtml(scan?.diagnostic_baseline?.comparison_end || '')}"></label>
+      </div>
+      <label style="display:block;font-size:11px;margin-top:9px;">سياق الموسمية
+        <select class="profile-input" id="caseSeasonality">
+          <option>فترة تشغيل اعتيادية</option><option>موسم مرتفع</option>
+          <option>موسم منخفض</option><option>غير معروف — يحتاج تحقق</option>
+        </select>
+      </label>
+      <div id="caseBaselineMsg" style="font-size:12px;min-height:20px;margin-top:6px;"></div>
+      <button class="btn" onclick="saveCaseBaseline()">حفظ معايرة القضية</button>
+    </details>
+    <button class="btn btn-primary" id="runScanBtn" onclick="runCaseScan()" style="margin-top:12px;">
+      شغّل Sana Scan
+    </button>
+  </section>`;
+}
+
+function renderKnowledgeSection(diagnostic){
+  return `<section class="knowledge-section">
+    <h2>عقل سنع — التشخيص من قاعدة المعرفة</h2>
+    <p style="font-size:12.5px;color:#6E7580;line-height:1.7;">
+      القرار لا يبدأ من ذاكرة نموذج AI. يمر أولًا عبر المعرفة المحفوظة، الأدلة، القاعدة، ثم التوصية.
+      الذكاء الاصطناعي — إن توفر — يعرض النتيجة المسموح بها فقط.
+    </p>
+    <div class="knowledge-pipeline">
+      <span class="knowledge-step">Sana Knowledge</span><span class="knowledge-arrow">←</span>
+      <span class="knowledge-step">Evidence</span><span class="knowledge-arrow">←</span>
+      <span class="knowledge-step">Rules</span><span class="knowledge-arrow">←</span>
+      <span class="knowledge-step">Decision</span><span class="knowledge-arrow">←</span>
+      <span class="knowledge-step">Recommendation</span>
+    </div>
+    <div id="knowledge-diagnostic-output">${renderKnowledgeResult(diagnostic)}</div>
+    <button class="btn btn-primary" id="runKnowledgeBtn" onclick="runKnowledgeDiagnosis()" style="margin-top:12px;">
+      شغّل تشخيص مكتبة سنع
+    </button>
+    <div class="knowledge-search">
+      <div style="font-size:12px;font-weight:600;color:#0B132B;margin-bottom:7px;">ابحث داخل مكتبة سنع</div>
+      <div class="knowledge-search-row">
+        <input id="knowledgeSearchInput" placeholder="مثال: اكتساب العملاء، SOP، الربحية">
+        <button onclick="searchSanaKnowledge()">بحث</button>
+      </div>
+      <div id="knowledgeLibrarySummary" class="knowledge-libraries">جارٍ تحميل نطاق المكتبة...</div>
+      <div id="knowledgeSearchResults"></div>
+    </div>
+  </section>`;
+}
+
+function renderReferenceKnowledge(bundle){
+  bundle = bundle || {};
+  const refs = bundle.references || [];
+  let body = `<div class="knowledge-status blocked"><strong>مرجع فقط — ليس Evidence للعميل</strong>
+    <div>هذه المواد لا تغيّر التشخيص أو الدرجة أو القرار، وتستخدم لصياغة أسئلة وتجارب تحتاج تحققًا.</div></div>`;
+  if(bundle.knowledge_gap){
+    body += `<div class="knowledge-finding"><div class="knowledge-finding-title">فجوة معرفية صريحة</div>
+      <div class="knowledge-finding-text">${escHtml(bundle.knowledge_gap)}</div></div>`;
+  }
+  refs.forEach(x => {
+    body += `<div class="knowledge-finding">
+      <div class="knowledge-finding-title">${escHtml(x.title)}</div>
+      <div class="knowledge-finding-text">${escHtml(x.original_summary || x.problem || '')}</div>
+      ${x.quote ? `<div class="citation">«${escHtml(x.quote)}»</div>` : ''}
+      <div class="knowledge-meta"><span>${escHtml((x.match_reasons || []).join(' · '))}</span>
+        <span>${escHtml(x.publisher || x.source || '')}</span><span>${escHtml(x.source_version || x.version || '')}</span>
+        <span>المراجعة ${escHtml(x.review_due_at || '—')}</span></div>
+      <div class="knowledge-finding-text" style="margin-top:7px;color:#765B00;">الدليل المطلوب: ${escHtml(x.required_client_evidence || '')}</div>
+    </div>`;
+  });
+  (bundle.conflicts || []).forEach(x => {
+    body += `<div class="knowledge-status blocked"><strong>تعارض يحتاج مراجعة بشرية</strong><div>${escHtml(x.conflict_note)}</div></div>`;
+  });
+  return `<section class="knowledge-section"><h2>المعرفة المرجعية المرتبطة</h2>${body}</section>`;
+}
+
 function qs(companyId, extra){
-  const p = new URLSearchParams();
-  if(companyId && companyId !== 'C001') p.set('company_id', companyId);
-  if(VIEW === 'client') p.set('view', 'client');
-  if(ADMIN_KEY) p.set('admin_key', ADMIN_KEY);
+  const p = new URLSearchParams(CONTEXT_QUERY.slice(1));
+  if(companyId) p.set('company_id', companyId);
   if(extra) Object.entries(extra).forEach(([k,v]) => p.set(k, v));
   const s = p.toString();
   return s ? `?${s}` : '';
 }
 
 async function loadCase(){
-  const adminParam = ADMIN_KEY ? `?admin_key=${encodeURIComponent(ADMIN_KEY)}` : '';
-  const res = await fetch(`/api/cases/${CASE_ID}${adminParam}`);
+  const res = await fetch(`/api/cases/${CASE_ID}${CONTEXT_QUERY}`);
   const json = await res.json();
   if(!json.success){ document.getElementById('app').innerHTML = '<p>تعذر تحميل القضية</p>'; return; }
   render(json.data);
@@ -330,8 +564,10 @@ function toggleInsightPanel(id) {
 
 function render(d){
   const c = d.case;
+  const company = d.company || {};
   CASE_COMPANY_ID = c.company_id;
   document.getElementById('backLink').href = `/home${qs(CASE_COMPANY_ID)}`;
+  document.getElementById('nextStepBtn').href = `/case/${CASE_ID}/next-step${qs(CASE_COMPANY_ID)}`;
   document.getElementById('caseTitle').textContent = c.case_title;
   document.getElementById('caseType').textContent = c.case_type || '';
 
@@ -344,13 +580,52 @@ function render(d){
       if (counterEl) counterEl.outerHTML = buildInsightCounter(d.evidence, assets);
     }).catch(() => {});
 
-  let html = `<div id="insight-counter">${buildInsightCounter(d.evidence, [])}</div>
+  let html = `<section>
+      <h2>ملف الشركة ومصادر التحليل</h2>
+      <p style="font-size:12.5px;color:#6E7580;line-height:1.7;">
+        أضف الروابط التي تمثل عمل الشركة. تُحفظ مع ملف العميل وتدخل كسياق مرجعي في التشخيص،
+        ولن يدّعي سنع قراءة محتوى رابط لم يتم فحصه.
+      </p>
+      <div class="profile-meta">
+        <span class="profile-chip">الشركة: ${escHtml(company.name || '—')}</span>
+        <span class="profile-chip">القطاع: ${escHtml(company.sector_other || company.sector || '—')}</span>
+        <span class="profile-chip">الفريق: ${escHtml(company.employee_count || '—')}</span>
+      </div>
+      <div class="profile-grid">
+        <div class="profile-field">
+          <label for="companyWebsite">موقع الشركة</label>
+          <input id="companyWebsite" type="url" inputmode="url"
+                 placeholder="https://company.com"
+                 value="${escHtml(company.website_url || '')}">
+        </div>
+        <div class="profile-field">
+          <label for="companySocial">رابط التواصل الاجتماعي الرئيسي</label>
+          <input id="companySocial" type="url" inputmode="url"
+                 placeholder="https://instagram.com/company"
+                 value="${escHtml(company.social_media_url || '')}">
+        </div>
+        <div class="profile-field full">
+          <label for="companyReference">رابط آخر يمثل نشاط الشركة</label>
+          <input id="companyReference" type="url" inputmode="url"
+                 placeholder="متجر، خرائط Google، LinkedIn، ملف أعمال..."
+                 value="${escHtml(company.business_reference_url || '')}">
+        </div>
+      </div>
+      <div class="profile-actions">
+        <button class="btn btn-primary" id="saveCompanyProfileBtn" onclick="saveCompanySources()">حفظ مصادر الشركة</button>
+        <span class="profile-msg" id="companyProfileMsg"></span>
+      </div>
+    </section>
+    <div id="insight-counter">${buildInsightCounter(d.evidence, [])}</div>
     <div class="qbox">
       <div class="lbl">Real Question</div>
       <div class="declared">المشكلة كما وصفها المالك: "${c.declared_problem || ''}"</div>
       <div class="real">السؤال الحقيقي: ${c.real_question || ''}</div>
       ${c.ai_analysis ? renderAiAssessment(c.ai_analysis, c.confidence_score) : ''}
     </div>
+    ${renderScanSection(d.scan)}
+    ${renderReferenceKnowledge(d.reference_knowledge)}
+    ${renderKnowledgeSection(d.knowledge_diagnostic)}
 
     <section>
       <h2>الأدلة المرتبطة (${d.evidence.length})</h2>
@@ -361,7 +636,7 @@ function render(d){
       <span class="dot"></span>
       <div style="flex:1;">
         <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
-          <div>${e.title} <span class="conf-tag">— ${e.source_type}, ثقة ${e.confidence}٪</span></div>
+          <div>${e.title} <span class="conf-tag">— ${e.evidence_type || 'Evidence'} · ${e.source_ref || e.source_type} · ثقة ${e.confidence}٪</span></div>
           <button class="ai-btn" onclick="analyzeEvidence('${e.evidence_id}')">🧠 حلّل</button>
         </div>
         <div id="ai-evidence-${e.evidence_id}">${e.ai_analysis ? `<div class="ai-note">🧠 ${e.ai_analysis}</div>` : ''}</div>
@@ -371,9 +646,14 @@ function render(d){
   html += `
     <div class="add-form">
       <input type="text" id="newEvidence" placeholder="أضف دليلًا جديدًا...">
+      <select id="newEvidenceType" aria-label="تصنيف الدليل">
+        <option value="Evidence">Evidence — إفادة قابلة للتتبع</option>
+        <option value="Fact">Fact — حقيقة موثقة</option>
+      </select>
+      <input type="text" id="newEvidenceSource" placeholder="مرجع المصدر: اسم التقرير أو المستند">
       <button onclick="addEvidence()">إضافة</button>
     </div>
-    <button class="ai-case-btn" onclick="analyzeCase()">🧠 حلّل القضية كاملة بالذكاء الاصطناعي</button>
+    <button class="ai-case-btn" onclick="analyzeCase()">🧠 صغ عرض العميل من النتيجة المدعومة</button>
     <div id="ai-case-result"></div>
   </section>`;
 
@@ -553,6 +833,151 @@ function render(d){
 
   // SDS-002: يُحمَّل بعد render لأن CASE_COMPANY_ID يُحدَّد هنا
   loadSdsSection();
+  loadKnowledgeLibraries();
+}
+
+function knowledgeQueryString(){
+  const params = new URLSearchParams();
+  if(ADMIN_KEY) params.set('admin_key', ADMIN_KEY);
+  if(ADMIN_KEY && CASE_COMPANY_ID) params.set('company_id', CASE_COMPANY_ID);
+  return params.toString() ? `?${params.toString()}` : '';
+}
+
+async function loadKnowledgeLibraries(){
+  const target = document.getElementById('knowledgeLibrarySummary');
+  if(!target) return;
+  try{
+    const res = await fetch(`/api/knowledge/libraries${knowledgeQueryString()}`);
+    const json = await res.json();
+    if(!json.success) throw new Error('load failed');
+    const active = (json.data.libraries || []).filter(x => x.count > 0);
+    target.textContent = `${json.data.sector_label || 'قطاع غير محدد'} · ${active.length} مكتبة متاحة · النسخة ${json.data.knowledge_version}`;
+  }catch(e){
+    target.textContent = 'تعذر تحميل فهرس المكتبة الآن.';
+  }
+}
+
+async function runKnowledgeDiagnosis(){
+  const btn = document.getElementById('runKnowledgeBtn');
+  const out = document.getElementById('knowledge-diagnostic-output');
+  if(btn){ btn.disabled = true; btn.textContent = 'جارٍ تطبيق قواعد سنع...'; }
+  try{
+    const res = await fetch(`/api/cases/${CASE_ID}/diagnose`, {method:'POST'});
+    const json = await res.json();
+    if(!res.ok || !json.success) throw new Error(json.message || 'diagnostic failed');
+    if(out) out.innerHTML = renderKnowledgeResult(json.data);
+    showToast(json.data.status === 'SUPPORTED' ? 'تم الوصول إلى نتيجة مدعومة من مكتبة سنع' : 'توقّف سنع عند نقص الأدلة');
+  }catch(e){
+    if(out) out.innerHTML = `<div class="ai-error">تعذر تشغيل محرك المعرفة الآن.</div>`;
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'شغّل تشخيص مكتبة سنع'; }
+  }
+}
+
+async function runCaseScan(){
+  const out = document.getElementById('scan-output');
+  const btn = document.getElementById('runScanBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'جارٍ تشغيل Sana Scan...'; }
+  if(out) out.innerHTML = `<div class="knowledge-status blocked">يجمع سنع SDS-001 والأدلة والأصول الخمسة...</div>`;
+  try{
+    const res = await fetch(`/api/cases/${CASE_ID}/scan`, {method:'POST'});
+    const json = await res.json();
+    if(!res.ok || !json.success) throw new Error(json.message || 'scan failed');
+    showToast('اكتمل Sana Scan — النتيجة بانتظار المراجعة البشرية');
+    loadCase();
+  }catch(e){
+    if(out) out.innerHTML = `<div class="knowledge-status blocked">تعذر تشغيل Scan. لم تُحفظ نتيجة غير مكتملة.</div>`;
+    if(btn){ btn.disabled = false; btn.textContent = 'أعد تشغيل Sana Scan'; }
+  }
+}
+
+async function saveCaseBaseline(){
+  const msg = document.getElementById('caseBaselineMsg');
+  const payload = {
+    baseline_start: document.getElementById('caseBaselineStart').value,
+    baseline_end: document.getElementById('caseBaselineEnd').value,
+    comparison_start: document.getElementById('caseComparisonStart').value,
+    comparison_end: document.getElementById('caseComparisonEnd').value,
+    seasonality_context: document.getElementById('caseSeasonality').value
+  };
+  try{
+    const res = await fetch(`/api/cases/${CASE_ID}/diagnostic-baseline`, {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if(!res.ok || !json.success) throw new Error(json.message || 'تعذر حفظ المعايرة');
+    msg.style.color = '#138A72';
+    msg.textContent = 'حُفظت فترة الأساس والمقارنة.';
+    loadCase();
+  }catch(e){
+    msg.style.color = '#B42318';
+    msg.textContent = e.message;
+  }
+}
+
+async function searchSanaKnowledge(){
+  const input = document.getElementById('knowledgeSearchInput');
+  const results = document.getElementById('knowledgeSearchResults');
+  const query = input?.value.trim() || '';
+  if(!results) return;
+  results.innerHTML = `<div style="font-size:12px;color:#9AA0AB;padding-top:8px;">جارٍ البحث داخل المعرفة المحفوظة...</div>`;
+  try{
+    const params = new URLSearchParams({q: query, limit:'12', case_id:CASE_ID});
+    if(ADMIN_KEY){ params.set('admin_key', ADMIN_KEY); params.set('company_id', CASE_COMPANY_ID); }
+    const res = await fetch(`/api/knowledge/search?${params.toString()}`);
+    const json = await res.json();
+    if(!res.ok || !json.success) throw new Error('search failed');
+    if(!json.data.length){
+      results.innerHTML = `<div style="font-size:12px;color:#9AA0AB;padding-top:8px;">لا توجد مادة مطابقة في مكتبة سنع.</div>`;
+      return;
+    }
+    results.innerHTML = json.data.map(item => `
+      <div class="knowledge-search-result">
+        <strong>${escHtml(item.title)}</strong>
+        <small>${escHtml(item.category)} · ${escHtml(item.knowledge_level || 'L0')} · ${escHtml(item.source || '')}</small>
+        <small>${escHtml(item.problem || '')}</small>
+        ${item.quote ? `<small>«${escHtml(item.quote)}»</small>` : ''}
+        <small>سبب المطابقة: ${escHtml((item.match_reasons || []).join(' · '))} · الإصدار ${escHtml(item.source_version || item.version || '—')} · المراجعة ${escHtml(item.review_due_at || '—')}</small>
+        <small style="color:#765B00;">مرجع فقط؛ يلزم Evidence خاص بالشركة قبل التطبيق.</small>
+      </div>`).join('');
+  }catch(e){
+    results.innerHTML = `<div class="ai-error">تعذر البحث داخل المكتبة.</div>`;
+  }
+}
+
+async function saveCompanySources(showSuccess = true){
+  if(!CASE_COMPANY_ID) return false;
+  const btn = document.getElementById('saveCompanyProfileBtn');
+  const msg = document.getElementById('companyProfileMsg');
+  const payload = {
+    website_url: document.getElementById('companyWebsite')?.value.trim() || '',
+    social_media_url: document.getElementById('companySocial')?.value.trim() || '',
+    business_reference_url: document.getElementById('companyReference')?.value.trim() || ''
+  };
+  if(btn){ btn.disabled = true; btn.textContent = 'جارٍ الحفظ...'; }
+  if(msg) msg.textContent = '';
+  try{
+    const res = await fetch(`/api/companies/${CASE_COMPANY_ID}/analysis-profile`, {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if(!res.ok || !json.success){
+      if(msg){ msg.style.color = '#B23A2E'; msg.textContent = json.message || 'تعذر حفظ الروابط.'; }
+      return false;
+    }
+    if(msg && showSuccess){
+      msg.style.color = '#0EA5A5';
+      msg.textContent = 'تم حفظ مصادر الشركة وستدخل في سياق التشخيص.';
+    }
+    return true;
+  }catch(e){
+    if(msg){ msg.style.color = '#B23A2E'; msg.textContent = 'تعذر الاتصال بالخادم.'; }
+    return false;
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'حفظ مصادر الشركة'; }
+  }
 }
 
 // ── SDS-002: تحميل وعرض سؤال الفجوة أسفل القضية ──
@@ -624,29 +1049,31 @@ async function sdsAnswer(choice, btn){
   document.querySelectorAll('.sds-opt').forEach(b => b.classList.remove('saving'));
 }
 
-function showScoreToast(assetName, newScore) {
-  const t = document.getElementById('toast');
-  t.textContent = `🎉 تم إضافة أصل معرفي جديد — ${assetName} ⬆ ${newScore}`;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
-}
-
 async function addEvidence(){
   const input = document.getElementById('newEvidence');
   const title = input.value.trim();
+  const evidenceType = document.getElementById('newEvidenceType').value;
+  const sourceRef = document.getElementById('newEvidenceSource').value.trim();
   if(!title) return;
+  if(evidenceType === 'Fact' && !sourceRef){
+    showToast('مرجع المصدر مطلوب عند تسجيل Fact');
+    return;
+  }
   const res = await fetch(`/api/companies/${CASE_COMPANY_ID || 'C001'}/evidence`, {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({title, case_id: CASE_ID, source_type:'ملاحظة مباشرة', confidence:50})
+    body: JSON.stringify({
+      title,
+      case_id: CASE_ID,
+      source_type: evidenceType === 'Fact' ? 'مصدر موثق' : 'ملاحظة مباشرة',
+      evidence_type: evidenceType,
+      source_ref: sourceRef || 'إفادة صاحب الشركة',
+      confidence: evidenceType === 'Fact' ? 80 : 50
+    })
   });
   const json = await res.json();
   if(json.success){
     const d = json.data || {};
-    if(d.asset_name && d.new_score != null){
-      showScoreToast(d.asset_name, d.new_score);
-    } else {
-      showToast('تمت إضافة الدليل');
-    }
+    showToast('تمت إضافة الدليل — أعد Sana Scan لتحديث التشخيص');
     input.value=''; loadCase();
   }
 }
@@ -663,12 +1090,12 @@ function openApproveModal(decisionId){
   modal.innerHTML = `
     <div style="background:#fff;border-radius:14px;padding:28px 24px;width:100%;max-width:420px;box-shadow:0 8px 40px rgba(11,19,43,.18);">
       <div style="font-size:16px;font-weight:700;color:#0B132B;margin-bottom:20px;text-align:center;">اعتماد القرار</div>
-      <label style="display:block;font-size:12.5px;font-weight:600;color:#0B132B;margin-bottom:4px;">المسؤول عن التنفيذ</label>
-      <input id="mOwner" placeholder="اسم الشخص المسؤول" style="width:100%;box-sizing:border-box;border:1.5px solid #DEE1EC;border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;margin-bottom:14px;">
-      <label style="display:block;font-size:12.5px;font-weight:600;color:#0B132B;margin-bottom:4px;">الموعد النهائي</label>
-      <input id="mDue" type="date" style="width:100%;box-sizing:border-box;border:1.5px solid #DEE1EC;border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;margin-bottom:14px;">
+      <label style="display:block;font-size:12.5px;font-weight:600;color:#0B132B;margin-bottom:4px;">المسؤول عن التنفيذ <span style="color:#E53935;">*</span></label>
+       <input id="mOwner" required placeholder="اسم الشخص المسؤول" style="width:100%;box-sizing:border-box;border:1.5px solid #DEE1EC;border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;margin-bottom:14px;">
+      <label style="display:block;font-size:12.5px;font-weight:600;color:#0B132B;margin-bottom:4px;">الموعد النهائي <span style="color:#E53935;">*</span></label>
+       <input id="mDue" type="date" required style="width:100%;box-sizing:border-box;border:1.5px solid #DEE1EC;border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;margin-bottom:14px;">
       <label style="display:block;font-size:12.5px;font-weight:600;color:#0B132B;margin-bottom:4px;">مقياس النجاح <span style="color:#E53935;">*</span></label>
-      <input id="mMetric" placeholder="مثال: ارتفاع نسبة تحويل العملاء من 5% إلى 10%" style="width:100%;box-sizing:border-box;border:1.5px solid #DEE1EC;border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;margin-bottom:6px;">
+       <input id="mMetric" required placeholder="مثال: ارتفاع نسبة تحويل العملاء من 5% إلى 10%" style="width:100%;box-sizing:border-box;border:1.5px solid #DEE1EC;border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;margin-bottom:6px;">
       <div id="mErr" style="font-size:12px;color:#E53935;min-height:16px;margin-bottom:14px;"></div>
       <div style="display:flex;gap:10px;">
         <button id="mConfirm" class="btn btn-primary" style="flex:1;padding:11px;" onclick="submitApprove('${decisionId}')">اعتماد ✓</button>
@@ -684,21 +1111,28 @@ async function submitApprove(id){
   const owner  = (document.getElementById('mOwner').value  || '').trim();
   const due    = (document.getElementById('mDue').value    || '').trim();
   const err    = document.getElementById('mErr');
+  if(!owner){ err.textContent = 'المسؤول عن التنفيذ مطلوب لاعتماد القرار.'; return; }
+  if(!due){ err.textContent = 'الموعد النهائي مطلوب لاعتماد القرار.'; return; }
   if(!metric){ err.textContent = 'مقياس النجاح مطلوب لاعتماد القرار.'; return; }
   err.textContent = '';
   const btn = document.getElementById('mConfirm');
   btn.disabled = true; btn.textContent = 'جارٍ الاعتماد...';
-  const res = await fetch(`/api/decisions/${id}/approve`, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({owner_name: owner, due_date: due, success_metric: metric})
-  });
-  const json = await res.json();
-  if(json.success){
-    document.getElementById('approveModal').remove();
-    showToast('تم اعتماد القرار — أُنشئت مهمة تنفيذية تلقائيًا');
-    loadCase();
-  } else {
-    err.textContent = json.message || 'تعذر الاعتماد — حاول مرة أخرى.';
+  try {
+    const res = await fetch(`/api/decisions/${id}/approve`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({owner_name: owner, due_date: due, success_metric: metric})
+    });
+    const json = await res.json();
+    if(json.success){
+      document.getElementById('approveModal').remove();
+      showToast('تم اعتماد القرار — أُنشئت مهمة تنفيذية تلقائيًا');
+      loadCase();
+    } else {
+      err.textContent = json.message || 'تعذر الاعتماد — لم تتغير حالة القرار. حاول مرة أخرى.';
+      btn.disabled = false; btn.textContent = 'اعتماد ✓';
+    }
+  } catch(e) {
+    err.textContent = 'تعذر الاتصال بالخادم — لم تتغير حالة القرار. حاول مرة أخرى.';
     btn.disabled = false; btn.textContent = 'اعتماد ✓';
   }
 }
@@ -713,7 +1147,7 @@ async function analyzeEvidence(evidenceId){
       if(box) box.innerHTML = `<div class="ai-error">تعذر التحليل الآن. بياناتك محفوظة ويمكنك المتابعة يدويًا.</div>`;
       return;
     }
-    showToast('تم تحليل الدليل بالذكاء الاصطناعي');
+     showToast('تم فحص الدليل وفق حوكمة سنع');
     loadCase();
   }catch(e){
     if(box) box.innerHTML = `<div class="ai-error">تعذر التحليل الآن. بياناتك محفوظة ويمكنك المتابعة يدويًا.</div>`;
@@ -722,6 +1156,11 @@ async function analyzeEvidence(evidenceId){
 
 async function analyzeCase(){
   const box = document.getElementById('ai-case-result');
+  const profileSaved = await saveCompanySources(false);
+  if(!profileSaved){
+    if(box) box.innerHTML = `<div class="ai-error">صحح روابط الشركة أو احفظها قبل بدء التحليل.</div>`;
+    return;
+  }
   if(box) box.innerHTML = `<span style="font-size:12px; color:#9AA0AB;">سنع يحلّل القضية كاملة...</span>`;
   showToast('سنع يحلّل القضية كاملة...');
   try{

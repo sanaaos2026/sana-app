@@ -145,17 +145,8 @@
 </main>
 
 <script>
-const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "{{ default_company_id }}";
-const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
-const ADMIN_KEY = new URLSearchParams(window.location.search).get('admin_key');
-const CQS = (() => {
-  const p = new URLSearchParams();
-  if(COMPANY_ID !== 'C001') p.set('company_id', COMPANY_ID);
-  if(VIEW === 'client') p.set('view', 'client');
-  if(ADMIN_KEY) p.set('admin_key', ADMIN_KEY);
-  const s = p.toString();
-  return s ? `?${s}` : '';
-})();
+const COMPANY_ID = {{ company_id|tojson }};
+const CQS = {{ context_query|tojson }};
 let selectedAssetId = null;
 let selectedAssetName = null;
 let assets = [];

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <script>
+    (function(){
+      var m=document.querySelector('meta[name="csrf-token"]'); if(!m)return;
+      var t=m.content, S=new Set(['POST','PUT','PATCH','DELETE']), F=window.fetch.bind(window);
+      window.fetch=function(u,o){o=o||{};if(S.has((o.method||'GET').toUpperCase())){
+        o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});}return F(u,o);};
+    })();
+  </script>
+  <title>سنع — صندوق البحث الخاص</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#F5F6FB;color:#333940;font-family:'IBM Plex Sans Arabic',sans-serif;line-height:1.6}
+    header{background:#080E1F;color:#fff;padding:18px 28px;display:flex;align-items:center;gap:16px}
+    header .eyebrow{font:600 10px 'Space Grotesk';letter-spacing:2px;color:#F2B233;text-transform:uppercase}
+    header h1{font-size:18px;font-weight:600;flex:1}
+    header a{font-size:12px;color:#DCE3F4;text-decoration:none}
+    main{max-width:1100px;margin:0 auto;padding:28px 20px 60px}
+    .intro{margin-bottom:18px}.intro h2{font-size:24px;color:#0B132B;margin-bottom:5px}
+    .intro p{font-size:13px;color:#6E7580;max-width:820px}
+    .notice{background:#FFF8E8;border:1px solid #F2D48D;color:#765410;border-radius:10px;padding:12px 14px;font-size:12px;margin:16px 0}
+    .grid{display:grid;grid-template-columns:1fr 1.45fr;gap:16px}
+    section{background:#fff;border:1px solid #DEE1EC;border-radius:12px;padding:20px}
+    section.full{grid-column:1/-1}
+    section h3{color:#0B132B;font-size:14px;margin-bottom:12px}
+    .form{display:grid;grid-template-columns:1fr 1fr;gap:10px}.form .wide{grid-column:1/-1}
+    label{font-size:11px;font-weight:600;color:#0B132B;display:flex;flex-direction:column;gap:4px}
+    input,select,textarea{font:12px inherit;border:1px solid #DEE1EC;border-radius:7px;padding:8px 9px;background:#F9FAFC}
+    textarea{min-height:76px;resize:vertical} input:focus,select:focus,textarea:focus{outline:none;border-color:#0EA5A5;background:#fff}
+    button{border:0;border-radius:7px;background:#0B132B;color:#fff;padding:9px 14px;font:600 12px inherit;cursor:pointer}
+    button.secondary{background:#F5F6FB;border:1px solid #DEE1EC;color:#0B132B}
+    button.approve{background:#0E7660} button.archive{background:#fff;border:1px solid #E0B4B4;color:#9A3F3F}
+    .actions{display:flex;gap:8px;align-items:center;margin-top:12px}.msg{font-size:11px;color:#0EA5A5;min-height:18px}
+    .guide{font-size:11px;color:#6E7580;margin-top:10px}.guide b{color:#0B132B}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:16px}
+    .stat{background:#F8F9FC;border:1px solid #EEF0F5;border-radius:8px;padding:10px}.stat strong{display:block;color:#0B132B;font-size:20px}.stat span{font-size:10px;color:#6E7580}
+    .toolbar{display:flex;gap:8px;margin-bottom:10px}.toolbar input{flex:1}.toolbar select{width:150px}
+    .source{border-top:1px solid #EEF0F5;padding:14px 0}.source:first-child{border-top:0;padding-top:2px}
+    .source-head{display:flex;gap:8px;align-items:start}.source-head strong{color:#0B132B;font-size:14px;flex:1}
+    .badge{background:#F5F6FB;border-radius:12px;padding:2px 8px;color:#6E7580;font-size:10px;white-space:nowrap}
+    .badge.inbox{background:#FFF8E8;color:#765410}.badge.approved{background:#F0FAF5;color:#176B42}
+    .meta,.summary,.notes{font-size:11px;color:#6E7580;margin-top:5px}.summary{color:#454C56}
+    .source a{font-size:11px;color:#0E8585;text-decoration:none}.source-actions{display:flex;gap:7px;margin-top:9px}
+    .empty{color:#6E7580;font-size:12px;padding:15px 0}
+    @media(max-width:760px){.grid{grid-template-columns:1fr}.form{grid-template-columns:1fr}.form .wide{grid-column:auto}.stats{grid-template-columns:1fr 1fr}.toolbar{flex-wrap:wrap}.toolbar select{width:100%}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">Sana Research</div>
+    <h1>صندوق البحث الخاص</h1>
+    <a href="/knowledge">العودة إلى مكتبة المعرفة ←</a>
+  </header>
+  <main>
+    <div class="intro">
+      <h2>المادة الخاصة هي أول خطوة في البحث</h2>
+      <p>أضف هنا الملفات والكتب والأبحاث والملخصات التي تريد أن يبدأ منها بحث سنع. كل مادة تبقى خاصة، وتبدأ في «قيد المراجعة» ولا تغذي التشخيص أو القرار تلقائيًا.</p>
+    </div>
+    <div class="notice">
+      <b>قاعدة الحوكمة:</b> تسجيل المصدر لا يعني اعتماده، ووجود رابط Drive لا يعني أن سنع قرأ محتواه. افتح الملف واقرأه ثم أضف ملخصك وملاحظتك، وبعد المراجعة فقط انقله إلى «معتمد للبحث».
+      المادة الخاصة ومعرفة الويب المرجعية لا تتحولان إلى Evidence للعميل ولا تغيران Sana Scan أو درجته أو قراره؛ يتم ذلك فقط عبر دليل العميل وبوابته المستقلة.
+      — <a href="https://drive.google.com/drive/folders/1tByM4BNq7w-JVK_hr-9dALz0ip46hZHI" target="_blank" rel="noopener">فتح مجلد المصادر الخاصة في Drive</a>
+    </div>
+    <div class="grid">
+      <section>
+        <h3>رفع ملف من جهازك</h3>
+        <div class="notice" style="margin:0 0 12px;font-size:11px">يُحفظ الملف داخل مساحة سنع الخاصة، وتُحسب بصمته لمنع رفع النسخة نفسها مرتين. الرفع لا يعني الاعتماد.</div>
+        <div class="form">
+          <label class="wide">الملف *
+            <input id="uploadFile" type="file" accept=".pdf,.docx,.xlsx,.csv,.txt,.md,.markdown,.json,.html,.htm,.xml,.yaml,.yml">
+          </label>
+          <label>اسم المادة (اختياري)<input id="uploadTitle" placeholder="يُستخدم اسم الملف إن تُرك فارغًا"></label>
+          <label>نوع المادة
+            <select id="uploadKind"><option value="file">ملف أو وثيقة</option><option value="book">كتاب</option><option value="research">بحث أو دراسة</option><option value="summary">ملخص أو ملاحظة</option></select>
+          </label>
+          <label>انتهاء الحقوق (اختياري)<input id="uploadRightsExpiresAt" type="date"></label>
+        </div>
+        <div class="actions"><button onclick="uploadFile()">رفع وتحليل الملف</button><span id="uploadMsg" class="msg"></span></div>
+        <p class="guide"><b>الصيغ المدعومة للاستخراج الأولي:</b> TXT وMarkdown وCSV وJSON وHTML وDOCX وXLSX. PDF يُحفظ ويظهر بحالة تحتاج مراجعة إلى أن يضاف قارئ PDF موثوق.</p>
+        <h3 style="margin-top:22px">إضافة مرجع بدون رفع</h3>
+        <div class="form">
+          <label class="wide">العنوان *
+            <input id="title" placeholder="مثال: كتاب بناء الأنظمة القابلة للتكرار">
+          </label>
+          <label>نوع المادة
+            <select id="sourceKind"><option value="file">ملف أو وثيقة</option><option value="book">كتاب</option><option value="research">بحث أو دراسة</option><option value="summary">ملخص أو ملاحظة</option></select>
+          </label>
+          <label>المصدر
+            <select id="origin"><option value="drive">Google Drive</option><option value="url">رابط خارجي</option><option value="manual">إدخال يدوي</option></select>
+          </label>
+          <label class="wide">رابط الملف أو معرّف Drive
+            <input id="sourceUrl" placeholder="https://drive.google.com/... أو رابط المصدر">
+          </label>
+          <label>المؤلف / الباحث<input id="author" placeholder="اختياري"></label>
+          <label>الناشر<input id="publisher" placeholder="اختياري"></label>
+          <label>سنة النشر<input id="year" type="number" min="1000" max="2100" placeholder="2026"></label>
+          <label>اللغة<input id="language" placeholder="العربية"></label>
+          <label>الولاية القضائية<input id="jurisdiction" placeholder="السعودية / عام"></label>
+          <label>حالة الحقوق
+            <select id="rights"><option value="pending">قيد التحقق</option><option value="owned">مملوك</option><option value="licensed">مرخص</option><option value="public">عام</option><option value="restricted">مقيد</option></select>
+          </label>
+          <label>انتهاء الحقوق (اختياري)<input id="rightsExpiresAt" type="date"></label>
+          <label class="wide">ملخصك الأولي
+            <textarea id="summary" placeholder="ما الذي يحتويه المصدر؟ وما الذي قد يفيد سنع؟"></textarea>
+          </label>
+          <label class="wide">ملاحظات / كلمات مفتاحية
+            <textarea id="notes" placeholder="الفصول المهمة، كلمات البحث، أسئلة تحتاج تحققًا..."></textarea>
+          </label>
+        </div>
+        <div class="actions"><button onclick="addSource()">إضافة إلى صندوق البحث</button><span id="formMsg" class="msg"></span></div>
+        <p class="guide"><b>اقتراح:</b> ابدأ بالمصادر التي تملكها أو تملك حق استخدامها، ثم سجّل ما يمكن إثباته فقط.</p>
+      </section>
+      <section>
+        <h3>المصادر المسجلة</h3>
+        <div id="stats" class="stats"></div>
+        <div class="toolbar">
+          <input id="query" placeholder="ابحث في العنوان أو الملخص أو الكلمات المفتاحية">
+          <select id="status"><option value="">كل الحالات</option><option value="inbox">قيد المراجعة</option><option value="approved">معتمد للبحث</option><option value="rejected">مرفوض</option><option value="archived">مؤرشف</option></select>
+          <button class="secondary" onclick="loadSources()">تحديث</button>
+        </div>
+        <div id="sources"><div class="empty">جارٍ التحميل...</div></div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+    const kindLabels={file:'ملف أو وثيقة',book:'كتاب',research:'بحث أو دراسة',summary:'ملخص أو ملاحظة'};
+    const statusLabels={inbox:'قيد المراجعة',approved:'معتمد للبحث',rejected:'مرفوض',archived:'مؤرشف'};
+    function val(id){return document.getElementById(id).value.trim()}
+    function renderStats(items){
+      const count=(s)=>items.filter(x=>x.review_status===s).length;
+      document.getElementById('stats').innerHTML=`<div class="stat"><strong>${items.length}</strong><span>كل المواد الخاصة</span></div><div class="stat"><strong>${count('inbox')}</strong><span>بانتظار المراجعة</span></div><div class="stat"><strong>${count('approved')}</strong><span>معتمد للبحث</span></div>`;
+    }
+    async function loadSources(){
+      const box=document.getElementById('sources'); box.innerHTML='<div class="empty">جارٍ التحميل...</div>';
+      try{
+        const p=new URLSearchParams(); if(val('query'))p.set('q',val('query')); if(val('status'))p.set('status',val('status'));
+        const r=await fetch('/api/knowledge/private-sources?'+p.toString()),j=await r.json(); if(!r.ok||!j.success)throw new Error();
+        renderStats(j.data); box.innerHTML=j.data.map(x=>{
+          const badge=x.review_status==='approved'?'approved':x.review_status==='inbox'?'inbox':'';
+          const link=x.uploaded_file_id?('/api/knowledge/private-sources/'+encodeURIComponent(x.research_source_id)+'/download'):(x.source_url||((x.drive_file_id&&'https://drive.google.com/file/d/'+encodeURIComponent(x.drive_file_id)+'/view')||''));
+           const extraction=x.uploaded_file_id?` · ${esc({extracted:'تم استخراج النص',empty:'ملف بلا نص',unsupported:'يحتاج مراجعة',failed:'فشل الاستخراج'}[x.extraction_status]||x.extraction_status)} · ${esc(x.chunk_count||0)} مقاطع`:'';
+           const rightsExpiry=x.rights_expires_at?` · انتهاء الحقوق: ${esc(x.rights_expires_at)}${x.rights_expired?' (منتهية)':''}`:'';
+          return `<article class="source"><div class="source-head"><strong>${esc(x.title)}</strong><span class="badge">${esc(kindLabels[x.source_kind]||x.source_kind)}</span><span class="badge ${badge}">${esc(statusLabels[x.review_status]||x.review_status)}</span></div>
+           <div class="meta">${esc(x.uploaded_file_name||x.author||'—')} · النوع: ${esc(x.uploaded_mime_type||x.source_kind||'—')} · ${esc(x.publisher||'—')} · ${esc(x.language||'لغة غير محددة')} · الحقوق: ${esc(x.rights_status)}${rightsExpiry}${extraction}</div>
+             ${x.uploaded_file_id?`<div class="meta">الحجم: ${esc(x.uploaded_file_size||0)} بايت · SHA-256: <span dir="ltr">${esc(x.content_hash||'—')}</span> · الإدخال: ${esc(x.created_at||'—')}</div>`:''}
+             <div class="meta">النطاق: ${esc(x.knowledge_scope||'private')} · الحساسية: ${esc(x.sensitivity||'internal')} · الوجهة: ${esc(x.storage_destination||'—')}</div>
+             ${x.document_date?`<div class="meta">تاريخ الوثيقة: ${esc(x.document_date)}`:''}${x.document_date?' · ':''}${x.annotation_count?`التصنيفات: ${esc(x.annotation_count)}`:''}${x.relation_count?` · علاقات المقارنة: ${esc(x.relation_count)}`:''}${x.document_date?'</div>':''}
+            ${link?`<a href="${esc(link)}" target="_blank" rel="noopener">${x.uploaded_file_id?'تحميل الملف ↗':'فتح المصدر ↗'}</a>`:''}
+            ${x.summary?`<div class="summary">${esc(x.summary)}</div>`:''}${x.notes?`<div class="notes">${esc(x.notes)}</div>`:''}
+            ${x.review_status==='inbox'?`<div class="source-actions"><button class="approve" onclick="setStatus('${esc(x.research_source_id)}','approved')">اعتماد للبحث</button><button class="archive" onclick="setStatus('${esc(x.research_source_id)}','archived')">أرشفة</button></div>`:''}</article>`;
+        }).join('')||'<div class="empty">لا توجد مواد بعد. أضف أول مصدر خاص ليبدأ سجل البحث.</div>';
+      }catch(e){box.innerHTML='<div class="empty">تعذر تحميل صندوق البحث الخاص.</div>'}
+    }
+    async function uploadFile(){
+      const file=document.getElementById('uploadFile').files[0], msg=document.getElementById('uploadMsg');
+      if(!file){msg.textContent='اختر ملفًا أولًا.';return}
+      msg.textContent='جارٍ رفع الملف وتحليله...';
+      const fd=new FormData(); fd.append('file',file); fd.append('title',val('uploadTitle')||file.name); fd.append('source_kind',val('uploadKind')); fd.append('rights_status','pending'); fd.append('rights_expires_at',val('uploadRightsExpiresAt'));
+      try{
+        const r=await fetch('/api/knowledge/private-sources/upload',{method:'POST',body:fd}),j=await r.json();
+        if(!r.ok||!j.success)throw new Error(j.error||'failed');
+        msg.textContent=j.extraction_status==='extracted'?'تم الرفع واستخراج النص وفهرسته.':'تم الرفع، ويحتاج إلى مراجعة قبل الفهرسة المعتمدة.';
+        document.getElementById('uploadFile').value=''; document.getElementById('uploadTitle').value=''; document.getElementById('uploadRightsExpiresAt').value=''; loadSources();
+      }catch(e){
+        msg.textContent=e.message==='DUPLICATE_FILE'?'هذا الملف مرفوع مسبقًا.':e.message==='FILE_TOO_LARGE'?'الحد الأقصى 50 ميجابايت.':'تعذر رفع الملف.';
+      }
+    }
+    async function addSource(){
+      const msg=document.getElementById('formMsg'); msg.textContent='جارٍ الحفظ...';
+      const sourceUrl=val('sourceUrl'); const origin=val('origin');
+      const driveMatch=sourceUrl.match(/[-\w]{20,}/);
+       const payload={title:val('title'),source_kind:val('sourceKind'),origin,source_url:sourceUrl||null,drive_file_id:origin==='drive'&&driveMatch?driveMatch[0]:null,author:val('author'),publisher:val('publisher'),publication_year:val('year')||null,language:val('language'),jurisdiction:val('jurisdiction'),rights_status:val('rights'),rights_expires_at:val('rightsExpiresAt')||null,summary:val('summary'),notes:val('notes')};
+      try{const r=await fetch('/api/knowledge/private-sources',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||'failed');msg.textContent='تمت الإضافة إلى قيد المراجعة.';['title','sourceUrl','author','publisher','year','language','jurisdiction','summary','notes'].forEach(id=>document.getElementById(id).value='');loadSources()}catch(e){msg.textContent=e.message==='DRIVE_REFERENCE_REQUIRED'?'أضف رابط أو معرّف ملف Drive.':'تعذر حفظ المادة.'}
+    }
+    async function setStatus(id,status){try{const r=await fetch('/api/knowledge/private-sources/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({review_status:status})});if(!r.ok)throw new Error();loadSources()}catch(e){alert('تعذر تحديث حالة المادة.')}}
+    document.getElementById('query').addEventListener('keydown',e=>{if(e.key==='Enter')loadSources()}); loadSources();
+  </script>
+</body>
+</html>

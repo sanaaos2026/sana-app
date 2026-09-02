@@ -41,6 +41,8 @@
   .check-btn{ background:none; border:none; padding:2px; cursor:pointer; flex-shrink:0; line-height:0; }
   .task-title{ font-size:14px; font-weight:600; }
   .task-title.done{ text-decoration:line-through; color:#9AA0AB; }
+  .task-body{flex:1}.task-meta{font-size:11px;color:#6E7580;margin-top:4px}
+  .edit-btn{border:1px solid #DEE1EC;background:#F5F6FB;border-radius:6px;padding:5px 8px;font-family:inherit;font-size:11px;cursor:pointer}
 
   .pack-card{ background:#fff; border:1px solid #DEE1EC; border-radius:12px; padding:18px; margin-bottom:12px; }
   .pack-card h3{ font-size:15px; color:#0B132B; margin-bottom:6px; }
@@ -160,7 +162,10 @@ function renderTasks(){
               ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0E7C7B" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>'
               : '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C7CBD1" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>'}
           </button>
-          <span class="task-title ${isDone ? 'done' : ''}">${t.title}</span>
+          <div class="task-body"><div class="task-title ${isDone ? 'done' : ''}">${t.title}</div>
+            <div class="task-meta">Owner: ${t.owner_user_id||'غير محدد'} · Approver: ${t.approver_user_id||'غير محدد'} · Deadline: ${t.deadline||'غير محدد'} · KPI: ${t.kpi||'غير محدد'}${t.delay_reason?' · سبب التأخير: '+t.delay_reason:''}</div>
+          </div>
+          ${isDone?'':`<button class="edit-btn" onclick="configureTask('${t.task_id}')">ضبط المسؤولية</button>`}
         </div>
       `;
     });
@@ -173,6 +178,24 @@ async function toggle(taskId, isDone){
   if(isDone) return; // ⚠ لا نلغي إنجاز مهمة من هنا حاليًا — إنجاز أحادي الاتجاه يطابق سلوك سنع الحالي
   await fetch(`/api/tasks/${taskId}/complete`, {method:'POST'});
   await load();
+}
+
+async function configureTask(taskId){
+  const all=Object.values(boardData.groups).flat();
+  const t=all.find(x=>x.task_id===taskId)||{};
+  const owner=prompt('Owner',t.owner_user_id||''); if(owner===null)return;
+  const approver=prompt('Approver',t.approver_user_id||''); if(approver===null)return;
+  const deadline=prompt('Deadline بصيغة YYYY-MM-DD',t.deadline||''); if(deadline===null)return;
+  const kpi=prompt('KPI',t.kpi||''); if(kpi===null)return;
+  const status=prompt('الحالة: لم تبدأ / قيد التنفيذ / متوقفة / منجزة',t.status||'لم تبدأ'); if(status===null)return;
+  let delay_reason='';
+  if(status==='متوقفة'){delay_reason=prompt('سبب التأخير','')||'';}
+  const res=await fetch(`/api/companies/${COMPANY_ID}/execution/tasks/${taskId}`,{
+    method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({owner_user_id:owner,approver_user_id:approver,deadline,kpi,status,delay_reason,source_ref:'tasks-board'})
+  });
+  const json=await res.json();
+  if(!json.success){alert(json.error);return;} await load();
 }
 
 function renderReport(){

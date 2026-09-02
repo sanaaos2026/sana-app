@@ -1,9 +1,22 @@
 - [Sana multi-company support](sana-multi-company.md) — app was hardcoded single-tenant (COMPANY_ID="C001" in JS); added `?company_id=` query param support instead of a full switcher UI.
+- [Sana Growth OS evidence gate](sana-growth-os.md) — missing metrics stay N/A — Deferred; only a complete, sourced baseline may feed experiments or decisions.
 - [Sana auth & tenant isolation](sana-auth-isolation.md) — real login (session-based) + a separate secret-gated admin-preview mode replaced the old public `?company_id=` bypass; guard covers API calls too, not just pages.
 - [Sana SQLite → PostgreSQL migration](sana-postgres-migration.md) — compatibility-wrapper pattern (auto `?`→`%s`, DictCursor, information_schema instead of PRAGMA) avoided rewriting every call site.
 - [Sana uploaded zip drift](sana-uploaded-zip-drift.md) — user-provided app.py/schema.sql in feature zips are often stale forks missing later migrations; diff against current before applying, merge additively.
 - [Sana SDS-001 discovery session](sana-sds001-discovery.md) — 7-question onboarding flow (v3); sds_done guards idempotency; success_criteria not vision; no score in outro (SCORE-03).
 - [GOVERNANCE-001](sana-governance-001.md) — قانون نافذ: كل ميزة جديدة تحتاج 5 خانات حقيقية قبل البناء؛ لا كيانات وهمية، لا رؤية تتحول لكود مباشرة.
 - [Sana Expert system prompt integration](sana-expert-prompt-integration.md) — user-supplied Claude system prompts often lack the hidden output-format markers extraction code depends on; append a separated technical appendix, don't alter their verbatim content.
+- [Sana v1 launch model](sana-v1-launch-model.md) — launch first as a paid assisted diagnostic service; do not claim public self-service automation until Scan, report, isolation, and production gates pass.
+- [Sana digital source boundaries](sana-digital-source-boundaries.md) — company URLs are saved as diagnostic context, but Sana must not claim it inspected their contents without a real retrieval step.
+- [Sana deterministic knowledge engine](sana-knowledge-engine.md) — decisions are derived from versioned knowledge, evidence, and rules first; unsupported cases stop with an explicit evidence gate.
+- [Sana private source isolation](sana-private-source-isolation.md) — private materials are account-owned; foreign accounts see no record, while expired/restricted rights block approval and download.
+- [Sana knowledge release gate](sana-knowledge-release-gate.md) — canonical version hashes are immutable; content changes require an explicit version bump and a rollback-safe release check.
+- [Sana curated knowledge intake](sana-curated-knowledge-intake.md) — uploaded and Drive knowledge enters private inbox first; exact Drive duplicates collapse by content hash, while related project files stay separate.
+- [Sana revenue cycle](sana-revenue-cycle.md) — opportunities remains the only deal record; canonical stages extend legacy Arabic stages, and only sourced facts feed revenue metrics.
+- [Sana decision room](sana-decision-room.md) — the home screen is a deterministic eight-section execution view; missing evidence stays deferred, and Backlog never changes active priority without approval.
+- [Workspace Python publish builds](workspace-python-publish.md) — Replit may build the root pyproject before artifact commands; disable package discovery for non-package workspaces.
+- [Sana PostgreSQL startup DDL](sana-postgres-startup-ddl.md) — concurrent app/test initialization can deadlock when schema DDL runs inside request paths; serialize compatibility migrations.
+- [Sana Google Drive backups](sana-drive-backups.md) — Replit Drive OAuth may replace a missing service-account key; restore requires an external trusted hash and Riyadh-date reconciliation.
+- [Sana periodic research security](sana-periodic-research-security.md) — external discovery uses prequalified domains, pinned public IPs, evidence rechecks, and a strict human review gate.
 - [Integration capability verification](integration-capability-verification.md) — verify callable tools and a real read-only auth request before relying on an “added” integration.
 - [External production DATABASE_URL](external-production-database-url.md) — Replit’s managed-key restriction does not apply to secrets configured on an external production host.

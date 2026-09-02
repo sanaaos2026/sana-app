@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<script>(function(){var m=document.querySelector('meta[name="csrf-token"]'),t=m.content,F=window.fetch.bind(window);window.fetch=function(u,o){o=o||{};if(['POST','PUT','PATCH','DELETE'].includes((o.method||'GET').toUpperCase()))o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});return F(u,o)}})();</script>
+<meta name="color-scheme" content="light">
+<title>سنع — ملف القرار</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#0B132B;--gold:#F2B233;--teal:#0EA5A5;--paper:#F5F6FB;--line:#DEE1EC;--muted:#6E7580}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:#333940;font-family:'IBM Plex Sans Arabic',sans-serif}
+nav{height:54px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:28px}
+nav a{color:var(--muted);text-decoration:none;font-size:13px;font-weight:600}nav a.active{color:var(--navy);border-bottom:2px solid var(--gold);padding:17px 0}
+main{max-width:760px;margin:38px auto;padding:0 20px 60px}.eyebrow{font-size:11px;letter-spacing:1px;color:var(--teal);font-weight:700}
+h1{font-size:26px;color:var(--navy);margin:8px 0 6px}.lead{color:var(--muted);font-size:14px;margin:0 0 24px}
+section{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:14px}
+h2{font-size:14px;color:var(--navy);margin:0 0 12px}.item{padding:10px 0;border-bottom:1px solid #EEF0F4;font-size:13px;line-height:1.7}.item:last-child{border-bottom:0}
+.meta{font-size:11px;color:var(--muted);margin-top:4px}.empty{color:var(--muted);font-size:13px}
+.next{border-right:4px solid var(--gold)}.btn{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:700;font-size:13px;border:0;font-family:inherit;cursor:pointer}.field{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;margin:6px 0}.error{color:#B23A2E;font-size:12px;min-height:18px;margin-top:7px}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/home">اليوم</a>
+  <a href="/case/{{ case_id }}" class="active">ملف القرار</a>
+  <a href="/passport">الأصول</a>
+  <a href="/logout">تسجيل الخروج</a>
+</nav>
+<main id="app"><p class="empty">يجري تجهيز ملف القرار...</p></main>
+<script>
+const CASE_ID={{ case_id|tojson }},COMPANY_ID={{ company_id|tojson }};let caseData=null;
+const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function rows(items, render, empty){
+  return items&&items.length?items.map(render).join(''):`<p class="empty">${empty}</p>`;
+}
+function render(d){
+  caseData=d;
+  const decisions=d.decisions||[], tasks=d.tasks||[], evidence=d.evidence||[];
+  const activeDecision=decisions.find(x=>x.status==='مقترح'||x.status==='معتمد')||decisions[0];
+  const activeTask=tasks.find(x=>x.status!=='منجزة')||tasks[0];
+  const scan=d.scan,scanReady=scan&&['REVIEW_REQUIRED','COMPLETE'].includes(scan.status);
+  let action='';
+  if(activeTask){action=`<a class="btn" href="/home">افتح خطوة اليوم</a>`}
+  else if(activeDecision){action=`<a class="btn" href="/home">راجع القرار واعتمده</a>`}
+  else if(!scan){action=`<button class="btn" onclick="runAnalysis()">حلّل الأدلة الحالية</button><div id="actionError" class="error"></div>`}
+  else if(!scanReady){action=`<input id="evidenceTitle" class="field" placeholder="أضف حقيقة أو دليلًا جديدًا"><input id="sourceRef" class="field" placeholder="مرجع المصدر: ملف، تقرير، أو ملاحظة موثقة"><button class="btn" onclick="addAndAnalyze()">حفظ الدليل وإعادة التحليل</button><div id="actionError" class="error"></div>`}
+  else {action=`<button class="btn" onclick="buildDecision()">إنشاء ملف قرار للمراجعة</button><div id="actionError" class="error"></div>`}
+  document.getElementById('app').innerHTML=`
+    <div class="eyebrow">فرصة تحسين</div>
+    <h1>${esc(d.case.title||'ملف القرار')}</h1>
+    <p class="lead">${esc(d.case.real_question||d.case.declared_problem||'نجمع الدليل قبل اعتماد أي قرار.')}</p>
+    <section><h2>الدليل المتاح</h2>${rows(evidence,e=>`<div class="item">${esc(e.title)}<div class="meta">${esc(e.source_type||'مصدر مسجل')} · الثقة ${esc(e.confidence??'—')}%</div></div>`,'لا يوجد دليل كافٍ بعد. الخطوة التالية هي إضافة دليل حقيقي.')}</section>
+    <section><h2>ملف القرار</h2>${activeDecision?`<div class="item"><strong>${esc(activeDecision.title)}</strong><div>${esc(activeDecision.reason||'بانتظار اكتمال السبب المدعوم.')}</div><div class="meta">الحالة: ${esc(activeDecision.status)}</div></div>`:'<p class="empty">لم يُقترح قرار بعد؛ لن يعرض سنع حكمًا بلا دليل.</p>'}</section>
+    <section class="next"><h2>الخطوة التالية</h2>${activeTask?`<div class="item"><strong>${esc(activeTask.title)}</strong><div class="meta">الحالة: ${esc(activeTask.status)}${activeTask.due_date?' · الموعد: '+esc(activeTask.due_date):''}</div></div>`:'<p class="empty">أكمل الخطوة التالية ليظهر قرار قابل للمراجعة.</p>'}${action}</section>`;
+}
+async function runAnalysis(){const r=await fetch(`/api/cases/${CASE_ID}/scan`,{method:'POST'}),j=await r.json();if(r.ok&&j.success)location.reload();else document.getElementById('actionError').textContent=j.message||'تعذر تحليل الأدلة.'}
+async function addAndAnalyze(){const title=document.getElementById('evidenceTitle').value.trim(),source=document.getElementById('sourceRef').value.trim(),box=document.getElementById('actionError');if(!title||!source){box.textContent='اكتب الدليل ومرجع مصدره.';return}const r=await fetch(`/api/companies/${COMPANY_ID}/evidence`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:CASE_ID,asset_id:caseData.case.related_asset_id,title,source_type:'دليل عميل',source_ref:source,evidence_type:'Evidence',confidence:70})}),j=await r.json();if(!r.ok||!j.success){box.textContent=j.message||'تعذر حفظ الدليل.';return}await runAnalysis()}
+async function buildDecision(){const r=await fetch(`/api/cases/${CASE_ID}/p0-decision`,{method:'POST'}),j=await r.json();if(r.ok&&j.success)location.href='/home';else document.getElementById('actionError').textContent=j.message||'تعذر إنشاء ملف القرار.'}
+fetch(`/api/cases/${CASE_ID}`).then(r=>r.json()).then(j=>{
+  if(!j.success) throw new Error();
+  render(j.data);
+}).catch(()=>{document.getElementById('app').innerHTML='<p class="empty">تعذر تحميل ملف القرار.</p>';});
+</script>
+</body>
+</html>

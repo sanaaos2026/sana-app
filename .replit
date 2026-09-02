@@ -21,6 +21,10 @@ author = "agent"
 task = "workflow.run"
 args = "Sana Flask App"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "sana-knowledge-release"
+
 [[workflows.workflow]]
 name = "Sana Flask App"
 author = "agent"
@@ -33,13 +37,24 @@ waitForPort = 5000
 [workflows.workflow.metadata]
 outputType = "webview"
 
+[[workflows.workflow]]
+name = "sana-knowledge-release"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd sana_full && python3 -m unittest test_b2b_service_os.py -v"
+
+[workflows.workflow.metadata]
+isValidation = true
+
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
 
 [postMerge]
 path = "scripts/post-merge.sh"
-timeoutMs = 20000
+timeoutMs = 180000
 
 [nix]
 channel = "stable-25_05"

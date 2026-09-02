@@ -6,27 +6,60 @@ id = "BhF1ueRWigTRvGjpilfWk"
 uri = "file://attached_assets/sana-project-export.zip"
 type = "unspecified"
 title = "مشروع سنع — تصدير كامل"
+logical_id = "133fa0cf-691f-464d-9f3b-92d7cc49336c"
 
 [[outputs]]
 id = "F8kLYuTbtfGTZQrxiEfya"
 uri = "file://exports/sana_project_export.zip"
 type = "unspecified"
 title = "Sana Project - Full Export"
+logical_id = "1c156fdb-a4e8-4ff6-9cce-86942f8f129a"
 
 [[outputs]]
 id = "pUiHPgxw_8kpS2d6DJ8BR"
 uri = "file://downloads/sana_full.zip"
 type = "unspecified"
 title = "sana_full - نسخة مضغوطة من المشروع"
+logical_id = "51039fa7-32ea-4c62-adb7-127fae4d2c8d"
 
 [[outputs]]
 id = "bYYIGVf57PNrqbn2tB98v"
 uri = "file://sana_full/test-passport-C001.pdf"
 type = "pdf"
 title = "جواز الشركة — أثر مشرق (PDF)"
+logical_id = "9d8c15e3-0d92-4e47-ad9f-059514001c99"
 
 [[outputs]]
 id = "rIoFZH9oph5CRr7JqiOKU"
 uri = "file://sana_full_PRODUCTION_2026-07-16.zip"
 type = "unspecified"
 title = "sana_full_PRODUCTION_2026-07-16.zip"
+logical_id = "815aa14f-d2f9-4ee5-a354-9302b5b7d8e0"
+
+[[outputs]]
+id = "eKjBSX_jN4UpyGp6Ro-O5"
+uri = "file://.local/secure_exports/sana-app-deploy-key.pub"
+type = "unspecified"
+title = "Sana GitHub Deploy Public Key — إعادة إرسال"
+description = "المفتاح العام فقط لإضافته إلى GitHub Deploy keys مع تفعيل Allow write access. لا يحتوي على private key."
+logical_id = "19d4ce58-84c0-43f0-865a-b9e84b8438c7"
+content_hash = "sha256:9b40cecfc648c79d57536264e9825c67b135c7837d267518d87c70678c21f567"
+size = 93
+mtime_ms = 1788315662019
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:006dab94-1067-4dc5-9ecc-403bde77f22c/19d4ce58-84c0-43f0-865a-b9e84b8438c7/b6645554-3509-4f50-9d3c-eac4e2917433"
+storage_version_token = "1788316155980429"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "jN1DAuzOPZHi_YsJW0Ox6"
+uri = "file://.local/secure_exports/sana-app-deploy-key-v2.pub"
+type = "unspecified"
+title = "Sana GitHub Deploy Public Key v2"
+description = "المفتاح العام فقط لإضافته إلى sanaaos2026/sana-app كـDeploy Key مع Allow write access. لا يحتوي على private key."
+logical_id = "4d345853-7b02-4887-8976-9fb083508517"
+content_hash = "sha256:fd09d06edf3451e2cec472a16dd833c20e4af0405491838b1d612938b2182b79"
+size = 93
+mtime_ms = 1788316657413
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:006dab94-1067-4dc5-9ecc-403bde77f22c/4d345853-7b02-4887-8976-9fb083508517/d0a2a15b-28da-4145-a6a0-1c9dc7b708f2"
+storage_version_token = "1788316677936917"
+content_type = "application/octet-stream"

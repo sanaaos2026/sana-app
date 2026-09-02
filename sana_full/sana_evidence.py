@@ -14,6 +14,10 @@ import uuid
 # _PGConn في app.py يحوّل ? → %s تلقائيًا،
 # لكن كتابة %s مباشرة تعمل كذلك (لا يؤثر عليها الـ replace).
 PLACEHOLDER = "%s"
+EVIDENCE_TYPES = {
+    "Fact", "Evidence", "Hypothesis",
+    "Assumption", "Inference", "Recommendation",
+}
 
 
 def asset_exists(db, company_id: str, asset_id: str) -> bool:
@@ -35,6 +39,19 @@ def save_evidence(
     confidence: int = 50,
     case_id: str | None = None,
     tag: str | None = None,
+    evidence_type: str = "Evidence",
+    source_ref: str | None = None,
+    information_type: str = "Narrative",
+    verification_status: str = "UNVERIFIED",
+    source_category: str = "UNKNOWN",
+    period_start: str | None = None,
+    period_end: str | None = None,
+    raw_value: str | None = None,
+    normalized_value=None,
+    unit: str | None = None,
+    topic_key: str | None = None,
+    seasonality_context: str | None = None,
+    commit: bool = True,
 ) -> dict:
     """
     الدالة الوحيدة المعتمدة لحفظ أي دليل بسنع — من أي ميزة.
@@ -54,6 +71,13 @@ def save_evidence(
         {"success": True,  "evidence_id": "EXXXXXXXX", "error": None}
         {"success": False, "evidence_id": None,        "error": "سبب الفشل"}
     """
+    if evidence_type not in EVIDENCE_TYPES:
+        return {
+            "success": False,
+            "evidence_id": None,
+            "error": f"evidence_type غير مدعوم: '{evidence_type}'",
+        }
+
     # 1) تحقق الأصل موجود — فقط إن أُعطي asset_id
     if asset_id and not asset_exists(db, company_id, asset_id):
         return {
@@ -87,36 +111,37 @@ def save_evidence(
         db.execute(
             f"""INSERT INTO evidence
                     (evidence_id, company_id, case_id, asset_id,
-                     title, source_type, confidence)
+                     title, source_type, confidence, evidence_type, source_ref,
+                     information_type, verification_status, source_category,
+                     period_start, period_end, raw_value, normalized_value, unit,
+                     topic_key, seasonality_context)
                 VALUES
                     ({PLACEHOLDER},{PLACEHOLDER},{PLACEHOLDER},{PLACEHOLDER},
+                     {PLACEHOLDER},{PLACEHOLDER},{PLACEHOLDER},{PLACEHOLDER},
+                     {PLACEHOLDER},{PLACEHOLDER},{PLACEHOLDER},{PLACEHOLDER},
+                     {PLACEHOLDER},{PLACEHOLDER},{PLACEHOLDER},{PLACEHOLDER},
                      {PLACEHOLDER},{PLACEHOLDER},{PLACEHOLDER})""",
             (evidence_id, company_id, case_id, asset_id,
-             final_title, source_type, confidence),
+             final_title, source_type, confidence, evidence_type, source_ref,
+             information_type, verification_status, source_category,
+             period_start, period_end, raw_value, normalized_value, unit,
+             topic_key, seasonality_context),
         )
 
-        # 5) تحديث درجة الأصل (+2، بحد أقصى 100) — رقم حقيقي من القاعدة
+        # 5) لا نعدّل أي درجة بمجرد إضافة دليل.
+        # درجة Sana Scan تُحسب فقط عند اكتمال الحد الأدنى وتُعرض مع تفسيرها.
         new_score = None
         asset_name = None
         if asset_id:
-            db.execute(
-                f"""UPDATE assets
-                    SET current_score = CASE
-                        WHEN current_score + 2 > 100 THEN 100
-                        ELSE current_score + 2
-                    END
-                    WHERE asset_id={PLACEHOLDER} AND company_id={PLACEHOLDER}""",
-                (asset_id, company_id),
-            )
             row = db.execute(
-                f"SELECT current_score, asset_name FROM assets WHERE asset_id={PLACEHOLDER}",
+                f"SELECT asset_name FROM assets WHERE asset_id={PLACEHOLDER}",
                 (asset_id,),
             ).fetchone()
             if row:
-                new_score  = row[0]
-                asset_name = row[1]
+                asset_name = row[0]
 
-        db.commit()
+        if commit:
+            db.commit()
         return {
             "success": True,
             "evidence_id": evidence_id,
@@ -124,6 +149,7 @@ def save_evidence(
             "asset_id": asset_id,
             "asset_name": asset_name,
             "new_score": new_score,
+            "score_changed": False,
         }
     except Exception as exc:
         # لا فشل صامت أبدًا — الخطأ الحقيقي يصل للمستدعي

@@ -1,0 +1,68 @@
+Build a bilingual Arabic-first B2B Service Business Operating System (BOS) for managing and developing service businesses.
+
+The system must create one Single Source of Truth per project and connect:
+
+Knowledge → Positioning → ICP → Offers → Marketing → Leads → Sales Pipeline → Delivery → Revenue → Experiments → Decisions → Next Best Action.
+
+Core modules:
+
+1. Project Knowledge
+- business model
+- target customer
+- decision maker
+- problems
+- value proposition
+- products/services/pricing
+- customers/partners
+- assets
+- team/operations
+- opportunities
+- risks
+- open deals
+- plans
+- sources/files/links
+
+2. Knowledge classification:
+FACT, DECISION, ASSUMPTION, PLAN, EXPERIMENT, RESULT, OPINION, CONFLICT.
+
+3. Offer Builder:
+ICP → Problem → Outcome → Scope → Deliverables → Duration → Price → Recurring/Upsell.
+
+4. CRM Pipeline:
+Lead → Qualified → Meeting → Proposal → Negotiation → Won/Lost → Delivery → Renewal/Upsell.
+Every lead must have owner, source, service, value, next action and deadline.
+
+5. KPI Dashboard:
+Revenue, pipeline value, leads, qualified leads, meetings, proposals, won deals, win rate, average deal size, CAC, CPL, sales cycle, renewal rate and gross margin.
+
+6. Marketing Engine:
+Demand Capture, Demand Generation, Trust, Conversion and Retention channels.
+
+7. Content Operating System:
+30% education, 25% problems/risks, 20% authority/trust, 15% offers, 10% brand POV.
+Content formula:
+Hook → Problem → Insight → Business Impact → Solution → CTA.
+
+8. Experiment System:
+Hypothesis → Experiment → KPI → Result → Scale / Improve / Stop.
+
+9. Decision Log:
+decision, date, reason, evidence and later result.
+
+10. Growth Engine:
+Automatically identify the biggest current bottleneck and output:
+Current State
+Current Priority
+Next Best Action.
+
+Rules:
+- Never invent missing data.
+- Separate facts from assumptions.
+- Preserve conflicting information and flag it.
+- Timestamp changing metrics.
+- Remove duplicates.
+- Connect marketing activity to sales and revenue.
+- Never use vanity metrics as the primary success measure.
+- Every project must always have one measurable priority and one next action.
+
+Build a clean executive dashboard, Arabic RTL first, simple and fast, designed for consultants, agencies, professional services and B2B companies.

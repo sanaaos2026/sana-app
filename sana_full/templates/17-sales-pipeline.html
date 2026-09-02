@@ -43,6 +43,12 @@
   .alert-bar{background:#FEF3C7;border-bottom:2px solid #F59E0B;padding:10px 18px;font-size:13px;color:#92400E;display:flex;align-items:center;gap:8px}
   .alert-bar b{font-weight:700}
   .alert-bar a{color:#92400E;text-decoration:underline}
+  .journey{background:#fff;padding:12px 18px;border-bottom:1px solid #DEE1EC;overflow-x:auto}
+  .journey-row{display:flex;gap:7px;min-width:max-content}
+  .journey-step{border:1px solid #DEE1EC;border-radius:8px;padding:7px 10px;min-width:105px}
+  .journey-step b{display:block;color:#0B132B;font-size:12px}
+  .journey-step span{font-size:11px;color:#6E7580}
+  .journey-step.leak{border-color:#F59E0B;background:#FFFBEB}
 
   /* View toggle */
   .view-ctrl{padding:12px 18px;display:flex;gap:8px;align-items:center;background:#fff;border-bottom:1px solid #DEE1EC;flex-wrap:wrap}
@@ -138,6 +144,7 @@
   ⚠ <b id="noActionCount">0</b> فرصة نشطة بلا إجراء تالٍ وتاريخ —
   <a href="#" onclick="filterNoAction(); return false">عرضها</a>
 </div>
+<div class="journey" id="revenueJourney"><div class="skeleton">يحمّل دورة الإيراد…</div></div>
 
 <!-- View Controls -->
 <div class="view-ctrl">
@@ -156,6 +163,9 @@
     <select id="ownerFilter" onchange="applyFilters()">
       <option value="">كل المسؤولين</option>
     </select>
+    <select id="serviceFilter" onchange="applyFilters()"><option value="">كل الخدمات</option></select>
+    <select id="channelFilter" onchange="applyFilters()"><option value="">كل القنوات</option></select>
+    <select id="sectorFilter" onchange="applyFilters()"><option value="">كل القطاعات</option></select>
   </div>
 </div>
 
@@ -241,6 +251,12 @@ const CID = "{{ default_company_id }}";
 const STAGES = ["عميل محتمل","مؤهل","عرض مرسل","تفاوض","فوز","خسارة"];
 const ACTIVE_STAGES = new Set(["عميل محتمل","مؤهل","عرض مرسل","تفاوض"]);
 const ACT_TYPES = ["مكالمة","اجتماع","رسالة","عرض","ملاحظة"];
+const REVENUE_STAGES = [
+  ["lead","عميل محتمل"],["qualification","تأهيل"],["discovery","اكتشاف"],
+  ["opportunity","فرصة"],["proposal","عرض"],["negotiation","تفاوض"],
+  ["won","فوز"],["lost","خسارة"],["delivery","تنفيذ"],
+  ["collection","تحصيل"],["retention_upsell","احتفاظ/توسع"]
+];
 
 let allOpps = [];
 let currentOpp = null;
@@ -248,16 +264,30 @@ let pendingStage = null;
 
 /* ── Load ─────────────────────────────────────────── */
 async function load(){
-  const [oppsRes, metricsRes] = await Promise.all([
+  const [oppsRes, metricsRes, revenueRes] = await Promise.all([
     fetch(`/api/companies/${CID}/opportunities`),
-    fetch(`/api/companies/${CID}/sales/metrics`)
+    fetch(`/api/companies/${CID}/sales/metrics`),
+    fetch(`/api/companies/${CID}/revenue-cycle`)
   ]);
   const oppsJson = await oppsRes.json();
   const metricsJson = await metricsRes.json();
+  const revenueJson = await revenueRes.json();
   allOpps = oppsJson.success ? oppsJson.data : [];
   if(metricsJson.success) renderMetrics(metricsJson.data);
+  if(revenueJson.success) renderRevenueCycle(revenueJson.data);
   applyFilters();
   buildOwnerFilter();
+  buildCommercialFilters();
+}
+
+function buildCommercialFilters(){
+  [["serviceFilter","service_name"],["channelFilter","channel_name"],["sectorFilter","sector_name"]]
+    .forEach(([id,key])=>{
+      const sel=document.getElementById(id), current=sel.value;
+      const values=[...new Set(allOpps.map(o=>o[key]).filter(Boolean))].sort();
+      sel.innerHTML=sel.options[0].outerHTML+values.map(v=>`<option>${esc(v)}</option>`).join('');
+      sel.value=current;
+    });
 }
 
 function buildOwnerFilter(){
@@ -286,14 +316,36 @@ function renderMetrics(d){
   }
 }
 
+function renderRevenueCycle(d){
+  const m=d.metrics||{}, fmt=v=>v==null?'N/A — Deferred':Number(v).toLocaleString('ar-SA');
+  const metricHtml=[
+    ['الإيراد',fmt(m.revenue)],['الهامش',m.gross_margin==null?'N/A — Deferred':m.gross_margin+'%'],
+    ['تكلفة التنفيذ',fmt(m.cost_of_delivery)],['التحصيل',m.collection_rate==null?'N/A — Deferred':m.collection_rate+'%'],
+    ['الربح الفعلي',fmt(m.actual_profit)],['دورة البيع',m.sales_cycle==null?'N/A — Deferred':m.sales_cycle+' يوم']
+  ].map(x=>`<div class="journey-step"><b>${x[0]}</b><span>${x[1]}</span></div>`).join('');
+  const leakHtml=(d.leakage||[]).map(x=>`<div class="journey-step ${x.leaked_count?'leak':''}">
+    <b>${stageLabel(x.from_stage)} ← ${stageLabel(x.to_stage)}</b>
+    <span>${x.conversion_rate==null?'لا توجد بيانات':x.conversion_rate+'%'} · تسرب ${x.leaked_count}</span>
+  </div>`).join('');
+  document.getElementById('revenueJourney').innerHTML=
+    `<div class="journey-row" style="margin-bottom:8px">${metricHtml}</div><div class="journey-row">${leakHtml}</div>`;
+}
+function stageLabel(id){ const row=REVENUE_STAGES.find(x=>x[0]===id); return row?row[1]:id; }
+
 /* ── Filter + Render ─────────────────────────────── */
 function applyFilters(){
   const q = document.getElementById('searchInput').value.trim().toLowerCase();
   const stage = document.getElementById('stageFilter').value;
   const owner = document.getElementById('ownerFilter').value;
+  const service = document.getElementById('serviceFilter').value;
+  const channel = document.getElementById('channelFilter').value;
+  const sector = document.getElementById('sectorFilter').value;
   let filtered = allOpps.filter(o=>{
     if(stage && o.stage !== stage) return false;
     if(owner && o.owner_id !== owner) return false;
+    if(service && o.service_name !== service) return false;
+    if(channel && o.channel_name !== channel) return false;
+    if(sector && o.sector_name !== sector) return false;
     if(q && !((o.title||'').toLowerCase().includes(q) || (o.owner_id||'').toLowerCase().includes(q))) return false;
     return true;
   });
@@ -389,11 +441,19 @@ function renderDetailPanel(o){
     </div>`).join('');
 
   const warn = isWarn(o);
+  const rc=o.revenue_cycle||{}, eco=rc.economics||{}, invoices=rc.invoices||[], learning=rc.learning;
+  const revenueStageRow=REVENUE_STAGES.map(([id,label])=>`
+    <button class="stage-btn ${id===(o.revenue_stage_id||'lead')?'current':'next'}"
+      onclick="moveRevenueStage('${o.opp_id}','${id}')">${label}</button>`).join('');
   document.getElementById('panelBody').innerHTML = `
     ${warn?'<div class="alert-bar" style="margin:-20px -20px 16px;border-radius:0">⚠ هذه الفرصة بلا إجراء تالٍ وتاريخ</div>':''}
     <div class="panel-section">
       <div class="lbl">المرحلة الحالية</div>
       <div class="stage-row">${stageRow}</div>
+    </div>
+    <div class="panel-section">
+      <div class="lbl">دورة الإيراد الموحّدة</div>
+      <div class="stage-row">${revenueStageRow}</div>
     </div>
     <div class="panel-section">
       <div class="lbl">تفاصيل</div>
@@ -433,9 +493,37 @@ function renderDetailPanel(o){
       <div class="history-list">${histList||'<div style="color:#9AA0AB;font-size:12px">لا سجل بعد</div>'}</div>
     </div>
     <div class="panel-section">
+      <div class="lbl">اقتصاديات وتحصيل موثّق</div>
+      <div style="font-size:12.5px;line-height:1.9">
+        الإيراد: ${eco.recognized_revenue==null?'N/A — Deferred':Number(eco.recognized_revenue).toLocaleString('ar-SA')}
+        · تكلفة التنفيذ: ${eco.delivery_cost==null?'N/A — Deferred':Number(eco.delivery_cost).toLocaleString('ar-SA')}
+        · الفواتير: ${invoices.length}
+        ${invoices.some(i=>i.status==='overdue')?' · <b style="color:#B23A2E">يوجد مبلغ متأخر</b>':''}
+      </div>
+      <div style="font-size:11px;color:#6E7580">${eco.source_ref?'المصدر: '+esc(eco.source_ref):'لا تعرض الأرقام كحقيقة قبل إضافة المصدر والفترة.'}</div>
+    </div>
+    <div class="panel-section">
+      <div class="lbl">تعلّم الصفقة</div>
+      <div style="font-size:12.5px">${learning?esc(learning.outcome_reason)+' — '+esc(learning.review_status):'لا يوجد تعلم موثق بعد.'}</div>
+    </div>
+    <div class="panel-section">
       <button class="btn-danger" onclick="archiveOpp('${o.opp_id}')">أرشفة الفرصة</button>
     </div>
   `;
+}
+
+async function moveRevenueStage(oppId,stageId){
+  const current=currentOpp&&(currentOpp.revenue_stage_id||'lead');
+  if(stageId===current) return;
+  let reason='';
+  if(stageId==='lost'){ reason=prompt('سبب الخسارة إلزامي')||''; if(!reason.trim()) return; }
+  const res=await fetch(`/api/opportunities/${oppId}/revenue-stage`,{
+    method:'PATCH',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({stage_id:stageId,reason,source_ref:'sales-ui'})
+  });
+  const j=await res.json();
+  if(!j.success){ alert(j.error); return; }
+  await load(); await openDetail(oppId);
 }
 
 function closePanel(){

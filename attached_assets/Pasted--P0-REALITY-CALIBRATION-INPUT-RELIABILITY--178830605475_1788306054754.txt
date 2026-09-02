@@ -1,0 +1,159 @@
+====================================
+P0 — REALITY CALIBRATION & INPUT RELIABILITY
+معايرة الواقع وموثوقية المدخلات
+====================================
+
+أضف طبقة داخل Discovery وSana Scan تمنع اعتبار إجابات المستخدم حقائق مباشرة.
+
+كل معلومة مهمة يجب أن تدعم:
+
+TIME CONTEXT:
+- CURRENT_ACTUAL
+- HISTORICAL
+- FORECAST
+- TARGET
+- BEST_CASE
+- WORST_CASE
+
+INFORMATION TYPE:
+- FACT
+- CLAIM
+- OBSERVATION
+- ESTIMATE
+- PERCEPTION
+- HYPOTHESIS
+
+VERIFICATION STATUS:
+- VERIFIED
+- SUPPORTED
+- SELF_REPORTED
+- UNVERIFIED
+- CONTRADICTED
+- OUTDATED
+
+SOURCE:
+- User Answer
+- Financial System
+- CRM
+- Analytics
+- File
+- Website
+- External Source
+- Sana Calculation
+
+لا تحفظ إجابة المستخدم مباشرة كحقيقة إذا لم تكن مثبتة.
+
+مثال:
+"المبيعات 500 ألف"
+
+لا تخزن:
+Revenue = 500000
+
+قبل معرفة:
+- لأي فترة؟
+- Actual أم Target؟
+- متوسط أم شهر واحد؟
+- ما المصدر؟
+- هل يوجد Evidence؟
+
+أضف Diagnostic Baseline لكل Company/Case:
+- baseline period
+- comparison period
+- seasonality context عند الحاجة
+
+اجعل الأسئلة الرقمية تحدد الفترة بوضوح:
+"كم كانت المبيعات الفعلية في آخر 30 يومًا؟"
+بدل:
+"كم مبيعاتكم؟"
+
+====================================
+TRIANGULATION
+====================================
+
+للمعلومات المهمة قارن:
+
+Company Says
+vs
+Data Says
+vs
+Market/Evidence Says
+
+إذا اتفقت:
+زد قوة المعلومة.
+
+إذا تعارضت:
+لا تختر طرفًا تلقائيًا.
+
+أنشئ CONTRADICTION وسؤال تحقق.
+
+مثال:
+Client says: lead flow is strong.
+CRM says: 12 leads/month.
+
+اسأل:
+"ذكرت أن تدفق العملاء جيد، بينما البيانات المتاحة تظهر 12 فرصة خلال الفترة. هل توجد قناة أو فرص أخرى غير مسجلة في النظام؟"
+
+لا تستخدم لغة اتهامية مثل:
+"بياناتك خاطئة"
+أو
+"إجابتك غير صحيحة".
+
+====================================
+ACTUAL / FORECAST / TARGET
+====================================
+
+افصل دائمًا بين:
+
+Actual = أين الشركة فعليًا
+Forecast = أين ستصل إذا استمر الوضع
+Target = أين تريد الوصول
+
+لا تستخدم Target أو Forecast كدليل على Current Performance.
+
+====================================
+DATA RELIABILITY
+====================================
+
+أضف لكل Finding مهم:
+- Evidence Strength
+- Data Reliability
+- Missing Evidence
+- Contradictions
+
+وفي التقرير التنفيذي أظهر بشكل مختصر:
+
+"جودة الصورة التشخيصية"
+
+مثال:
+- 8 معلومات مثبتة
+- 6 معلومات ذاتية
+- 2 تعارضات مفتوحة
+- 3 بيانات مفقودة
+
+ثم حدد:
+- ما القرارات التي يمكن اتخاذها الآن
+- ما القرارات التي تحتاج أدلة إضافية
+
+====================================
+QUESTION DESIGN
+====================================
+
+عند وجود رقم مهم اسأل:
+1. ما القيمة؟
+2. لأي فترة؟
+3. هل هي Actual / Estimate / Target؟
+4. من أين يأتي الرقم؟
+5. هل يوجد دليل؟
+
+لكن لا تعرض الخمس أسئلة دفعة واحدة.
+اجعلها Adaptive وبأقل عدد ممكن.
+
+====================================
+GOVERNING RULE
+====================================
+
+Sana does not diagnose what the client says.
+Sana diagnoses the closest verified picture of reality.
+
+بالعربية:
+"سنع لا يشخّص رواية العميل؛ يشخّص أقرب صورة يمكن إثباتها للواقع."

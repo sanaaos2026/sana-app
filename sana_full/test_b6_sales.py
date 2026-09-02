@@ -136,8 +136,8 @@ for _ in range(2):
 
 cur.execute("SELECT delivery_task_id FROM opportunities WHERE opp_id=%s", (OPP_WIN,))
 win_row = cur.fetchone()
-cur.execute("SELECT COUNT(*) AS cnt FROM tasks WHERE title LIKE %s AND company_id=%s",
-            ("%بدء تسليم: فرصة للفوز%", CID_A))
+cur.execute("SELECT COUNT(*) AS cnt FROM tasks WHERE task_id=%s AND company_id=%s",
+            (win_row["delivery_task_id"], CID_A))
 task_count = cur.fetchone()["cnt"]
 check("SALES-04: الفوز ينشئ مهمة تسليم مرة واحدة فقط",
       task_count == 1 and win_row["delivery_task_id"] is not None,

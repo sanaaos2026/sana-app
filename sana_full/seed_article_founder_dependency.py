@@ -62,9 +62,9 @@ def seed():
     # نستخدم psycopg2 مباشرة
     import psycopg2, psycopg2.extras
 
-    dsn = os.environ.get("DATABASE_URL")
-    if not dsn:
-        print("ERROR: DATABASE_URL not set"); sys.exit(1)
+    from database_config import resolve_database_url
+
+    dsn = resolve_database_url()
 
     conn = psycopg2.connect(dsn)
     conn.autocommit = False

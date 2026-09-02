@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<script>(function(){var m=document.querySelector('meta[name="csrf-token"]'),t=m.content,F=window.fetch.bind(window);window.fetch=function(u,o){o=o||{};if(['POST','PUT','PATCH','DELETE'].includes((o.method||'GET').toUpperCase()))o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});return F(u,o)}})();</script>
+<title>سنع — اليوم</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#0B132B;--gold:#F2B233;--teal:#0EA5A5;--paper:#F5F6FB;--line:#DEE1EC;--muted:#6E7580}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:#333940;font-family:'IBM Plex Sans Arabic',sans-serif}
+nav{height:54px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:28px}
+nav a{color:var(--muted);text-decoration:none;font-size:13px;font-weight:600}nav a.active{color:var(--navy);border-bottom:2px solid var(--gold);padding:17px 0}
+main{max-width:700px;margin:42px auto;padding:0 20px 60px}.eyebrow{font-size:11px;color:var(--teal);font-weight:700;letter-spacing:1px}
+h1{font-size:28px;color:var(--navy);margin:8px 0}.lead{color:var(--muted);font-size:14px;line-height:1.8;margin-bottom:22px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:24px}.label{font-size:11px;color:var(--muted);font-weight:600}
+h2{font-size:20px;color:var(--navy);margin:6px 0}.reason{font-size:13px;line-height:1.8;color:#4D5562}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}.fields input{width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-family:inherit}.wide{grid-column:1/-1}
+.btn{width:100%;margin-top:12px;padding:12px;border:0;border-radius:8px;background:var(--navy);color:#fff;font-family:inherit;font-weight:700;cursor:pointer}.error{font-size:12px;color:#B23A2E;min-height:20px;margin-top:8px}
+.single-link{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:700;margin-top:14px}
+@media(max-width:600px){.fields{grid-template-columns:1fr}.wide{grid-column:auto}}
+</style></head>
+<body>
+<nav><a class="active" href="/home">اليوم</a><a id="decisionLink" href="/case/new">ملف القرار</a><a href="/passport">الأصول</a><a href="/logout">تسجيل الخروج</a></nav>
+<main><div class="eyebrow">اليوم</div><h1>قرار واحد، ثم خطوة واحدة.</h1><p class="lead">لا يظهر هنا إلا ما يمكنك تنفيذه الآن. إن لم يكتمل الدليل، تبقى الحالة مؤجلة بوضوح.</p><div id="card" class="card">يجري تحديد الخطوة التالية...</div></main>
+<script>
+const COMPANY_ID={{ company_id|tojson }};let currentDecision=null;
+const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function show(d){const firstCase=(d.cases||[])[0],dec=d.top_decision,task=d.next_task;document.getElementById('decisionLink').href=firstCase?`/case/${firstCase.case_id}`:'/case/new';
+ if(task){document.getElementById('card').innerHTML=`<div class="label">الخطوة التالية</div><h2>${esc(task.title)}</h2><div class="reason">المسؤول: ${esc(task.owner_user_id||'—')} · الموعد: ${esc(task.due_date||'—')}<br>مقياس النجاح: ${esc(task.kpi||'—')}</div><a class="single-link" href="${firstCase?`/case/${firstCase.case_id}`:'/passport'}">افتح ملف التنفيذ</a>`;return}
+ if(!dec){document.getElementById('card').innerHTML=`<div class="label">الحالة التالية</div><h2>لم تكتمل فرصة التحسين الأولى بعد.</h2><div class="reason">نحتاج دليلًا حقيقيًا قبل اقتراح قرار. لا توجد درجة أو قيمة مفترضة.</div><a class="single-link" href="${firstCase?`/case/${firstCase.case_id}`:'/case/new'}">${firstCase?'افتح ملف القرار':'ابدأ ملف القرار'}</a>`;return}
+ currentDecision=dec;document.getElementById('card').innerHTML=`<div class="label">ملف القرار</div><h2>${esc(dec.title)}</h2><div class="reason">${esc(dec.reason||'بانتظار استكمال حقول التنفيذ.')}</div><div class="fields"><input id="owner" placeholder="المسؤول *"><input id="due" type="date" aria-label="الموعد *"><input id="metric" class="wide" placeholder="مقياس النجاح *"><input id="next" class="wide" placeholder="الخطوة التالية المحددة *"></div><button class="btn" onclick="approve()">اعتماد القرار وبدء التنفيذ</button><div id="error" class="error"></div>`}
+async function approve(){const field=id=>document.getElementById(id),body={owner_name:field('owner').value.trim(),due_date:field('due').value,success_metric:field('metric').value.trim(),next_action:field('next').value.trim()},errorBox=field('error');if(Object.values(body).some(v=>!v)){errorBox.textContent='أكمل المسؤول والموعد ومقياس النجاح والخطوة التالية.';return}const r=await fetch(`/api/decisions/${currentDecision.decision_id}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(r.ok&&j.success){location.reload()}else errorBox.textContent=j.message||'تعذر اعتماد القرار.'}
+fetch(`/api/companies/${COMPANY_ID}/summary`).then(r=>r.json()).then(j=>show(j.data)).catch(()=>card.textContent='تعذر تحميل خطوة اليوم.');
+</script></body></html>

@@ -1,0 +1,98 @@
+أضفه في المكتبة المعرفية بهذا الشكل ليكون Knowledge Source (مصدر معرفي) وليس أمر تنفيذ:
+
+اسم المصدر
+
+B2B Service Operating System — نظام تشغيل المشاريع الخدمية وB2B
+
+نوع المصدر
+
+Operating Framework (إطار تشغيلي) / Business Rules (قواعد أعمال)
+
+الغرض
+
+مرجع أساسي يستخدمه النظام عند تحليل أو بناء أو تطوير أو تحسين أي مشروع خدمي أو B2B، ويجب الرجوع إليه قبل اقتراح الأنظمة أو العمليات أو الخطط التشغيلية.
+
+القواعد المعرفية
+
+لا خدمة بدون مشكلة واضحة، عميل محدد، ونتيجة قابلة للقياس.
+
+التشخيص يسبق التنفيذ.
+
+يجب تحديد Baseline (خط الأساس) قبل أي تحسين.
+
+فصل Core System (النظام الأساسي) عن Sector Modules (الوحدات القطاعية).
+
+أي عملية متكررة تتحول إلى Standard Operating Procedure (SOP) — إجراء تشغيل قياسي.
+
+لكل مهمة Owner (مسؤول) واحد واضح.
+
+كل مشروع يجب أن يحدد: Scope (النطاق)، Timeline (الجدول الزمني)، Deliverables (المخرجات)، Budget (الميزانية)، Quality Criteria (معايير الجودة)، KPIs (مؤشرات الأداء الرئيسية)، Risks (المخاطر).
+
+لكل مخرج Definition of Done (تعريف اكتمال العمل).
+
+لا تسعير دون معرفة التكلفة والهامش وUnit Economics (اقتصاديات الوحدة).
+
+كل فرصة تدخل Customer Relationship Management (CRM) — إدارة علاقات العملاء ولها Next Action (الإجراء التالي).
+
+الموردون والمستقلون يخضعون لتقييم الجودة والالتزام والسعر وإعادة العمل.
+
+الشركة تحتفظ بملكية بيانات العميل والملفات والمعرفة والعلاقة.
+
+لا Automation (أتمتة) قبل إثبات العملية يدويًا.
+
+القرارات المهمة تحفظ في Decision Register (سجل القرارات).
+
+كل مشروع يجب أن ينتج معرفة قابلة لإعادة الاستخدام.
+
+الخدمات تراجع دوريًا حسب الربحية، الجودة، القيمة، قابلية التكرار، وقابلية التوسع.
+
+
+الأنظمة المرجعية
+
+1. Strategy & Opportunity System (نظام الاستراتيجية والفرص).
+
+
+2. Product & Offer System (نظام المنتجات والعروض).
+
+
+3. Sales Operating System (نظام تشغيل المبيعات).
+
+
+4. Customer Relationship Management (CRM) — إدارة علاقات العملاء.
+
+
+5. Project Delivery System (نظام تسليم المشاريع).
+
+
+6. Finance & Profitability System (نظام المالية والربحية).
+
+
+7. Vendor & Partner System (نظام الموردين والشركاء).
+
+
+8. Quality Management System (نظام إدارة الجودة).
+
+
+9. Knowledge Management System (نظام إدارة المعرفة).
+
+
+10. Data, AI & Automation System (نظام البيانات والذكاء الاصطناعي والأتمتة).
+
+
+
+دورة العمل المرجعية
+
+Opportunity → Qualification → Diagnostic → Baseline → Bottleneck → Solution Design → Proposal → Delivery → Quality Assurance → Collection → Results → Renewal/Expansion → Knowledge Capture
+
+فرصة → تأهيل → تشخيص → خط أساس → تحديد الاختناق → تصميم الحل → عرض → تنفيذ → ضمان الجودة → تحصيل → نتائج → تجديد/توسع → حفظ المعرفة.
+
+قاعدة الاستخدام
+
+عند تحليل أي مشروع أو تطويره، استخدم هذا المصدر كـ Operating Logic (منطق تشغيل) وليس كنص جاهز للنسخ. استخرج منه القواعد المناسبة للحالة، واربطها بالبيانات الفعلية للمشروع، ولا تفترض معلومات غير موجودة.
+
+الهدف النهائي
+
+تحويل المشاريع الخدمية وB2B من أعمال تعتمد على الأشخاص والاجتهادات إلى Corporate Operating Manual (COM) — دستور تشغيل الشركة مترابط، قابل للقياس، التوسع، الأتمتة، ونقل المعرفة.
+
+Tags (الوسوم):
+B2B Service Business Operating System SOP CRM Operations Finance Sales Knowledge Management AI Automation Governance

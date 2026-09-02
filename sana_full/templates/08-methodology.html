@@ -231,7 +231,7 @@ function render(d){
         <span class="eyebrow">${d.doc_type || 'وثيقة منهجية مرجعية'}</span>
         <h1>${d.title}</h1>
         <div class="sub">${d.subtitle || ''}</div>
-        <div class="scope-note">📌 وثيقة مرجعية داخلية — تُستخدم لقياس كل قطعة محتوى مستقبلية قبل إنتاجها.</div>
+        <div class="scope-note">📌 وثيقة مرجعية داخلية إرشادية — لا تُعد دليلًا لحالة شركة، ولا تنتج قرارًا أو Benchmark رقميًا دون بيانات موثقة.</div>
       </div>
       <div class="section">${mdToHtml(d.markdown)}</div>
       ${FROM_CASE ? `<a href="/case/${FROM_CASE}${CQS}" class="back-to-case">← رجوع لتقييم القضية على هذا الإطار</a>` : ''}

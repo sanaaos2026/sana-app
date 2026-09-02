@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <script>
+    (function(){
+      var m=document.querySelector('meta[name="csrf-token"]'); if(!m)return;
+      var t=m.content, S=new Set(['POST','PUT','PATCH','DELETE']), F=window.fetch.bind(window);
+      window.fetch=function(u,o){o=o||{};if(S.has((o.method||'GET').toUpperCase())){
+        o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});}return F(u,o);};
+    })();
+  </script>
+  <title>سنع — مكتبة المعرفة</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#F5F6FB;color:#333940;font-family:'IBM Plex Sans Arabic',sans-serif;line-height:1.6}
+    header{background:#080E1F;color:#fff;padding:18px 28px;display:flex;align-items:center;gap:14px}
+    header .eyebrow{font:600 10px 'Space Grotesk';letter-spacing:2px;color:#F2B233;text-transform:uppercase}
+    header h1{font-size:18px;font-weight:600}
+    main{max-width:1000px;margin:0 auto;padding:28px 20px 60px}
+    .intro{margin-bottom:18px}.intro h2{font-size:22px;color:#0B132B;margin-bottom:4px}
+    .intro p{font-size:13px;color:#6E7580;max-width:720px}.reference-link{display:inline-flex;margin-top:10px;background:#0B132B;color:#fff;text-decoration:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    section{background:#fff;border:1px solid #DEE1EC;border-radius:12px;padding:20px}
+    section.full{grid-column:1/-1}
+    section h3{color:#0B132B;font-size:14px;margin-bottom:12px}
+    .notice{background:#F0FAF5;border:1px solid #B7E4C7;color:#176B42;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:12px}.notice.error{background:#FFF4F2;border-color:#F1C0B9;color:#9E3A2F}
+    .source{border-bottom:1px solid #EEF0F5;padding:10px 0}.source:last-child{border-bottom:0}
+    .source strong{font-size:13px;color:#0B132B}.source small{display:block;color:#6E7580;font-size:11px}
+    .badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}.badge{background:#F5F6FB;border-radius:12px;padding:2px 8px;color:#6E7580;font-size:10px}
+    .form{display:grid;grid-template-columns:1fr 1fr;gap:9px}.form .wide{grid-column:1/-1}
+    label{font-size:11px;font-weight:600;color:#0B132B;display:flex;flex-direction:column;gap:4px}
+    input,select{font:12px inherit;border:1px solid #DEE1EC;border-radius:7px;padding:8px 9px;background:#F9FAFC}
+    input:focus,select:focus{outline:none;border-color:#0EA5A5;background:#fff}
+    button{border:0;border-radius:7px;background:#0B132B;color:#fff;padding:9px 14px;font:600 12px inherit;cursor:pointer}
+    button.secondary{background:#F5F6FB;border:1px solid #DEE1EC;color:#0B132B}
+    .actions{display:flex;gap:8px;align-items:center;margin-top:12px}.msg{font-size:11px;color:#0EA5A5}
+    .search-row{display:flex;gap:8px}.search-row input{flex:1}.result{padding:12px 0;border-bottom:1px solid #EEF0F5}.result:last-child{border-bottom:0}
+    .result strong{color:#0B132B;font-size:13px}.result small{display:block;color:#6E7580;font-size:11px}
+    .citation{margin-top:8px;padding:9px 10px;background:#F8F9FC;border-right:3px solid #0EA5A5;border-radius:6px}
+    .citation-meta{display:flex;gap:6px;flex-wrap:wrap;color:#0B132B;font-size:10px;font-weight:600}
+    .citation-meta span{background:#fff;border:1px solid #E3E6EF;border-radius:10px;padding:2px 7px}
+    .quote{margin-top:5px;color:#454C56;font-size:12px;white-space:pre-wrap}
+    .cycle-controls{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.cycle-controls label{min-width:0}
+    .run,.candidate,.alert{border-top:1px solid #EEF0F5;padding:10px 0}.run:first-child,.candidate:first-child,.alert:first-child{border-top:0}
+    .alert{color:#9E3A2F}.diff{direction:ltr;text-align:left;white-space:pre-wrap;max-height:150px;overflow:auto;background:#F8F9FC;padding:8px;border-radius:6px;font:10px monospace}
+    @media(max-width:700px){.grid{grid-template-columns:1fr}section.full{grid-column:auto}.form{grid-template-columns:1fr}.form .wide{grid-column:auto}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">Sana Knowledge</div>
+    <h1>مكتبة المعرفة والذكاء المصادر</h1>
+    <a href="/research-library" style="margin-right:auto;color:#DCE3F4;text-decoration:none;font-size:12px">صندوق البحث الخاص ←</a>
+  </header>
+  <main>
+    <div class="intro">
+      <h2>لوحة المستشار</h2>
+      <p>راجع المصادر وحقوق استخدامها قبل إدخالها، وابحث في الكائنات التي تغذي مسار: المعرفة ← الدليل ← القاعدة ← القرار. لإضافة ملفاتك وكتبك وأبحاثك الخاصة ابدأ من <a href="/research-library">صندوق البحث الخاص</a>.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a class="reference-link" href="/methodology/general-service-b2b-growth-rules">فتح قواعد المشاريع الخدمية وB2B ←</a>
+        <a class="reference-link" href="/methodology/b2b-service-operating-system">فتح نظام تشغيل المشاريع الخدمية وB2B ←</a>
+      </div>
+    </div>
+    <div class="grid">
+      <section>
+        <h3>المصادر المسجلة والحقوق</h3>
+        <div id="sources" class="notice">جارٍ تحميل سجل المصادر...</div>
+      </section>
+      <section>
+        <h3>إضافة مصدر للمراجعة</h3>
+        <div class="form">
+          <label>المعرّف<input id="sourceId" placeholder="SRC-SA-001"></label>
+          <label>العنوان<input id="sourceTitle" placeholder="اسم المصدر"></label>
+          <label>نوع المصدر<select id="sourceType"><option value="official">رسمي</option><option value="licensed">مرخص</option><option value="public">عام</option><option value="user_owned">مملوك للعميل</option></select></label>
+          <label>حالة الحقوق<select id="rightsStatus"><option value="owned">مملوك</option><option value="licensed">مرخص</option><option value="public">عام</option><option value="quotation">اقتباس قصير فقط</option><option value="pending">قيد التحقق</option><option value="restricted">مقيد</option></select></label>
+          <label>الناشر<input id="sourcePublisher" placeholder="الجهة الناشرة"></label>
+          <label>الولاية القضائية<input id="sourceJurisdiction" placeholder="السعودية"></label>
+          <label class="wide">الرابط<input id="sourceUrl" type="url" placeholder="https://..."></label>
+          <label class="wide">ملاحظة الحقوق<input id="licenseNote" placeholder="ما الذي يسمح به الترخيص؟"></label>
+          <label>هوية المؤلف/المؤسسة<input id="authorIdentity"></label>
+          <label>نوع المادة<input id="materialType" placeholder="official_guidance"></label>
+          <label>ثقة الناشر<select id="trustLevel"><option value="">غير محددة</option><option value="authoritative">موثوق رسميًا</option><option value="high">عالية</option></select></label>
+          <label>تاريخ الوثيقة<input id="documentDate" type="date"></label>
+          <label>الإصدار<input id="versionLabel" placeholder="v1.0"></label>
+          <label>موعد المراجعة<input id="reviewDueAt" type="date"></label>
+          <label class="wide">المنهجية<input id="methodologyNote"></label>
+          <label class="wide">استمرارية الناشر<input id="publisherContinuity"></label>
+          <label class="wide">رابط دليل عمر الموقع<input id="siteAgeEvidenceUrl" type="url"></label>
+          <label>تاريخ دليل عمر الموقع<input id="siteAgeEvidenceDate" type="date"></label>
+          <label>بصمة SHA-256<input id="contentFingerprint" dir="ltr"></label>
+        </div>
+        <div class="actions"><button onclick="addSource()">حفظ المصدر</button><span id="sourceMsg" class="msg"></span></div>
+      </section>
+      <section class="full">
+        <h3>بحث في كائنات المعرفة</h3>
+        <div class="search-row">
+          <input id="query" placeholder="مثال: اعتماد المؤسس، SOP، اكتساب العملاء">
+          <button class="secondary" onclick="searchKnowledge()">بحث</button>
+        </div>
+        <div id="results" style="margin-top:8px"></div>
+      </section>
+      <section class="full">
+        <h3>دورة البحث المعرفي الدوري</h3>
+        <div class="cycle-controls">
+          <label>التشغيل الدوري<select id="cycleEnabled"><option value="false">متوقف</option><option value="true">مفعّل</option></select></label>
+          <label>كل كم ساعة<input id="cycleInterval" type="number" min="1" max="2160"></label>
+          <label>حد الجلبات<input id="cycleFetches" type="number" min="1" max="100"></label>
+          <label>حد الصفحة بالبايت<input id="cycleBytes" type="number" min="1024" max="10000000"></label>
+        </div>
+        <div class="actions"><button onclick="runResearchCycle()">تشغيل دورة الآن</button><button class="secondary" onclick="saveCycleConfig()">حفظ الجدول والحدود</button><span id="cycleMsg" class="msg"></span></div>
+        <div id="cycleAlerts" style="margin-top:10px"></div>
+        <h3 style="margin-top:16px">مرشحو المراجعة</h3>
+        <div id="cycleCandidates"></div>
+        <h3 style="margin-top:16px">سجل التشغيل</h3>
+        <div id="cycleRuns"></div>
+      </section>
+      <section class="full">
+        <h3>مرآة Google Drive والنسخ اليومية</h3>
+        <div id="backupStatus" class="notice">جارٍ تحميل حالة النسخ...</div>
+        <div class="actions"><button class="secondary" onclick="runBackup()">تشغيل نسخة الآن</button><span id="backupMsg" class="msg"></span></div>
+      </section>
+      <section class="full">
+        <h3>فهرس Drive المعرفي — Metadata فقط</h3>
+        <div id="driveStatus" class="notice">جارٍ تحميل حالة الفهرس...</div>
+        <div class="actions"><button onclick="runDriveSync()">مزامنة Metadata الآن</button><button class="secondary" onclick="loadDriveIndex()">تحديث الحالة</button><span id="driveMsg" class="msg"></span></div>
+        <div id="driveFiles" style="margin-top:10px"></div>
+        <p style="font-size:11px;color:#6E7580;margin-top:10px">المزامنة تقرأ Metadata فقط ولا تحذف أو تنقل أو تعيد تسمية أي ملف. الملفات غير المقروءة لا تدخل البحث؛ اختيار ملف لا يعني قراءة محتواه أو اعتماده.</p>
+      </section>
+    </div>
+  </main>
+  <script>
+    const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+    async function loadSources(){
+      const box=document.getElementById('sources');
+      try{
+        const r=await fetch('/api/knowledge/sources'), j=await r.json();
+        if(!r.ok || !j.success) throw new Error();
+        box.className='';
+        box.innerHTML=j.data.map(s=>`<div class="source"><strong>${esc(s.title)}</strong>
+          <small>${esc(s.source_id)} · ${esc(s.source_type)} · ${esc(s.publisher || '—')}</small>
+          <div class="badges"><span class="badge">الحقوق: ${esc(s.rights_status)}</span>
+          <span class="badge">الحالة: ${esc(s.status)}</span>
+          <span class="badge">المراجعة: ${esc(s.review_due_at || '—')}</span>
+          <span class="badge">عمر الموقع: ${esc(s.site_age_evidence_date || 'غير مثبت')}</span>
+          <span class="badge">تاريخ الوثيقة: ${esc(s.document_date || 'غير محدد')}</span>
+          <span class="badge">الثقة: ${esc(s.trust_level || 'غير محددة')}</span></div>
+          <small>الإصدار ${esc(s.version_label || '—')} · البصمة ${esc(s.content_fingerprint || '—')}</small>
+          <small>${esc(s.license_note || 'لا توجد ملاحظة حقوق')}</small>
+          ${s.status==='pending_review'?`<div class="actions"><button onclick="reviewSource('${esc(s.source_id)}','approved')">فحص واعتماد</button><button class="secondary" onclick="reviewSource('${esc(s.source_id)}','rejected')">رفض</button></div>`:''}</div>`).join('') || 'لا توجد مصادر بعد.';
+      }catch(e){box.className='notice';box.textContent='تعذر تحميل سجل المصادر.'}
+    }
+    async function addSource(){
+      const msg=document.getElementById('sourceMsg'); msg.textContent='جارٍ الحفظ...';
+      const payload={source_id:sourceId.value.trim(),title:sourceTitle.value.trim(),source_type:sourceType.value,
+        rights_status:rightsStatus.value,publisher:sourcePublisher.value.trim(),jurisdiction:sourceJurisdiction.value.trim(),
+        source_url:sourceUrl.value.trim(),license_note:licenseNote.value.trim(),status:'pending_review',
+        author_identity:authorIdentity.value.trim(),material_type:materialType.value.trim(),
+        trust_level:trustLevel.value,document_date:documentDate.value,version_label:versionLabel.value.trim(),
+        review_due_at:reviewDueAt.value,methodology_note:methodologyNote.value.trim(),
+        publisher_trust:trustLevel.value,publisher_continuity:publisherContinuity.value.trim(),
+        site_age_evidence_url:siteAgeEvidenceUrl.value.trim(),
+        site_age_evidence_date:siteAgeEvidenceDate.value,
+        content_fingerprint:contentFingerprint.value.trim()};
+      try{
+        const r=await fetch('/api/knowledge/sources',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        const j=await r.json(); if(!r.ok || !j.success) throw new Error(j.error || 'failed');
+        msg.textContent='تم تسجيل المصدر للمراجعة.'; loadSources();
+      }catch(e){msg.textContent=e.message==='SOURCE_EXISTS'?'المعرّف مستخدم مسبقًا.':'تعذر حفظ المصدر.'}
+    }
+    async function reviewSource(id,status){
+      try{
+        const r=await fetch('/api/knowledge/sources/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});
+        const j=await r.json();
+        if(!r.ok||!j.success) throw new Error((j.eligibility&&j.eligibility.reasons||[j.error]).join('، '));
+        loadSources();
+      }catch(e){alert('تعذر الاعتماد: '+e.message)}
+    }
+    async function searchKnowledge(){
+      const box=document.getElementById('results'); box.textContent='جارٍ البحث...';
+      try{
+        const params=new URLSearchParams(window.location.search);
+        params.set('q',query.value.trim()); params.set('limit','30');
+        if(!params.get('company_id')) params.set('company_id','{{ search_company_id|e }}');
+        const r=await fetch('/api/knowledge/search?'+params.toString()), j=await r.json();
+        if(!r.ok || !j.success) throw new Error();
+        const renderCitation=c=>{
+          const place=c.page ? `صفحة ${c.page}` : (c.chunk ? `مقطع ${c.chunk}` : 'مرجع الإصدار');
+          const fingerprint=c.fingerprint || c.chunk_fingerprint || '—';
+          return `<div class="citation"><div class="citation-meta">
+            <span>المصدر: ${esc(c.source || c.source_id || '—')}</span>
+            <span>الإصدار: ${esc(c.version || '—')}</span>
+            <span>${esc(place)}</span>
+            <span>البصمة: ${esc(fingerprint)}</span>
+          </div>${c.quote?`<div class="quote">«${esc(c.quote)}»</div>`:''}</div>`;
+        };
+        box.innerHTML=j.data.map(x=>`<div class="result"><strong>${esc(x.title)}</strong>
+          <small>${esc(x.library_type)} · ${esc(x.category)} · ${esc(x.knowledge_level)} · ${esc(x.source || '')}</small>
+          ${x.result_type==='research_source_chunk'?'':`<small>${esc(x.problem || '')}</small>`}
+          <small>سبب المطابقة: ${esc((x.match_reasons||[]).join(' · '))} · مراجعة ${esc(x.review_due_at||'—')}</small>
+          ${(x.citations||[]).map(renderCitation).join('')}</div>`).join('') || '<small>لا توجد نتائج موثوقة مطابقة — هذه فجوة معرفية تحتاج بحثًا ومراجعة.</small>';
+      }catch(e){box.textContent='تعذر تنفيذ البحث.'}
+    }
+    async function loadBackups(){
+      const box=document.getElementById('backupStatus');
+      try{
+        const r=await fetch('/api/knowledge/backups'),j=await r.json();
+        if(!r.ok||!j.success) throw new Error();
+        const setup=j.configured?'مهيأ':'غير مهيأ — اربط Google Drive وأضف معرّف المجلد';
+        const mode=j.connection_mode==='replit_google_drive'?'اتصال Google Drive الآمن':'حساب خدمة Google';
+        box.className=j.configured?'notice':'notice error';
+        box.innerHTML=`<strong>${esc(setup)}</strong><small>${esc(mode)} · الموعد: ${esc(j.schedule)}</small>`+
+          (j.data.map(x=>`<div class="source"><strong>${esc(x.snapshot_version)} · ${esc(x.status)}</strong>
+          <small>${esc(x.started_at)} · ${esc(x.trigger_type)} · ${esc(x.file_count)} ملفات · ${esc(x.total_bytes)} بايت</small>
+          ${x.snapshot_sha256?`<small>بصمة اللقطة: <code>${esc(x.snapshot_sha256)}</code></small>`:''}
+          ${x.drive_web_link?`<small><a href="${esc(x.drive_web_link)}" target="_blank" rel="noopener">فتح النسخة في Drive</a></small>`:''}
+          ${x.manifest&&x.manifest.files?`<small>بصمات الملفات: ${Object.keys(x.manifest.files).length} · الأرشيف ${esc(x.manifest.archive_sha256||'—')}</small>`:''}
+          ${x.error_message?`<small>${esc(x.error_message)}</small>`:''}</div>`).join('')||'<small>لا توجد محاولات بعد.</small>');
+      }catch(e){box.textContent='تعذر تحميل سجل النسخ.'}
+    }
+    async function loadResearchCycle(){
+      try{
+        const r=await fetch('/api/knowledge/research-cycle'),j=await r.json();
+        if(!r.ok||!j.success)throw new Error();
+        cycleEnabled.value=String(!!j.config.enabled);cycleInterval.value=j.config.interval_hours;
+        cycleFetches.value=j.config.max_fetches;cycleBytes.value=j.config.max_bytes;
+        cycleAlerts.innerHTML=j.alerts.map(a=>`<div class="alert"><strong>${esc(a.alert_type)}</strong><small> · ${esc(a.severity)} · ${esc(a.created_at)}</small><div>${esc(a.message)}</div></div>`).join('')||'<small>لا توجد تنبيهات مفتوحة.</small>';
+        cycleCandidates.innerHTML=j.candidates.map(c=>`<div class="candidate"><strong>${esc(c.title)}</strong>
+          <small>${esc(c.publisher||'—')} · ${esc(c.status)} · عمر الموقع ${esc(c.source_age_years)} سنة · ${esc(c.trust_level)} · الحقوق ${esc(c.rights_status)}</small>
+          <small>فحص الأهلية: ${esc(c.eligibility_checked_at||'—')} · تاريخ الوثيقة: ${esc(c.document_date||'—')} · انتهاء الحقوق: ${esc(c.rights_expires_at||'غير محدد')}</small>
+          <small><a href="${esc(c.source_age_evidence_url)}" target="_blank" rel="noopener">دليل عمر الموقع ↗</a> · <a href="${esc(c.rights_evidence_url)}" target="_blank" rel="noopener">دليل الحقوق ↗</a></small>
+          <small>الموضوع: ${esc(c.topic)} · السبب: ${esc(c.recommendation_reason||'—')} · البصمة: ${esc(c.content_fingerprint||'—')}</small>
+          <a href="${esc(c.canonical_url)}" target="_blank" rel="noopener">فتح المصدر الأصلي ↗</a>
+          ${c.diff_text?`<details><summary>عرض الفرق</summary><div class="diff">${esc(c.diff_text)}</div></details>`:''}
+          ${c.status==='pending_review'?`<div class="actions"><button onclick="reviewCandidate('${esc(c.candidate_id)}','approved')">اعتماد الإصدار</button><button class="secondary" onclick="reviewCandidate('${esc(c.candidate_id)}','rejected')">رفض</button>${c.previous_candidate_id?`<button class="secondary" onclick="reviewCandidate('${esc(c.candidate_id)}','rollback')">تراجع للسابق</button>`:''}</div>`:''}</div>`).join('')||'<small>لا توجد مواد مرشحة.</small>';
+        cycleRuns.innerHTML=j.runs.map(x=>`<div class="run"><strong>${esc(x.status)} · ${esc(x.trigger_type)}</strong>
+          <small>${esc(x.started_at)} ← ${esc(x.completed_at||'قيد التشغيل')} · موضوعات ${esc((x.topics||[]).length)} · مكتشف ${esc(x.discovered_count)} · مرفوض ${esc(x.rejected_count)} · مكرر ${esc(x.duplicate_count)} · أخطاء ${esc(x.error_count)} · جلبات ${esc(x.fetch_count)} · ${esc(x.bytes_fetched)} بايت · التكلفة ${esc(x.estimated_cost||0)}</small>
+          ${x.error_message?`<small>${esc(x.error_message)}</small>`:''}</div>`).join('')||'<small>لا توجد دورات بعد.</small>';
+      }catch(e){cycleMsg.textContent='تعذر تحميل سجل دورة البحث.'}
+    }
+    async function saveCycleConfig(){
+      cycleMsg.textContent='جارٍ الحفظ...';
+      const payload={enabled:cycleEnabled.value==='true',interval_hours:Number(cycleInterval.value),max_fetches:Number(cycleFetches.value),max_bytes:Number(cycleBytes.value)};
+      try{const r=await fetch('/api/knowledge/research-cycle/config',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),j=await r.json();if(!r.ok||!j.success)throw new Error(j.error);cycleMsg.textContent='تم حفظ الجدول والحدود.';loadResearchCycle()}catch(e){cycleMsg.textContent='تعذر حفظ الإعدادات.'}
+    }
+    async function runResearchCycle(){
+      cycleMsg.textContent='جارٍ تشغيل دورة محدودة...';
+      try{const r=await fetch('/api/knowledge/research-cycle/run',{method:'POST'}),j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||j.status);cycleMsg.textContent='اكتملت الدورة: '+j.status}catch(e){cycleMsg.textContent='لم يُسجل نجاح وهمي: '+e.message}loadResearchCycle();
+    }
+    async function reviewCandidate(id,decision){
+      try{const r=await fetch('/api/knowledge/research-cycle/candidates/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision})}),j=await r.json();if(!r.ok||!j.success)throw new Error(j.error);loadResearchCycle();loadSources()}catch(e){alert('تعذرت المراجعة: '+e.message)}
+    }
+    async function runBackup(){
+      const msg=document.getElementById('backupMsg');msg.textContent='جارٍ إنشاء اللقطة والتحقق منها...';
+      try{
+        const r=await fetch('/api/knowledge/backups/run',{method:'POST'}),j=await r.json();
+        if(!r.ok||!j.success) throw new Error(j.error||'BACKUP_FAILED');
+        msg.textContent=j.status==='already_successful'?'نسخة اليوم مكتملة مسبقًا.':'اكتملت النسخة ورفعها.';
+      }catch(e){msg.textContent='فشل النسخ بوضوح: '+e.message}
+      loadBackups();
+    }
+    async function loadDriveIndex(){
+      const box=document.getElementById('driveStatus'), files=document.getElementById('driveFiles');
+      try{
+        const r=await fetch('/api/knowledge/drive'),j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||'failed');
+        const s=j.data.stats||{}, c=j.data.config||{}, run=j.data.latest_run||{}, health=j.data.health||{};
+        box.className=health.current_status==='SUCCESS'?'notice':'notice error';
+        box.innerHTML=`<strong>${esc(health.current_status==='SUCCESS'?'الفهرس جاهز':`حالة Drive: ${health.current_status||'غير مفحوص'}`)}</strong>
+          <small>الجذر: ${esc(c.root_folder_name||'غير مثبت')} · Sana Master Index: ${c.master_index_url?`<a href="${esc(c.master_index_url)}" target="_blank" rel="noopener">فتح الفهرس ↗</a>`:esc(c.master_index_file_id||'غير موجود')}</small>
+          <small>آخر محاولة: ${esc(health.last_attempt_at||'—')} · آخر نجاح: ${esc(health.last_success_at||'—')} · ${health.error_code?`الخطأ: ${esc(health.error_code)}`:''}</small>
+          <small>مفهرس ${esc(s.indexed||0)} · غير مقروء ${esc(s.unread||0)} · Metadata ناقصة ${esc(s.missing||0)} · مكرر ${esc(s.duplicates||0)} · يتيم ${esc(s.orphans||0)}</small>`;
+        const fr=await fetch('/api/knowledge/drive/files?limit=20'),fj=await fr.json();
+        files.innerHTML=(fj.data||[]).map(x=>`<div class="source"><strong>${esc(x.name)}</strong><small>${esc(x.current_path||'—')} · ${esc(x.document_type||'—')} · ${esc(x.knowledge_classification||'UNCLASSIFIED')} · ${esc(x.lifecycle_status||'unreviewed')}</small><small>${x.web_view_link?`<a href="${esc(x.web_view_link)}" target="_blank" rel="noopener">فتح المصدر ↗</a>`:'لا يوجد رابط قابل للفتح'} · الخصوصية: ${esc(x.confidentiality)} · ${x.read_status==='read'?'مقروء':'غير مقروء'}</small>${!x.is_folder?`<button class="secondary" onclick="extractDriveFile('${esc(x.drive_file_id)}')">اختيار مقتطف للمراجعة الخاصة</button>`:''}</div>`).join('')||'<small>لا توجد ملفات مفهرسة بعد.</small>';
+      }catch(e){box.className='notice error';box.textContent='تعذر تحميل فهرس Drive.'}
+    }
+    async function runDriveSync(){
+      const msg=document.getElementById('driveMsg');msg.textContent='جارٍ قراءة Metadata...';
+      try{const r=await fetch('/api/knowledge/drive/sync',{method:'POST'}),j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||'SYNC_FAILED');msg.textContent=`اكتملت المزامنة: ${j.files_indexed||0} ملفًا.`}
+      catch(e){msg.textContent='فشلت المزامنة بوضوح: '+e.message}loadDriveIndex();
+    }
+    async function extractDriveFile(fileId){
+      const locator=prompt('اكتب موضع المقتطف، مثال: الصفحة 2 أو chars:0-4000');
+      if(!locator)return;
+      const msg=document.getElementById('driveMsg');msg.textContent='جارٍ قراءة الملف المختار فقط...';
+      try{
+        const r=await fetch('/api/knowledge/drive/files/'+encodeURIComponent(fileId)+'/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({section_locator:locator,start_char:0,end_char:4000})}),j=await r.json();
+        if(!r.ok||!j.success)throw new Error(j.error||'EXTRACT_FAILED');
+        msg.textContent=`أُنشئ مصدر مراجعة خاص ومقتطف وتتبّع: ${j.research_source_id} · ${j.chunk_id} · ${j.citation_id}`;
+      }catch(e){msg.textContent='تعذرت قراءة الملف المختار: '+e.message}
+      loadDriveIndex();
+    }
+    loadSources(); searchKnowledge(); loadBackups(); loadResearchCycle(); loadDriveIndex();
+  </script>
+</body>
+</html>

@@ -46,12 +46,12 @@
 
   label{ display:block; font-size:12.5px; font-weight:600; color:var(--navy); margin-bottom:6px; }
   .req{ color:var(--teal); margin-right:2px; }
-  input, select{
+  input, select, textarea{
     width:100%; padding:11px 13px; border:1.5px solid var(--line); border-radius:8px;
     font-family:inherit; font-size:13.5px; margin-bottom:18px; background:#F9FAFC;
     transition:border-color .15s;
   }
-  input:focus, select:focus{ outline:none; border-color:var(--teal); background:#fff; }
+  input:focus, select:focus, textarea:focus{ outline:none; border-color:var(--teal); background:#fff; }
 
   .other-field{ display:none; margin-bottom:18px; }
   .other-field.show{ display:block; }
@@ -86,12 +86,12 @@
 
 <div class="card">
   <h1>أخبرنا عن شركتك</h1>
-  <div class="sub">بضع معلومات تُجهّز مساحتك — القطاع إلزامي لأنه يحدد القوالب والأسئلة الصحيحة.</div>
+  <div class="sub">خمسة حقول حقيقية تجهّز سياق شركتك قبل جلسة الاكتشاف.</div>
 
   <div class="error" id="errorMsg"></div>
 
   <label for="name">اسم الشركة <span class="req">*</span></label>
-  <input type="text" id="name" placeholder="مثال: مؤسسة النجاح للتجارة">
+  <input type="text" id="name" value="{{ company.name if company and company.name != 'شركة جديدة' else '' }}" placeholder="مثال: مؤسسة النجاح للتجارة">
 
   <label for="sectorSelect">القطاع <span class="req">*</span></label>
   <select id="sectorSelect" onchange="onSectorChange(this.value)">
@@ -117,6 +117,15 @@
   <label for="employeeCount" style="margin-top:2px;">عدد الموظفين تقريبًا</label>
   <input type="number" id="employeeCount" min="1" placeholder="مثال: 12">
 
+  <label for="businessDescription">ماذا تقدم الشركة ولمن؟ <span class="req">*</span></label>
+  <textarea id="businessDescription" rows="3" placeholder="صف النشاط والعميل في جملة واضحة">{{ company.business_description or '' }}</textarea>
+
+  <label for="goal90Days">ما الهدف الأهم خلال 90 يومًا؟ <span class="req">*</span></label>
+  <textarea id="goal90Days" rows="2" placeholder="نتيجة محددة تريد الوصول إليها">{{ company.goal_90_days or '' }}</textarea>
+
+  <label for="primaryChallenge">ما التحدي الأكبر الآن؟ <span class="req">*</span></label>
+  <textarea id="primaryChallenge" rows="2" placeholder="العائق الذي يمنع الوصول إلى الهدف">{{ company.primary_challenge or '' }}</textarea>
+
   <button class="btn" id="submitBtn" onclick="submitOnboarding()">متابعة ←</button>
 </div>
 
@@ -131,6 +140,9 @@ async function submitOnboarding(){
   const employee_count = document.getElementById('employeeCount').value.trim();
   const selectedSector = document.getElementById('sectorSelect').value;
   const otherText     = document.getElementById('otherInput').value.trim();
+  const business_description = document.getElementById('businessDescription').value.trim();
+  const goal_90_days = document.getElementById('goal90Days').value.trim();
+  const primary_challenge = document.getElementById('primaryChallenge').value.trim();
   const errorMsg      = document.getElementById('errorMsg');
   const btn           = document.getElementById('submitBtn');
   errorMsg.classList.remove('show');
@@ -152,11 +164,19 @@ async function submitOnboarding(){
     document.getElementById('otherInput').focus();
     return;
   }
+  if(!business_description || !goal_90_days || !primary_challenge){
+    errorMsg.textContent = 'أكمل وصف النشاط والهدف والتحدي قبل المتابعة.';
+    errorMsg.classList.add('show');
+    return;
+  }
 
   btn.disabled = true;
   btn.textContent = 'جارٍ الحفظ...';
   try {
-    const payload = { name, sector: selectedSector, employee_count };
+    const payload = {
+      name, sector: selectedSector, employee_count,
+      business_description, goal_90_days, primary_challenge
+    };
     if(selectedSector === 'other') payload.sector_other = otherText;
     const res = await fetch('/onboarding', {
       method: 'POST',

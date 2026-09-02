@@ -48,6 +48,15 @@
   .ev-bar-fill{ height:100%; background:#0EA5A5; border-radius:3px; transition:width .4s; }
   .ev-count{ font-family:'Space Grotesk'; font-size:11px; color:#9AA0AB; min-width:28px; text-align:left; }
   .skeleton{ color:#9AA0AB; font-size:13px; padding:40px 0; text-align:center; }
+  .journey-card{ border:1.5px solid #DEE1EC; background:#fff; }
+  .journey-card.neutral{ border-color:#BFC7D8; }
+  .journey-card.warning{ border-color:#F2B233; background:#FFFDF7; }
+  .journey-card.review,.journey-card.complete{ border-color:#0EA5A5; background:#F7FFFE; }
+  .journey-kicker{ color:#6E7580; font-size:10px; letter-spacing:1.5px; font-weight:700; margin-bottom:5px; }
+  .journey-title{ color:#0B132B; font-size:16px; font-weight:700; margin-bottom:6px; }
+  .journey-message{ color:#6E7580; font-size:13px; line-height:1.7; }
+  .journey-action{ display:inline-block; margin-top:14px; padding:9px 16px; border-radius:7px; background:#0B132B; color:#fff; font-size:12.5px; font-weight:600; }
+  .deferred-note{ background:#F5F6FB; border:1px solid #DEE1EC; border-radius:10px; padding:14px 16px; color:#6E7580; font-size:12.5px; line-height:1.7; }
 
   /* ── SDS-002: قسم "بقيت فجوة واحدة" ── */
   .sds-section{
@@ -76,44 +85,19 @@
 <body>
 
 <div class="concept-nav">
-  <a href="/">① الدخول</a>
-  <a href="/home">② CEO Home</a>
-  <a href="/case/new" id="caseNavLink">③ القضية</a>
-  <a href="/passport" class="active">④ جواز الشركة</a>
+  <a href="/home{{ context_query }}">اليوم</a>
+  <a href="/case/new{{ context_query }}" id="caseNavLink">ملف القرار</a>
+  <a href="/passport{{ context_query }}" class="active">الأصول</a>
+  <a href="/logout">تسجيل الخروج</a>
 </div>
-<script>
-(function(){
-  var qs = window.location.search;
-  if(!qs) return;
-  var current = new URLSearchParams(qs);
-  document.querySelectorAll('.concept-nav a').forEach(function(a){
-    var href = a.getAttribute('href');
-    if(href === '/') return;
-    var url = new URL(href, window.location.origin);
-    ['company_id','view','admin_key'].forEach(function(k){
-      if(current.has(k)) url.searchParams.set(k, current.get(k));
-    });
-    a.setAttribute('href', url.pathname + url.search);
-  });
-})();
-</script>
 
 <div id="app">
   <div class="skeleton">يحسب سنع قيمة الشركة...</div>
 </div>
 
 <script>
-const COMPANY_ID = new URLSearchParams(window.location.search).get('company_id') || "{{ default_company_id }}";
-const VIEW = new URLSearchParams(window.location.search).get('view') === 'client' ? 'client' : 'owner';
-const ADMIN_KEY = new URLSearchParams(window.location.search).get('admin_key');
-const CQS = (() => {
-  const p = new URLSearchParams();
-  if(COMPANY_ID !== 'C001') p.set('company_id', COMPANY_ID);
-  if(VIEW === 'client') p.set('view', 'client');
-  if(ADMIN_KEY) p.set('admin_key', ADMIN_KEY);
-  const s = p.toString();
-  return s ? `?${s}` : '';
-})();
+const COMPANY_ID = {{ company_id|tojson }};
+const CQS = {{ context_query|tojson }};
 
 async function loadPassport(){
   const [passRes, sdsRes] = await Promise.all([
@@ -127,59 +111,76 @@ async function loadPassport(){
 }
 
 function render(d, meta, sds){
-  const gapPct = Math.round((d.current_value / d.potential_value) * 100);
+  const journey = d.journey || {
+    status:'NOT_RUN',
+    label:'لم يُشغّل بعد',
+    message:'لم تُجمع نتيجة Sana Scan بعد.',
+    action_label:'ابدأ تقييم الأصول',
+    action_url:'/assessment',
+    tone:'neutral'
+  };
+  const scoreProgress = d.score_progress || {complete:0, total:0};
+  const scoreByType = Object.fromEntries(
+    (d.scan_asset_scores || []).map(item => [item.asset_type, item])
+  );
 
   let html = `
     <div class="cover">
       <div class="name">${d.company.name}</div>
-      <div class="sub">جواز سفر الشركة · مُحدَّث الآن</div>
+      <div class="sub">ملف الأصول ونتيجة Sana Scan · مُحدَّث الآن</div>
       <div class="value-row">
-        <div class="vitem gold"><div class="label">القيمة الحالية</div><div class="val num">${d.score_ready ? (d.current_value/1000).toFixed(0) : '—'}<span style="font-size:13px;">${d.score_ready ? 'ألف' : ''}</span></div></div>
-        <div class="vitem teal"><div class="label">القيمة الممكنة</div><div class="val num">${d.score_ready ? (d.potential_value/1000).toFixed(0) : '—'}<span style="font-size:13px;">${d.score_ready ? 'ألف' : ''}</span></div></div>
-        <div class="vitem"><div class="label">درجة الجودة</div><div class="val num">${d.score_ready ? d.quality_score : '—'}<span style="font-size:13px;">${d.score_ready ? '/100' : ''}</span></div></div>
+        <div class="vitem teal"><div class="label">Sana Score التشغيلي</div><div class="val num">${d.operational_score == null ? '—' : d.operational_score}<span style="font-size:13px;">${d.operational_score == null ? '' : '/100'}</span></div></div>
+        <div class="vitem"><div class="label">حالة Scan</div><div class="val" style="font-family:'IBM Plex Sans Arabic';font-size:15px;">${journey.status}</div></div>
+        <div class="vitem gold"><div class="label">المحاور المكتملة</div><div class="val num">${scoreProgress.complete}<span style="font-size:13px;">/${scoreProgress.total || 0}</span></div></div>
       </div>
-      ${!d.score_ready ? `<div style="background:#F5F6FB;border:1px solid #DEE1EC;border-radius:10px;padding:14px 16px;margin-top:14px;font-size:13px;color:#6E7580;line-height:1.7;text-align:center;">${d.score_missing_reason}</div>` : ''}
     </div>
 
     <main>
-      <section>
-        <h2>فجوة القيمة</h2>
-        <div class="gap-bar"><div class="fill" style="width:${gapPct}%"></div></div>
-        <div class="gap-labels"><span>سنع: ${(d.current_value/1000).toFixed(0)} ألف</span><span>الممكن: ${(d.potential_value/1000).toFixed(0)} ألف</span></div>
-        <div class="disclaimer">${meta.disclaimer}</div>
+      <section class="journey-card ${journey.tone}">
+        <div class="journey-kicker">SANA JOURNEY · ${journey.status}</div>
+        <div class="journey-title">${journey.label}</div>
+        <div class="journey-message">${journey.message}</div>
+        <a class="journey-action" href="${journey.action_url}${CQS}">${journey.action_label} ←</a>
       </section>
 
       <section>
-        <h2>الأصول (من الأضعف للأقوى)</h2>
+        <h2>الأصول ودرجة اكتمال الدليل</h2>
+        <p style="font-size:12px;color:#6E7580;margin:-6px 0 12px;line-height:1.7;">هذه الطبقة الحية تُظهر ما نعرفه الآن. أما التقرير التنفيذي فيحفظ نتيجة Scan ومصادرها للمراجعة.</p>
   `;
   // أشرطة تقدم الأدلة: عدد الأدلة الفعلي / 5 كحد أقصى للعرض (SDS-002)
   const evPer = (sds && sds.evidence_per_asset) || {};
-  d.assets.slice().sort((a,b)=>a.current_score-b.current_score).forEach(a=>{
+  d.assets.slice().sort((a,b)=>(a.current_score || 0)-(b.current_score || 0)).forEach(a=>{
     const evCount = evPer[a.asset_type] || 0;
     const evPct   = Math.min(evCount / 5, 1) * 100;
+    const scanScore = scoreByType[a.asset_type] || {};
+    const scoreText = scanScore.score == null ? 'N/A — Deferred' : `${scanScore.score}/100`;
     html += `<div class="asset-row">
       <span class="ar-name">${a.asset_name}</span>
       <div class="ev-bar"><div class="ev-bar-fill" style="width:${evPct}%"></div></div>
       <span class="ev-count">${evCount}</span>
-      <span class="ar-score">${a.current_score}</span>
+      <span class="ar-score" style="font-size:11px;">${scoreText}</span>
     </div>`;
   });
   html += `</section>
+      <section>
+        <h2>التقييم المالي</h2>
+        <div class="deferred-note">${meta.financial_value_note || 'التقييم المالي غير متاح — N/A — Deferred حتى تعتمد منهجية وأدلة مالية.'}</div>
+      </section>
       ${d.weakest_asset_case_id ? `
       <section style="text-align:center;">
         <a href="/case/${d.weakest_asset_case_id}${CQS}" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح القضية المرتبطة به</a>
       </section>` : ''}
       <section style="text-align:center;">
+        <a href="${journey.report_url || `/company/${COMPANY_ID}/scan-report`}" style="display:inline-block;color:#0EA5A5;font-weight:600;font-size:13.5px;margin-bottom:14px;">افتح الملخص التنفيذي الحي والتقرير الكامل ←</a><br>
         <button class="btn" id="downloadReportBtn" onclick="downloadReport()"
           style="background:#0B132B; color:#fff; border:none; padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans Arabic';">
-          ⬇ تحميل الجواز PDF
+          ⬇ تحميل تقرير Sana Scan
         </button>
       </section>
     </main>
   `;
   document.getElementById('app').innerHTML = html;
 
-  // ── SDS-002: إلحاق قسم "بقيت فجوة واحدة" إذا توفر سؤال ──
   if(sds && sds.question){
     const optHtml = sds.options.map(opt =>
       `<button class="sds-opt" onclick="sdsAnswer('${opt.replace(/'/g,"\\'")}', this)">${opt}</button>`
@@ -188,8 +189,9 @@ function render(d, meta, sds){
     sec.className = 'sds-section';
     sec.id = 'sdsSection';
     sec.innerHTML = `
-      <div class="sds-eyebrow">🧩 بقيت فجوة واحدة…</div>
+      <div class="sds-eyebrow">SDS-002 · داخل ملف الأصول</div>
       <div class="sds-q">${sds.question} <span style="font-size:11px; color:#9AA0AB; font-weight:400;">(${sds.asset_name})</span></div>
+      <div style="font-size:12px;color:#6E7580;margin:-8px 0 14px;">سؤال تكيفي واحد لإغلاق أكبر فجوة أدلة الآن؛ لا ينشئ قرارًا تلقائيًا.</div>
       <div class="sds-options">${optHtml}</div>
       <div class="sds-msg" id="sdsMsg">تمام، ارتفعت معرفتنا بهذا الأصل 🎯</div>
       <div class="sds-suggestion" id="sdsSuggestion"></div>
@@ -220,6 +222,10 @@ async function sdsAnswer(choice, btn){
         title,
         asset_id:    sds.asset_id,
         source_type: 'SDS-002 تشخيص تراكمي',
+        source_ref: 'SDS-002 إجابة العميل',
+        information_type: 'Narrative',
+        verification_status: 'UNVERIFIED',
+        source_category: 'SELF_REPORTED',
         confidence
       })
     });
@@ -248,13 +254,13 @@ async function downloadReport(){
   const originalText = btn.textContent;
   btn.textContent = 'جارٍ التحضير...';
   try{
-    const res = await fetch(`/api/companies/${COMPANY_ID}/passport/report-pdf${CQS}`);
+    const res = await fetch(`/api/companies/${COMPANY_ID}/scan/report-pdf${CQS}`);
     if(res.ok){
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href = url;
-      a.download = `جواز الشركة.pdf`;
+      a.download = `تقرير Sana Scan.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

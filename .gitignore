@@ -39,6 +39,7 @@ testem.log
 
 # System Files
 .DS_Store
+sana_full/.backup_snapshots/
 Thumbs.db
 
 .cursor/rules/nx-rules.mdc

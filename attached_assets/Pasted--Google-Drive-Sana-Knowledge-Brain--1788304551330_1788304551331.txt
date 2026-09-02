@@ -1,0 +1,600 @@
+اربط Google Drive الحالي الخاص بسنع مع Sana Knowledge Brain بدون نقل أو حذف أي ملف.
+
+الهدف:
+تحويل Drive من مستودع ملفات إلى طبقة مصادر وفهرسة تدعم:
+- Sana Memory
+- Sana Scan
+- Evidence
+- Cases
+- Knowledge Objects
+- Reports
+- Clients
+- Releases
+
+مع الحفاظ على الهيكل الحالي كما هو.
+
+====================================
+1. لا تغيّر الهيكل الحالي
+====================================
+
+لا:
+- تحذف ملفات
+- تنقل ملفات
+- تعيد تسمية مجلدات
+- تنشئ بنية بديلة
+
+استخدم الهيكل الحالي:
+
+Sana OS | نظام سنع
+00 - Foundation
+01 - Knowledge Base
+02 - Frameworks
+03 - SOPs
+04 - Templates
+05 - Products & Services
+06 - Sana Scan
+07 - Operating Systems
+08 - Script Library
+09 - Case Studies
+10 - AI Systems
+11 - Sana Academy
+12 - Research & Development
+13 - Clients & Projects
+14 - Marketing & Content
+15 - Archive
+16 - AI Lab
+
+واعتبره الهيكل المرجعي الأساسي.
+
+====================================
+2. استخدم Sana Master Index الحالي
+====================================
+
+طوّر ملف:
+
+Sana Master Index
+
+ولا تنشئ Index منفصلًا إذا لم تكن هناك ضرورة.
+
+الحقول المطلوبة:
+
+Drive File ID
+Drive Folder ID
+File Name
+Current Folder
+Document Type
+Knowledge Category
+Sector
+Subsector
+Client ID
+Project ID
+Case ID
+Knowledge Type
+Problem
+Cause
+KPI
+Diagnostic Rule
+Decision Rule
+SOP
+Case Study
+Source Quality
+Confidence
+Confidentiality
+Version
+Status
+Primary / Backup
+Related Release
+Related Knowledge Object IDs
+Last Modified
+Last Indexed
+Last Reviewed
+Duplicate Of
+Archive Status
+Tags
+
+ابدأ بفهرسة Metadata أولًا.
+
+====================================
+3. اربط الملفات بـ Knowledge Objects
+====================================
+
+لكل Knowledge Object داخل قاعدة بيانات سنع أضف القدرة على الارتباط بـ:
+
+source_file_id
+drive_url
+source_type
+source_version
+source_section
+source_quality
+last_verified_at
+
+العلاقة المطلوبة:
+
+Knowledge Object
+→ Knowledge Source
+→ Drive File
+→ Original Evidence
+
+بحيث يستطيع المستشار لاحقًا معرفة:
+
+"من أين جاءت هذه القاعدة؟"
+
+====================================
+4. لا تحول الملفات كاملة إلى معرفة
+====================================
+
+استخرج فقط Knowledge Objects قابلة للاستخدام.
+
+الأنواع:
+
+PROBLEM
+CAUSE
+DIAGNOSTIC_QUESTION
+EVIDENCE_RULE
+KPI
+BENCHMARK
+DIAGNOSTIC_RULE
+DECISION_RULE
+RECOMMENDATION
+SOP
+CASE
+PATTERN
+FRAMEWORK
+SECTOR_KNOWLEDGE
+
+مثال:
+
+ملف من 50 صفحة
+لا يصبح Knowledge Object واحدًا.
+
+قد ينتج:
+- 4 Problems
+- 7 Causes
+- 12 Questions
+- 5 KPIs
+- 3 Decision Rules
+- 2 SOPs
+
+====================================
+5. مستويات المعرفة
+====================================
+
+صنف كل Knowledge Object:
+
+L0 = Hypothesis
+L1 = Single Case
+L2 = Repeated Pattern
+L3 = Sana Validated
+L4 = Sana + External Validated
+
+ولا تستخدم نفس قوة التوصية لكل المستويات.
+
+====================================
+6. ملفات العملاء
+====================================
+
+استخدم:
+
+13 - Clients & Projects
+
+كمكان مرجعي لملفات العملاء.
+
+اربط كل عميل بـ:
+
+Sana Company ID
+Client Folder ID
+
+مثال:
+C0002
+→ Client Folder
+→ Evidence
+→ Cases
+→ Reports
+→ Results
+
+لا تجعل Drive Folder هو مصدر الحقيقة للعميل.
+
+Database = Client Record
+Drive = Original Files / Evidence / Deliverables
+
+====================================
+7. Client File Index
+====================================
+
+لكل ملف عميل سجّل:
+
+Client ID
+Company ID
+Drive File ID
+Document Type
+Case ID
+Evidence Type
+Confidentiality
+Date
+Version
+Related Hypothesis
+Related Finding
+Last Verified
+
+====================================
+8. فصل الخصوصية عن المعرفة العامة
+====================================
+
+اعتمد 4 مستويات:
+
+PUBLIC
+INTERNAL
+CLIENT_CONFIDENTIAL
+RESTRICTED
+
+ممنوع نقل CLIENT_CONFIDENTIAL أو RESTRICTED إلى Knowledge Brain العام تلقائيًا.
+
+بعد انتهاء Case يمكن فقط استخراج:
+
+ANONYMIZED_CASE_KNOWLEDGE
+
+مثل:
+- المشكلة
+- السبب
+- KPI
+- القرار
+- SOP
+- النتيجة
+- Pattern
+
+بعد إزالة:
+- اسم الشركة
+- الأشخاص
+- الأرقام الحساسة إذا لم يسمح باستخدامها
+- العقود
+- بيانات العملاء
+
+====================================
+9. ربط Drive بالتشخيص
+====================================
+
+عند فتح شركة:
+
+Company ID
+↓
+Find Client Folder
+↓
+Read Drive Index
+↓
+Select Relevant Files
+↓
+Extract Evidence
+↓
+Update Sana Memory
+↓
+Test Hypotheses
+↓
+Sana Scan
+↓
+Finding
+
+لا تقرأ كل ملفات العميل.
+
+استخدم Contextual Retrieval.
+
+مثال:
+
+إذا القضية SALES:
+اقرأ فقط الملفات المتعلقة بـ:
+Sales
+CRM
+Pipeline
+Proposals
+Follow-up
+Revenue
+
+إذا القضية FINANCE:
+اقرأ:
+Financial Reports
+Costs
+Margins
+Cash Flow
+
+====================================
+10. Sana Memory
+====================================
+
+عند استخراج معلومة من Drive لا تحفظ النص فقط.
+
+حوّلها إلى:
+
+FACT
+CLAIM
+OBSERVATION
+HYPOTHESIS
+UNKNOWN
+CONTRADICTION
+EVIDENCE
+
+مع:
+
+Source File ID
+Source Section
+Date
+Confidence
+Client ID
+Case ID
+Related KPI
+Last Verified
+
+====================================
+11. Evidence Traceability
+====================================
+
+كل Finding مهم يجب أن يدعم:
+
+Finding
+→ Diagnostic Rule
+→ KPI
+→ Evidence
+→ Drive Source
+
+ويجب أن يستطيع المستشار الضغط على:
+
+"لماذا قال سنع هذا؟"
+
+ويرى السلسلة كاملة.
+
+====================================
+12. استخدم Backup الحالي
+====================================
+
+لا تعيد بناء نظام النسخ الاحتياطي.
+
+النظام الحالي يحتوي:
+
+Sana Knowledge Backups
+01 - النسخة المرجعية
+02 - النسخ اليومية
+SANA_BACKUP_INDEX.json
+
+استمر باستخدامه.
+
+لكن افصل بين:
+
+Operational Backup
+و
+Knowledge Reference Library
+
+====================================
+13. الملفات المرجعية الأساسية
+====================================
+
+اعتبر الملفات الموجودة في النسخة المرجعية مثل:
+
+PRODUCT_MASTER_SPEC_AR.md
+GENERAL_SERVICE_B2B_GROWTH_RULES.md
+02-Scan-Framework.md
+
+مصادر حاكمة.
+
+لا تعدل محتواها تلقائيًا.
+
+اربطها بـ Knowledge Objects بدل نسخها عشوائيًا.
+
+====================================
+14. Versioning
+====================================
+
+كل ملف حاكم أو Knowledge Object يجب أن يملك:
+
+Version
+Status
+Last Updated
+Source
+Previous Version
+Change Reason
+
+الحالات:
+
+DRAFT
+REVIEW
+APPROVED
+SUPERSEDED
+ARCHIVED
+
+====================================
+15. ربط الإصدارات بالمعرفة
+====================================
+
+أضف:
+
+related_release
+
+مثل:
+
+P0
+P1
+P2...
+
+كل إصدار يجب أن يضيف معرفة جديدة.
+
+مثال:
+
+P0:
+Diagnosis / Clarity Knowledge
+
+P1:
+Root Cause / KPI / Diagnostic Rules
+
+P2:
+Offer / Pricing / Positioning Knowledge
+
+وهكذا.
+
+====================================
+16. Future Capability Signals
+====================================
+
+عند تحليل الحالات، إذا ظهرت مشكلة لا يستطيع الإصدار الحالي حلها:
+
+سجل:
+
+Problem
+Sector
+Frequency
+Impact
+Current Capability
+Missing Capability
+Related Cases
+Suggested Future Release
+
+أنشئ:
+
+Capability Gap Map
+
+ولا تحول كل فجوة إلى Feature مباشرة.
+
+====================================
+17. العقل المعرفي يمهد للإصدار التالي
+====================================
+
+اعتمد القاعدة:
+
+كل إصدار:
+1. يحل مشاكل محددة.
+2. يسجل المشاكل غير المغطاة.
+3. يحسب تكرارها.
+4. يقيس أثرها.
+5. يكتشف Capability Gaps.
+6. يساعد في تحديد الإصدار التالي.
+
+القاعدة الحاكمة:
+
+"Sana diagnoses the client, and Sana Knowledge diagnoses Sana itself."
+
+====================================
+18. دور AI
+====================================
+
+AI يستخدم في:
+
+Extraction
+Classification
+Semantic Search
+Summarization
+Language Understanding
+Formatting
+
+ولا يستخدم كمصدر رئيسي لـ:
+
+Root Cause
+KPI
+Benchmark
+Diagnostic Rule
+Decision Rule
+Recommendation
+
+هذه تأتي من:
+
+Sana Knowledge + Evidence + Rules
+
+====================================
+19. لا تنفذ Auto-Migration الآن
+====================================
+
+المرحلة الحالية:
+
+Phase 1:
+Index Metadata
+
+Phase 2:
+Link important files to Knowledge Objects
+
+Phase 3:
+Extract high-value knowledge
+
+Phase 4:
+Gradually organize old files
+
+لا تنقل الملفات القديمة الآن.
+
+====================================
+20. ترتيب الأولوية
+====================================
+
+ابدأ أولًا بـ:
+
+1. Foundation
+2. Knowledge Base
+3. Sana Scan
+4. Frameworks
+5. SOPs
+6. Case Studies
+7. Research
+8. Clients & Projects
+
+ولا تبدأ بالأرشيف أو التسويق أو الأكاديمية.
+
+====================================
+21. أول الملفات التي يجب ربطها
+====================================
+
+ابدأ بالملفات المرجعية الحاكمة:
+
+PRODUCT_MASTER_SPEC_AR.md
+GENERAL_SERVICE_B2B_GROWTH_RULES.md
+02-Scan-Framework.md
+
+ثم:
+
+knowledge_objects
+knowledge_sources
+knowledge_links
+knowledge_versions
+methodology_docs
+research_sources
+
+====================================
+22. QA
+====================================
+
+اختبر:
+
+- هل يمكن لكل Knowledge Object الوصول لمصدره؟
+- هل يمكن لكل Finding الوصول لدليله؟
+- هل ملفات العملاء معزولة؟
+- هل يمكن تحديث المصدر بدون فقدان النسخة السابقة؟
+- هل يمكن تحديد أي Knowledge Object قديم؟
+- هل يمكن معرفة أي Release يعتمد على أي قاعدة؟
+- هل يتم منع Client Private Data من الوصول للمعرفة العامة؟
+
+====================================
+23. المطلوب بعد التنفيذ
+====================================
+
+أعطني تقريرًا يحتوي:
+
+A. What was linked
+B. Index status
+C. Knowledge source coverage
+D. Client file coverage
+E. Missing metadata
+F. Duplicate sources
+G. Privacy risks
+H. Knowledge gaps
+I. Capability gap structure
+J. Backup status
+K. What remains manual
+L. Next recommended step
+
+====================================
+24. قاعدة نهائية
+====================================
+
+Google Drive = Source & Archive
+
+Sana Database = Structured Memory
+
+Sana Knowledge Brain = Reusable Intelligence
+
+Sana Scan = Diagnosis
+
+AI = Understanding & Presentation Layer
+
+ولا تخلط هذه الأدوار.

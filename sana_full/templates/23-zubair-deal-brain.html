@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Zubair Deal Brain — Private Beta</title>
+  <style>
+    :root{--navy:#0B132B;--deep:#080E1F;--teal:#0EA5A5;--gold:#F2B233;--paper:#F5F6FB;--line:#DEE1EC;--muted:#6E7580;--red:#B23A2E}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);color:#333940;font-family:Arial,"Tahoma",sans-serif;line-height:1.65}
+    header{background:var(--deep);color:#fff;padding:18px 22px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+    header h1{font-size:18px;margin:0}.beta{color:var(--gold);font-size:11px;font-weight:bold;letter-spacing:.4px}
+    main{max-width:1100px;margin:0 auto;padding:22px 16px 60px}.intro{margin-bottom:18px}.intro h2{margin:0;color:var(--navy);font-size:22px}.intro p{margin:5px 0;color:var(--muted);font-size:13px}
+    .grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:16px}.card{background:#fff;border:1px solid var(--line);border-radius:13px;padding:18px;margin-bottom:16px}.card h3{margin:0 0 12px;color:var(--navy);font-size:15px}
+    textarea{width:100%;min-height:150px;resize:vertical;border:1px solid var(--line);border-radius:9px;padding:12px;font:inherit;font-size:14px;color:var(--navy)}textarea:focus,input:focus{outline:2px solid #B8E8E8;border-color:var(--teal)}
+    .capture-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}.capture-row input[type=file]{max-width:100%;font-size:12px}.capture-row select,.capture-row input{border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;background:#fff}
+    button{font:inherit;cursor:pointer;border:0;border-radius:8px;padding:9px 14px;font-weight:bold}.primary{background:var(--navy);color:#fff}.secondary{background:#E1F5F5;color:#087878}.ghost{background:#F5F6FB;color:var(--muted);border:1px solid var(--line)}
+    button:disabled{opacity:.55;cursor:not-allowed}.message{font-size:12px;color:var(--muted);min-height:20px;margin-top:9px}.error{color:var(--red)}.success{color:#087878}
+    .field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.field{border:1px solid var(--line);border-radius:9px;padding:9px;background:#FBFCFE}.field label{display:flex;justify-content:space-between;gap:6px;color:var(--muted);font-size:11px;font-weight:bold}.field input{width:100%;border:1px solid var(--line);border-radius:6px;padding:7px;margin-top:5px;font:inherit;font-size:13px;color:var(--navy)}.tag{font-size:10px;border-radius:20px;padding:2px 7px;background:#F0F1F5;color:var(--muted);white-space:nowrap}.tag.fact{background:#E1F5F5;color:#087878}.tag.evidence{background:#FEF3C7;color:#92400E}.tag.inference{background:#EDE9FE;color:#6D28D9}.tag.unknown{background:#F0F1F5;color:#7B8190}
+    .source{color:#9AA0AB;font-size:10px;margin-top:3px}.match-list{display:grid;gap:8px}.match-box{padding:10px;border:1px solid var(--line);border-radius:8px;font-size:12px}.match-box strong{color:var(--navy)}.match-box button{padding:4px 8px;margin-right:5px;font-size:11px}.match-box.ambiguous{border-color:var(--gold);background:#FFFBEB}
+    .attention-item{border-right:4px solid var(--teal);background:#FBFCFE;padding:10px 12px;margin:7px 0;border-radius:7px;font-size:12px}.attention-item.urgent{border-right-color:var(--red);background:#FFF7F6}.attention-head{display:flex;justify-content:space-between;gap:8px;font-weight:bold;color:var(--navy)}.attention-meta{color:var(--muted);font-size:11px}.metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.metric{background:var(--paper);border-radius:8px;padding:9px}.metric strong{display:block;color:var(--navy);font-size:19px}.metric span{display:block;color:var(--muted);font-size:10px}
+    .review-sample{border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0;background:#FBFCFE;font-size:11px}.review-sample strong{color:var(--navy)}.review-sample small{display:block;color:var(--muted)}.review-controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}.review-controls select,.review-controls textarea,.review-form select,.review-form textarea{width:100%;border:1px solid var(--line);border-radius:6px;padding:6px;font:inherit;font-size:11px;background:#fff}.review-form{display:grid;gap:8px;margin-top:12px}.review-form textarea{min-height:70px}.review-decision{border:1px solid var(--gold);background:#FFFBEB;border-radius:8px;padding:10px;font-size:11px;color:#7A5A0B}
+    @media(max-width:760px){.grid{grid-template-columns:1fr}.field-grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,1fr)}.review-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    .policy{background:#FFF8E8;border:1px solid #F2B233;border-radius:8px;color:#7A5A0B;padding:10px;font-size:11px;margin-top:10px}.timeline{max-height:300px;overflow:auto}.timeline-item{border-bottom:1px solid var(--line);padding:7px 0;font-size:11px}.timeline-item:last-child{border:0}.timeline-item time{color:var(--teal);font-size:10px;display:block}
+    .hidden{display:none!important}@media(max-width:760px){.grid{grid-template-columns:1fr}.field-grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,1fr)}header{align-items:flex-start;flex-direction:column}}
+  </style>
+</head>
+<body>
+<script>
+(function(){
+  const meta=document.querySelector('meta[name="csrf-token"]');
+  if(!meta)return;
+  const original=window.fetch.bind(window);
+  window.fetch=function(url,options){
+    options=options||{};
+    if(new Set(['POST','PUT','PATCH','DELETE']).has((options.method||'GET').toUpperCase())){
+      options.headers=Object.assign({'X-CSRFToken':meta.content},options.headers||{});
+    }
+    return original(url,options);
+  };
+})();
+</script>
+<header><div><h1>Zubair Deal Brain</h1><div class="beta">PRIVATE BETA · حساب المؤسس/المشرف فقط</div></div><a href="/home" style="color:#fff;font-size:12px">غرفة القرار ←</a></header>
+<main>
+  <div class="intro"><h2>سجّل ما حدث…</h2><p>حوّل ملاحظة أو اتصالًا إلى مسودة قابلة للمراجعة. لا يُحدَّث أي سجل تجاري قبل تأكيدك.</p></div>
+  <div class="grid">
+    <div>
+      <section class="card">
+        <h3>التقاط سريع</h3>
+        <textarea id="rawText" placeholder="مثال: تحدثت مع أحمد من شركة النور. طلب عرضًا للخدمة، وسأرسل التفاصيل يوم 2026-09-05."></textarea>
+        <div class="capture-row">
+          <select id="inputType" aria-label="نوع الإدخال"><option value="text">نص</option><option value="audio">تسجيل صوتي</option><option value="image">Screenshot / صورة</option><option value="file">ملف</option></select>
+          <input id="attachments" type="file" multiple accept="audio/*,image/*,.pdf,.txt,.doc,.docx">
+          <button class="primary" id="captureBtn" onclick="capture()">فهمت التالي ←</button>
+        </div>
+        <div class="message" id="captureMsg"></div>
+        <div class="policy">الاستخراج لا يساوي توصية: غير المذكور يبقى Unknown، ولا تُستنتج القيمة أو الاحتمالية أو Won/Lost أو صاحب القرار.</div>
+      </section>
+      <section class="card hidden" id="draftCard">
+        <h3>فهمت التالي — راجعه وعدّله</h3>
+        <div class="field-grid" id="fields"></div>
+        <div class="message" id="draftMsg"></div>
+        <div class="capture-row"><button class="secondary" onclick="runMatch()">ابحث وطابق السجلات</button><button class="primary" onclick="confirmDraft()">تأكيد وحفظ</button></div>
+      </section>
+      <section class="card hidden" id="matchCard"><h3>المطابقة قبل الكتابة</h3><div id="matches"></div><div class="message" id="matchMsg"></div></section>
+    </div>
+    <aside>
+      <section class="card"><h3>ماذا يحتاج انتباهك الآن؟</h3><div id="attention"><div class="message">يحمّل…</div></div></section>
+      <section class="card"><h3>قياس التجربة — آخر 30 يومًا</h3><div class="metric-grid" id="metrics"><div class="message">يحمّل…</div></div></section>
+      <section class="card" id="reviewCard"><h3>مراجعة 30 يومًا قبل أي تعميم</h3><div id="reviewWindow" class="review-decision">يحمّل حزمة المراجعة…</div><div id="reviewSamples"></div><div class="review-form"><label>القرار اليدوي<select id="reviewDecision"><option value="modify">تعديل التجربة</option><option value="stop">إيقاف التجربة</option><option value="pattern">اقتراح رفعها إلى Pattern</option></select></label><label>سبب القرار<textarea id="reviewRationale" placeholder="اكتب ما تؤكده البيانات وما الذي راجعته فعليًا…"></textarea></label><button class="primary" onclick="saveReview()">حفظ القرار اليدوي</button><div class="message" id="reviewMsg"></div></div></section>
+      <section class="card"><h3>Timeline موحد</h3><div class="timeline" id="timeline"><div class="message">يحمّل…</div></div></section>
+    </aside>
+  </div>
+</main>
+<script>
+const labels={person:'الشخص',prospect_company:'شركة العميل',phone:'الجوال',relationship_type:'نوع العلاقة',opportunity:'الفرصة',amount:'القيمة المحتملة',stage:'المرحلة',decision_maker:'صاحب القرار',need:'الاحتياج',objection:'الاعتراض',last_contact:'آخر تواصل',next_action:'الخطوة التالية',next_action_due:'تاريخ الخطوة التالية'};
+const order=Object.keys(labels); let draft=null, matches=null, selections={};
+const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const api=async(url,opt={})=>{const r=await fetch(url,opt);const j=await r.json();if(!r.ok||!j.success)throw new Error(j.message||j.error||'تعذر تنفيذ الطلب');return j};
+const cls=v=>({Fact:'fact',Evidence:'evidence',Inference:'inference',Unknown:'unknown'}[v]||'unknown');
+async function load(){
+ try{const j=await api('/api/zubair/deal-brain');renderMetrics(j.data.metrics);renderAttention(j.data.attention);renderTimeline(j.data.timeline);renderReview(j.data.review)}catch(e){document.getElementById('attention').innerHTML='<div class="message error">'+esc(e.message)+'</div>'}
+}
+function renderMetrics(m){const items=[['entries','الإدخالات'],['confirmed_entries','المسودات المؤكدة'],['interactions','التفاعلات'],['opportunities_created','الفرص الجديدة'],['won','فوز مؤكد'],['lost','خسارة مؤكدة'],['saved_followups','المتابعات المحفوظة'],['reactivated_opportunities','الفرص المعاد إحياؤها'],['capture_time_ms_avg','زمن التسجيل ms'],['real_revenue_attributed','الإيراد الحقيقي']];document.getElementById('metrics').innerHTML=items.map(([k,l])=>`<div class="metric"><strong>${esc(m[k])}</strong><span>${l}</span></div>`).join('')}
+const accuracyOptions=()=>'<option value="not_reviewed">اختر نتيجة التدقيق</option><option value="accurate">دقيق</option><option value="issue">يوجد خلل</option>';
+function reviewSelect(id,key){return `<select data-review-id="${esc(id)}" data-review-key="${key}" aria-label="${key}">${accuracyOptions()}</select>`}
+function renderReview(r){
+ const box=document.getElementById('reviewWindow');
+ box.innerHTML=`نافذة القياس: ${esc(r.window_start)} → ${esc(r.window_end)} · القرار مطلوب يدويًا. <strong>النطاق: خاص فقط.</strong>`;
+ const samples=(r.audit_sample&&r.audit_sample.drafts)||[];
+ const recommendations=(r.audit_sample&&r.audit_sample.recommendations)||[];
+ let html=samples.length?'<div><strong>عينة المسودات والمطابقات وعدم الاختلاق</strong></div>'+samples.map(x=>{const fields=Object.entries(x.fields||{}).filter(([,v])=>v&&v.value).map(([k,v])=>`${k}: ${v.value} [${v.classification}]`).join(' · ');const matches=[...(x.match.contact||[]).map(v=>v.name),...(x.match.prospect_company||[]).map(v=>v.name),...(x.match.opportunity||[]).map(v=>v.title)].filter(Boolean).join(' · ');return `<div class="review-sample"><strong>${esc(x.draft_id)}</strong><small>${esc(x.raw_text||'بدون نص')} · ${esc(x.status)} · زمن التسجيل: ${esc(x.processing_ms)}</small><small>الحقول المستخرجة: ${esc(fields||'لا توجد حقائق مستخرجة')}</small><small>المطابقات: ${esc(matches||'لا توجد مطابقة')}</small><div class="review-controls">${reviewSelect(x.draft_id,'draft_accuracy')}${reviewSelect(x.draft_id,'match_accuracy')}${reviewSelect(x.draft_id,'no_fabrication')}<input data-review-note="${esc(x.draft_id)}" placeholder="ملاحظة التدقيق"></div></div>`}).join(''):'<div class="message">لا توجد مسودات في النافذة؛ لا يمكن اختلاق نتيجة غير موجودة.</div>';
+ if(recommendations.length)html+='<div><strong>عينة التوصيات/التنبيهات</strong></div>'+recommendations.map(x=>`<div class="review-sample"><strong>${esc(x.opp_id)} · ${esc(x.title)}</strong><small>${esc(x.category)} · ${esc(x.rule)} · الدليل: ${esc(x.evidence)}</small><div class="review-controls">${reviewSelect(x.opp_id,'recommendation_accuracy')}${reviewSelect(x.opp_id,'recommendation_no_fabrication')}<input data-recommendation-note="${esc(x.opp_id)}" placeholder="ملاحظة التدقيق"></div></div>`).join('');
+ document.getElementById('reviewSamples').innerHTML=html;
+ if(r.latest_review){document.getElementById('reviewMsg').textContent=`آخر قرار: ${r.latest_review.decision} · ${String(r.latest_review.created_at||'').slice(0,16)} · ما زال خاصًا.`}
+}
+function collectReviewAudit(){
+ const drafts={};document.querySelectorAll('[data-review-id]').forEach(el=>{const id=el.dataset.reviewId;drafts[id]=drafts[id]||{draft_id:id};const key=el.dataset.reviewKey;drafts[id][key]=el.value});
+ Object.values(drafts).forEach(x=>{x.notes=document.querySelector(`[data-review-note="${CSS.escape(x.draft_id)}"]`)?.value||''});
+ const recommendations={};document.querySelectorAll('[data-review-key="recommendation_accuracy"]').forEach(el=>{const id=el.dataset.reviewId;recommendations[id]={opp_id:id,accuracy:el.value,no_fabrication:document.querySelector(`[data-review-id="${CSS.escape(id)}"][data-review-key="recommendation_no_fabrication"]`)?.value||'not_reviewed',notes:document.querySelector(`[data-recommendation-note="${CSS.escape(id)}"]`)?.value||''}});
+ return {drafts:Object.values(drafts),recommendations:Object.values(recommendations)};
+}
+async function saveReview(){
+ const msg=document.getElementById('reviewMsg');msg.className='message';msg.textContent='جارٍ حفظ القرار…';
+ try{const j=await api('/api/zubair/deal-brain/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:document.getElementById('reviewDecision').value,rationale:document.getElementById('reviewRationale').value,audit:collectReviewAudit()})});msg.className='message success';msg.textContent=j.message;await load()}catch(e){msg.className='message error';msg.textContent=e.message}
+}
+function renderAttention(items){const box=document.getElementById('attention');if(!items.length){box.innerHTML='<div class="message">لا توجد فرص مفتوحة تحتاج قرارًا الآن.</div>';return}box.innerHTML=items.map(x=>`<div class="attention-item ${x.category==='تدخل عاجل'?'urgent':''}"><div class="attention-head"><span>${esc(x.category)} · ${esc(x.title)}</span><span>${x.amount!=null?esc(x.amount)+' ريال':'—'}</span></div><div class="attention-meta">${esc(x.rule)}<br>${(x.facts||[]).map(esc).join(' · ')}<br>الدليل: ${esc(x.evidence)}</div></div>`).join('')}
+function renderTimeline(items){document.getElementById('timeline').innerHTML=items.length?items.map(x=>`<div class="timeline-item"><time>${esc(String(x.occurred_at||'').slice(0,16))} · ${esc(x.event_type)}</time>${esc(x.summary)}<div class="source">${esc(x.source_ref)}</div></div>`).join(''):'<div class="message">لا أحداث مؤكدة بعد.</div>'}
+function renderFields(fields){document.getElementById('fields').innerHTML=order.map(k=>{const x=fields[k]||{value:null,classification:'Unknown',source:'input'};return `<div class="field"><label>${labels[k]} <span class="tag ${cls(x.classification)}">${esc(x.classification)}</span></label><input data-field="${k}" value="${esc(x.value||'')}" placeholder="Unknown"><div class="source">المصدر: ${esc(x.source||'غير متاح')}</div></div>`}).join('')}
+function currentFields(){const out={};document.querySelectorAll('[data-field]').forEach(i=>out[i.dataset.field]=i.value.trim());return out}
+async function capture(){
+ const msg=document.getElementById('captureMsg'),btn=document.getElementById('captureBtn');msg.className='message';msg.textContent='جارٍ إعداد المسودة…';btn.disabled=true;
+ try{const fd=new FormData();fd.append('input_type',document.getElementById('inputType').value);fd.append('raw_text',document.getElementById('rawText').value);for(const f of document.getElementById('attachments').files)fd.append('attachments',f);const j=await api('/api/zubair/deal-brain/captures',{method:'POST',body:fd});draft=j.data;renderFields(draft.fields);document.getElementById('draftCard').classList.remove('hidden');document.getElementById('matchCard').classList.add('hidden');msg.className='message success';msg.textContent=j.message;await runMatch()}catch(e){msg.className='message error';msg.textContent=e.message}finally{btn.disabled=false}
+}
+async function runMatch(){
+ if(!draft)return;const box=document.getElementById('matchCard'),out=document.getElementById('matches');box.classList.remove('hidden');out.innerHTML='<div class="message">يبحث داخل شركة سنع الحالية…</div>';
+ try{const j=await api(`/api/zubair/deal-brain/drafts/${draft.draft_id}/match`,{method:'POST'});matches=j.data;selections={};out.innerHTML=matchGroup('contact','الشخص',matches.contact)+matchGroup('prospect_company','شركة العميل',matches.prospect_company)+matchGroup('opportunity','الفرصة',matches.opportunity);document.getElementById('matchMsg').textContent=matches.match_status==='ambiguous'?'توجد مطابقة غامضة؛ اختر سجلًا قبل التأكيد.':'المطابقة جاهزة للمراجعة.'}catch(e){out.innerHTML='<div class="message error">'+esc(e.message)+'</div>'}
+}
+function matchGroup(key,label,items){if(!items.length)return `<div class="match-box"><strong>${label}:</strong> لا يوجد سجل مطابق — لن يُنشأ تلقائيًا.</div>`;return `<div class="match-box ${items.length>1?'ambiguous':''}"><strong>${label}:</strong> ${items.length>1?'اختر واحدًا:':'مطابقة مقترحة'} ${items.map(x=>`<button class="ghost" onclick="choose('${key}','${esc(x[key==='contact'?'contact_id':key==='prospect_company'?'prospect_company_id':'opp_id'])}')">${esc(x.full_name||x.name||x.title)}</button>`).join('')}</div>`}
+async function confirmDraft(){
+ if(!draft)return;const msg=document.getElementById('draftMsg');msg.className='message';msg.textContent='جارٍ الحفظ بعد التأكيد…';
+ try{const fields=currentFields();const j=await api(`/api/zubair/deal-brain/drafts/${draft.draft_id}/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:true,fields,selections,create_opportunity:Boolean(fields.opportunity)})});msg.className='message success';msg.textContent='تم التأكيد وربط التفاعل بالسجل الزمني.';document.getElementById('matchCard').classList.add('hidden');load()}catch(e){msg.className='message error';msg.textContent=e.message}
+}
+function choose(k,id){selections[k]=id;document.getElementById('matchMsg').textContent='تم اختيار المطابقة. راجع الحقول ثم أكد الحفظ.'}
+load();
+</script>
+</body>
+</html>

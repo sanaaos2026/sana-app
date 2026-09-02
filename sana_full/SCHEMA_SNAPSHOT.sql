@@ -105,7 +105,45 @@ CREATE TABLE IF NOT EXISTS evidence (
     confidence INTEGER,
     date_collected TEXT DEFAULT to_char((now() AT TIME ZONE 'utc'::text), 'YYYY-MM-DD HH24:MI:SS'::text),
     ai_analysis TEXT,
-    ai_suggested_asset_id TEXT
+    ai_suggested_asset_id TEXT,
+    evidence_type TEXT DEFAULT 'Evidence',
+    source_ref TEXT,
+    information_type TEXT NOT NULL DEFAULT 'Narrative',
+    verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED',
+    source_category TEXT NOT NULL DEFAULT 'UNKNOWN',
+    period_start DATE,
+    period_end DATE,
+    raw_value TEXT,
+    normalized_value NUMERIC,
+    unit TEXT,
+    topic_key TEXT,
+    seasonality_context TEXT
+);
+
+-- ── diagnostic_baselines ──
+CREATE TABLE IF NOT EXISTS diagnostic_baselines (
+    baseline_id TEXT NOT NULL,
+    company_id TEXT NOT NULL,
+    case_id TEXT,
+    baseline_start DATE NOT NULL,
+    baseline_end DATE NOT NULL,
+    comparison_start DATE,
+    comparison_end DATE,
+    seasonality_context TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ── evidence_relations ──
+CREATE TABLE IF NOT EXISTS evidence_relations (
+    relation_id TEXT NOT NULL,
+    company_id TEXT NOT NULL,
+    case_id TEXT,
+    from_evidence_id TEXT NOT NULL,
+    to_evidence_id TEXT NOT NULL,
+    relation_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    verification_question TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 

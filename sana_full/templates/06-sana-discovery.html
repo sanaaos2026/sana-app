@@ -239,6 +239,14 @@
 <div id="motivation"></div>
 
 <script>
+const PREVIEW_QUERY = (() => {
+  const params = new URLSearchParams(window.location.search);
+  const adminKey = params.get('admin_key');
+  const companyId = params.get('company_id');
+  if (!adminKey || !companyId) return '';
+  return `?${new URLSearchParams({admin_key: adminKey, company_id: companyId}).toString()}`;
+})();
+
 // ────────────────────────────────────────────────
 // SANA LOGO SVG
 // ────────────────────────────────────────────────
@@ -411,6 +419,7 @@ const Q = [
     type: 'single+text',
     key: 'q5', textKey: 'q5_text',
     textLabel: 'ما أكثر شيء سيتعطل؟ (اختياري)',
+    hideFollowupFor: ['😎 العمل يستمر طبيعيًا'],
     motivation: '🏖️ سؤال يكشف الكثير — شكرًا على صراحتك.',
     choices: [
       '😎 العمل يستمر طبيعيًا',
@@ -462,7 +471,7 @@ const Q = [
 
 // ────────────────────────────────────────────────
 // STATE
-// step 0 = welcome, steps 1-7 = Q1-Q7, step 8 = outro
+// step 0 = welcome, steps 1-7 = Q1-Q7, step 8 = baseline, step 9 = outro
 // ────────────────────────────────────────────────
 let step = 0;
 const ans = {};
@@ -478,7 +487,7 @@ const $label    = document.getElementById('progress-label');
 const $toast    = document.getElementById('motivation');
 
 function updateProgress(s) {
-  if (s === 0 || s === 8) { $progress.classList.remove('visible'); return; }
+  if (s === 0 || s >= 8) { $progress.classList.remove('visible'); return; }
   $progress.classList.add('visible');
   const pct = Math.round((s / 7) * 100);
   $fill.style.width = pct + '%';
@@ -514,7 +523,8 @@ function transitionTo(renderFn, backward = false) {
 function render() {
   updateProgress(step);
   if (step === 0) return renderWelcome();
-  if (step === 8) return renderOutro();
+  if (step === 8) return renderCalibration();
+  if (step === 9) return renderOutro();
   renderQuestion(Q[step - 1]);
 }
 
@@ -577,7 +587,61 @@ function skipWelcome() {
   goNext();
 }
 
-// step 8 — شاشة انتظار مؤقتة بينما يحفظ سنع الجلسة في الخلفية
+function renderCalibration() {
+  const baseline = ans.diagnostic_baseline || {};
+  $screen.innerHTML = `
+    <div class="outro-wrap" style="align-items:stretch;max-width:520px;">
+      <div class="outro-title">عاير الفترة قبل التشخيص</div>
+      <div class="outro-body">حدد الفترتين اللتين تصفان واقع الشركة. لا يعني ذلك أن أي رقم أصبح مثبتًا؛ سنظل نطلب مصدره ودليله عند إدخاله.</div>
+      <label class="followup-label">فترة الأساس</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <input class="followup-input" type="date" id="baseline-start" value="${escHtml(baseline.baseline_start || '')}">
+        <input class="followup-input" type="date" id="baseline-end" value="${escHtml(baseline.baseline_end || '')}">
+      </div>
+      <label class="followup-label" style="margin-top:12px;">فترة المقارنة</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <input class="followup-input" type="date" id="comparison-start" value="${escHtml(baseline.comparison_start || '')}">
+        <input class="followup-input" type="date" id="comparison-end" value="${escHtml(baseline.comparison_end || '')}">
+      </div>
+      <label class="followup-label" style="margin-top:12px;">سياق الموسمية</label>
+      <select class="followup-input" id="seasonality-context">
+        <option value="فترة تشغيل اعتيادية">فترة تشغيل اعتيادية</option>
+        <option value="موسم مرتفع">موسم مرتفع</option>
+        <option value="موسم منخفض">موسم منخفض</option>
+        <option value="غير معروف — يحتاج تحقق">غير معروف — يحتاج تحقق</option>
+      </select>
+      <div id="calibration-error" style="color:#ffb4a8;font-size:12px;min-height:20px;margin-top:8px;"></div>
+      <button class="outro-btn" onclick="submitCalibration()">حفظ السياق والمتابعة ←</button>
+      <button class="back-btn" onclick="goBack()">← رجوع للسؤال السابق</button>
+    </div>`;
+  document.getElementById('seasonality-context').value =
+    baseline.seasonality_context || 'فترة تشغيل اعتيادية';
+}
+
+function submitCalibration() {
+  const baseline = {
+    baseline_start: document.getElementById('baseline-start').value,
+    baseline_end: document.getElementById('baseline-end').value,
+    comparison_start: document.getElementById('comparison-start').value,
+    comparison_end: document.getElementById('comparison-end').value,
+    seasonality_context: document.getElementById('seasonality-context').value
+  };
+  const error = document.getElementById('calibration-error');
+  if (!baseline.baseline_start || !baseline.baseline_end ||
+      !baseline.comparison_start || !baseline.comparison_end) {
+    error.textContent = 'حدد بداية ونهاية فترة الأساس والمقارنة.';
+    return;
+  }
+  if (baseline.baseline_end < baseline.baseline_start ||
+      baseline.comparison_end < baseline.comparison_start) {
+    error.textContent = 'نهاية الفترة يجب ألا تسبق بدايتها.';
+    return;
+  }
+  ans.diagnostic_baseline = baseline;
+  goNext();
+}
+
+// step 9 — شاشة انتظار مؤقتة بينما يحفظ سنع الجلسة في الخلفية
 function renderOutro() {
   $screen.innerHTML = `
     <div class="outro-wrap" style="align-items:center;">
@@ -630,7 +694,7 @@ function renderPassport(data) {
 async function saveAndFinish() {
   let saveData = { case_id: null };
   try {
-    const res = await fetch('/api/discovery/save', {
+    const res = await fetch(`/api/discovery/save${PREVIEW_QUERY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ans)
@@ -639,8 +703,19 @@ async function saveAndFinish() {
     if (json.success && json.data) {
       saveData    = json.data;
       firstCaseId = json.data.case_id;
+    } else {
+      throw new Error(json.message || 'تعذر حفظ جلسة الاكتشاف.');
     }
-  } catch(e) { /* silently continue — passport يظهر بإجابات الجلسة */ }
+  } catch(e) {
+    $screen.innerHTML = `
+      <div class="outro-wrap">
+        <div class="outro-title">لم تُحفظ الإجابات بعد</div>
+        <div class="outro-body">${escHtml(e.message || 'تعذر الاتصال بالخادم. إجاباتك ما زالت في هذه الصفحة.')}</div>
+        <button class="outro-btn" onclick="saveAndFinish()">أعد المحاولة</button>
+        <button class="back-btn" onclick="goBack()">راجع الإجابات</button>
+      </div>`;
+    return;
+  }
 
   // إثراء البيانات بإجابات الجلسة الحالية (تكون موجودة حتى لو فشل الـ API)
   saveData.main_goal        = saveData.main_goal        || ans.q1  || null;
@@ -648,7 +723,7 @@ async function saveAndFinish() {
   saveData.declared_problem = saveData.declared_problem || ans.q2  || null;
   if (!saveData.case_id && firstCaseId) saveData.case_id = firstCaseId;
 
-  // الانتقال لشاشة الجواز مباشرة (بغض النظر عن نجاح الـ API أو فشله)
+  // لا نعرض نجاحًا وهميًا: هذه الشاشة لا تظهر إلا بعد تأكيد الحفظ من الخادم.
   transitionTo(() => renderPassport(saveData));
 }
 
@@ -664,18 +739,21 @@ function renderQuestion(q) {
   if (q.type === 'single+text') {
     body += renderChoices(q.choices, q.key, 'single', chosen);
     const textVal = ans[q.textKey] || '';
-    const showFu = !!chosen;
+    const showFu = shouldShowFollowup(q, chosen);
+    if (showFu) {
+      body += `
+        <div class="followup-wrap show" id="fu-wrap">
+          <div class="followup-label">${q.textLabel}</div>
+          <input class="followup-input" type="text"
+            placeholder="اكتب هنا..."
+            value="${escHtml(textVal)}"
+            id="fu-input"
+            onchange="ans['${q.textKey}']=this.value"
+            oninput="ans['${q.textKey}']=this.value">
+        </div>`;
+    }
     body += `
-      <div class="followup-wrap${showFu ? ' show' : ''}" id="fu-wrap">
-        <div class="followup-label">${q.textLabel}</div>
-        <input class="followup-input" type="text"
-          placeholder="اكتب هنا..."
-          value="${escHtml(textVal)}"
-          id="fu-input"
-          onchange="ans['${q.textKey}']=this.value"
-          oninput="ans['${q.textKey}']=this.value">
-      </div>
-      <button class="next-btn${showFu ? ' show' : ''}" id="next-btn"
+      <button class="next-btn${chosen ? ' show' : ''}" id="next-btn"
         onclick="afterFollowupText()">التالي ←</button>`;
   }
 
@@ -748,13 +826,25 @@ function pickChoice(key, value) {
 
   if (q.type === 'single') {
     showToast(q.motivation, goNext);
+  } else if (q.type === 'single+text') {
+    if (!shouldShowFollowup(q, value) && q.textKey) delete ans[q.textKey];
+    renderQuestion(q);
   } else {
     // show follow-up
+    const showFu = shouldShowFollowup(q, value);
     const fw = document.getElementById('fu-wrap');
     const nb = document.getElementById('next-btn');
-    if (fw) fw.classList.add('show');
+    if (fw) {
+      fw.hidden = !showFu;
+      fw.setAttribute('aria-hidden', String(!showFu));
+      fw.classList.toggle('show', showFu);
+    }
     if (nb) nb.classList.add('show');
   }
+}
+
+function shouldShowFollowup(q, choice) {
+  return !!choice && !(q.hideFollowupFor || []).includes(choice);
 }
 
 function pickFuChoice(fuKey, value) {

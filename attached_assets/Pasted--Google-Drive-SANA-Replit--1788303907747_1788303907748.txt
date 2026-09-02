@@ -1,0 +1,109 @@
+افحص Google Drive المرتبط حاليًا بمشروع SANA داخل Replit، باستخدام حساب/إيميل سنع المرتبط بالمشروع.
+
+مهم:
+هذا هو Drive المرجعي الصحيح لسنع.
+لا تعتمد على أي Drive أو ملفات من حسابات أخرى.
+
+نفّذ Read-Only Audit فقط:
+لا تحذف.
+لا تنقل.
+لا تعيد تسمية.
+لا تنشئ مجلدات جديدة قبل انتهاء التقرير واعتماده.
+
+أريد منك فهم Drive سنع بالكامل ثم إعطائي تقريرًا شاملًا عن:
+
+1. بنية المجلدات الحالية.
+2. عدد الملفات والمجلدات.
+3. أنواع الملفات.
+4. أهم المجلدات.
+5. الملفات المرتبطة مباشرة بسنع.
+6. ملفات العملاء والمشاريع.
+7. ملفات المعرفة والمنهجيات.
+8. ملفات التشخيص.
+9. ملفات المبيعات والتسويق والتشغيل والمالية.
+10. ملفات SOPs وFrameworks وCase Studies.
+11. الملفات القديمة والمكررة.
+12. الملفات الحساسة أو الخاصة بالعملاء.
+13. الملفات التي يمكن تحويلها إلى Sana Knowledge Brain.
+14. الملفات التي يجب أن تبقى مجرد Reference أو Archive.
+15. أي Workflow موجود حاليًا داخل Drive ويجب الحفاظ عليه.
+
+لكل ملف مهم، حاول تصنيفه إلى:
+
+GOVERNANCE
+PRODUCT
+DIAGNOSIS
+KNOWLEDGE
+OFFER_PRICING
+MARKETING
+SALES
+CUSTOMER
+OPERATIONS
+FINANCE
+SECTOR
+CASE
+SOP
+FRAMEWORK
+RESEARCH
+REPORT
+TECHNICAL
+CLIENT_PRIVATE
+CONTRACT
+ARCHIVE
+UNKNOWN
+
+وقيّم كل ملف:
+
+A = أساسي لعقل سنع
+B = مرجع مفيد
+C = أرشيف
+D = مكرر
+E = يحتاج مراجعة بشرية
+
+مهم جدًا:
+لا تعتبر كل ملف Word/PDF معرفة جاهزة.
+حدد ما يمكن استخراجه منه كـ Knowledge Objects:
+
+Problem
+Cause
+Diagnostic Question
+Evidence Rule
+KPI
+Benchmark
+Diagnostic Rule
+Decision Rule
+Recommendation
+SOP
+Case
+Pattern
+Sector Knowledge
+
+افصل بوضوح بين:
+
+1. Sana General Knowledge
+2. Client Private Data
+3. Project Files
+4. Evidence
+5. Reports
+6. Backups
+
+لا تنقل بيانات العميل إلى Knowledge Brain العام تلقائيًا.
+
+أريد تقريرًا نهائيًا يحتوي:
+
+A. Current Drive Map
+B. Folder Structure
+C. Important Files
+D. Client Files Map
+E. Knowledge Value Assessment
+F. Duplicate / Old Files
+G. Sensitive Data Map
+H. Top 20 Files to Use First
+I. Proposed Sana Drive Index
+J. Proposed Client Folder Standard
+K. Proposed Sana Master Library
+L. Drive ↔ Sana Knowledge Brain Integration
+M. What to Keep / Move Later / Archive / Do Not Touch
+N. Estimated percentage of current Drive that is useful for Sana
+
+ولا تنفذ أي تغيير قبل أن أراجع التقرير.
