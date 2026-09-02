@@ -33,6 +33,22 @@ DEFAULT_CONFIG = {
     "retries": 2,
     "per_domain_delay_seconds": 1.0,
 }
+SEARCH_CONTRACT_VERSION = "sana.search.v1"
+SEARCH_RESPONSE_MAX_BYTES = 1_000_000
+SEARCH_RESULT_FIELDS = (
+    "url",
+    "title",
+    "publisher",
+    "source_age_years",
+    "source_age_evidence_url",
+    "source_age_evidence_date",
+    "rights_status",
+    "rights_evidence_url",
+    "trust_level",
+    "eligibility_checked_at",
+    "publisher_continuity_note",
+    "document_date",
+)
 ALLOWED_RIGHTS = {"public", "licensed", "owned"}
 ALLOWED_TRUST = {"authoritative", "high"}
 PRIVATE_PATTERNS = (
@@ -614,16 +630,41 @@ class ConservativeFetcher:
 
 
 class JsonSearchProvider:
-    """مزود JSON محدود ومصرّح به: endpoint يعيد results وبيانات الأهلية."""
-    def __init__(self, endpoint=None, bearer_token=None, opener=None):
+    """مزود JSON المعتمد: نتائج اكتشاف مع أدلة أهلية قابلة لإعادة الفحص.
+
+    العقد الخارجي هو:
+      {"contract_version":"sana.search.v1","results":[
+        {"url","title","publisher","source_age_years",
+         "source_age_evidence_url","source_age_evidence_date",
+         "rights_status","rights_evidence_url","trust_level",
+         "eligibility_checked_at","publisher_continuity_note",
+         "document_date", ...}
+      ], "estimated_cost_usd": 0}
+
+    المزود يقدم اقتراحات فقط؛ لا يتجاوز سجل النطاقات المؤهلة ولا بوابة
+    المراجعة البشرية داخل Sana.
+    """
+    name = "approved-json-search"
+
+    def __init__(
+        self, endpoint=None, bearer_token=None, opener=None,
+        timeout_seconds=12, max_response_bytes=SEARCH_RESPONSE_MAX_BYTES,
+    ):
         self.endpoint = str(endpoint or "").strip()
         self.bearer_token = bearer_token
         self.opener = opener
-        if not self.endpoint.startswith("https://"):
+        self.timeout_seconds = max(2, min(int(timeout_seconds), 60))
+        self.max_response_bytes = max(1024, min(int(max_response_bytes), 5_000_000))
+        self.last_cost_usd = 0.0
+        if not self.endpoint.startswith("https://") or not urlparse(self.endpoint).netloc:
             raise RuntimeError("SEARCH_PROVIDER_NOT_CONFIGURED")
 
     def search(self, query, limit=5):
         from urllib.parse import urlencode
+        try:
+            limit = max(1, min(int(limit), 20))
+        except (TypeError, ValueError):
+            raise RuntimeError("SEARCH_LIMIT_INVALID")
         separator = "&" if "?" in self.endpoint else "?"
         url = self.endpoint + separator + urlencode({"q": query, "limit": limit})
         headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
@@ -631,19 +672,113 @@ class JsonSearchProvider:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
         request = Request(url, headers=headers)
         response_context = (
-            self.opener(request, timeout=15) if self.opener
+            self.opener(request, timeout=self.timeout_seconds) if self.opener
             else _pinned_open(
-                url, headers=headers, timeout=15, allow_cross_origin=False
+                url, headers=headers, timeout=self.timeout_seconds, allow_cross_origin=False
             )
         )
         with response_context as response:
             if int(getattr(response, "status", 200)) != 200:
                 raise RuntimeError(f"SEARCH_HTTP_{response.status}")
-            payload = json.loads(response.read(1_000_001))
+            content_type = str(getattr(response, "headers", {}).get("Content-Type") or "")
+            if content_type and "json" not in content_type.lower():
+                raise RuntimeError("SEARCH_RESPONSE_NOT_JSON")
+            raw = response.read(self.max_response_bytes + 1)
+            if len(raw) > self.max_response_bytes:
+                raise RuntimeError("SEARCH_RESPONSE_TOO_LARGE")
+            try:
+                payload = json.loads(raw)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError("SEARCH_RESPONSE_INVALID_JSON") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError("SEARCH_RESPONSE_INVALID")
+        contract_version = payload.get("contract_version")
+        if contract_version not in {None, SEARCH_CONTRACT_VERSION}:
+            raise RuntimeError("SEARCH_CONTRACT_UNSUPPORTED")
+        self.last_cost_usd = _safe_cost(payload.get("estimated_cost_usd"))
         results = payload.get("results") if isinstance(payload, dict) else None
         if not isinstance(results, list):
             raise RuntimeError("SEARCH_RESPONSE_INVALID")
-        return results[:limit]
+        normalized = []
+        for index, item in enumerate(results[:limit]):
+            try:
+                normalized.append(normalize_search_result(item))
+            except RuntimeError as exc:
+                raise RuntimeError(f"SEARCH_RESULT_INVALID_{index}: {exc}") from exc
+        return normalized
+
+
+def _safe_cost(value):
+    """تكلفة اختيارية من العقد؛ القيم السالبة أو غير الرقمية لا تدخل السجل."""
+    try:
+        cost = float(value or 0)
+    except (TypeError, ValueError):
+        raise RuntimeError("SEARCH_COST_INVALID")
+    if cost < 0 or cost != cost or cost == float("inf"):
+        raise RuntimeError("SEARCH_COST_INVALID")
+    return round(cost, 6)
+
+
+def normalize_search_result(item):
+    """يتحقق من أدلة الأهلية قبل أن تصل نتيجة المزود إلى دورة الجلب."""
+    if not isinstance(item, dict):
+        raise RuntimeError("RESULT_NOT_OBJECT")
+    missing = [
+        field for field in SEARCH_RESULT_FIELDS
+        if item.get(field) is None or (
+            isinstance(item.get(field), str) and not item.get(field).strip()
+        )
+    ]
+    if missing:
+        raise RuntimeError("MISSING_FIELDS:" + ",".join(missing))
+    if not _canonical_url(item.get("url")):
+        raise RuntimeError("URL_INVALID")
+    if not _canonical_url(item.get("source_age_evidence_url")):
+        raise RuntimeError("SOURCE_AGE_EVIDENCE_INVALID")
+    if not _canonical_url(item.get("rights_evidence_url")):
+        raise RuntimeError("RIGHTS_EVIDENCE_INVALID")
+    try:
+        int(item.get("source_age_years"))
+    except (TypeError, ValueError):
+        raise RuntimeError("SOURCE_AGE_INVALID")
+    return dict(item)
+
+
+class FallbackSearchProvider:
+    """يمرر البحث الخارجي، ثم يعود لسجل النطاقات عند أي تعطل أو تحويل غير صالح."""
+    name = "approved-json-search-with-registry-fallback"
+
+    def __init__(self, primary, fallback):
+        self.primary = primary
+        self.fallback = fallback
+        self.last_error = None
+        self.fallback_used = False
+        self.last_cost_usd = 0.0
+
+    def search(self, query, limit=5):
+        self.last_error = None
+        self.fallback_used = False
+        self.last_cost_usd = 0.0
+        try:
+            results = self.primary.search(query, limit=limit)
+            self.last_cost_usd = getattr(self.primary, "last_cost_usd", 0.0)
+            return results
+        except Exception as exc:
+            self.last_error = str(exc)[:200]
+            self.fallback_used = True
+            return self.fallback.search(query, limit=limit)
+
+
+class UnavailableSearchProvider:
+    """يحافظ على خطأ الإعداد واضحًا مع السماح لمسار fallback بالعمل."""
+    name = "approved-json-search-unavailable"
+
+    def __init__(self, error):
+        self.error = str(error or "SEARCH_PROVIDER_NOT_CONFIGURED")[:200]
+        self.last_cost_usd = 0.0
+
+    def search(self, query, limit=5):
+        raise RuntimeError(self.error)
 
 
 class RegistrySearchProvider:
@@ -685,10 +820,42 @@ def configured_search_provider(db=None):
     endpoint = os.environ.get("SANA_RESEARCH_SEARCH_ENDPOINT")
     if not endpoint:
         return RegistrySearchProvider(db) if db is not None else None
-    return JsonSearchProvider(
-        endpoint=endpoint,
-        bearer_token=os.environ.get("SANA_RESEARCH_SEARCH_TOKEN"),
+    bearer_token = os.environ.get("SANA_RESEARCH_SEARCH_TOKEN")
+    if not str(bearer_token or "").strip():
+        primary = UnavailableSearchProvider("SEARCH_PROVIDER_CREDENTIALS_MISSING")
+    else:
+        try:
+            primary = JsonSearchProvider(
+                endpoint=endpoint,
+                bearer_token=bearer_token,
+                timeout_seconds=(get_config(db)["timeout_seconds"] if db is not None else 12),
+            )
+        except (TypeError, ValueError, RuntimeError) as exc:
+            primary = UnavailableSearchProvider(exc)
+    return (
+        FallbackSearchProvider(primary, RegistrySearchProvider(db))
+        if db is not None else primary
     )
+
+
+def search_provider_status():
+    """حالة تشغيلية آمنة للوحة؛ لا تعيد endpoint أو قيمة الرمز."""
+    endpoint = os.environ.get("SANA_RESEARCH_SEARCH_ENDPOINT", "").strip()
+    parsed = urlparse(endpoint)
+    return {
+        "provider": "approved-json-search",
+        "external_configured": bool(endpoint),
+        "endpoint_valid": bool(
+            parsed.scheme == "https" and parsed.netloc
+            and not parsed.username and not parsed.password
+        ),
+        "credentials_configured": bool(
+            os.environ.get("SANA_RESEARCH_SEARCH_TOKEN", "").strip()
+        ),
+        "contract_version": SEARCH_CONTRACT_VERSION,
+        "fallback": "approved-domain-registry",
+        "scope": "preapproved-domains-only",
+    }
 
 
 def _plain_text(html):
@@ -732,13 +899,18 @@ def run_cycle(db, trigger_type="manual", search_provider=None, fetcher=None,
         return {"success": False, "error": "RUN_ALREADY_ACTIVE", "run_id": run_id}
     topics = build_topics(taxonomy, gaps, private_terms, config["max_topics"])
     db.execute("UPDATE knowledge_research_runs SET topics_json=? WHERE run_id=?", (_json(topics), run_id))
-    counters = {"discovered": 0, "rejected": 0, "duplicate": 0, "errors": 0, "fetches": 0, "bytes": 0}
+    counters = {
+        "discovered": 0, "rejected": 0, "duplicate": 0, "errors": 0,
+        "fetches": 0, "bytes": 0, "estimated_cost": 0.0,
+    }
     domain_registry = _approved_domain_registry(db)
     allowed_domains = (
         {str(domain).lower() for domain in approved_domains}
         if approved_domains is not None else set(domain_registry)
     )
     provider_error = None
+    provider_failure_recorded = False
+    fallback_used = False
     if search_provider is None:
         provider_error = "SEARCH_PROVIDER_UNAVAILABLE"
     else:
@@ -751,10 +923,57 @@ def run_cycle(db, trigger_type="manual", search_provider=None, fetcher=None,
                 provider_error = f"SEARCH_PROVIDER_FAILED: {exc}"
                 counters["errors"] += 1
                 _alert(db, run_id, "provider_failure", provider_error, severity="error")
-                break
+                provider_failure_recorded = True
+                if isinstance(search_provider, RegistrySearchProvider):
+                    results = []
+                else:
+                    fallback_used = True
+                    search_provider = RegistrySearchProvider(db)
+                    try:
+                        results = search_provider.search(
+                            topic["query"], limit=config["max_results_per_topic"]
+                        )
+                    except Exception as fallback_exc:
+                        provider_error = (
+                            f"{provider_error}; REGISTRY_FALLBACK_FAILED: {fallback_exc}"
+                        )
+                        results = []
+            fallback_error = getattr(search_provider, "last_error", None)
+            if fallback_error and not provider_failure_recorded:
+                fallback_used = True
+                provider_error = f"SEARCH_PROVIDER_FAILED: {fallback_error}"
+                counters["errors"] += 1
+                _alert(
+                    db, run_id, "provider_failure",
+                    f"{provider_error}; REGISTRY_FALLBACK_USED",
+                    severity="error",
+                )
+                provider_failure_recorded = True
+            try:
+                counters["estimated_cost"] += _safe_cost(
+                    getattr(search_provider, "last_cost_usd", 0.0)
+                )
+            except RuntimeError as exc:
+                provider_error = f"SEARCH_PROVIDER_FAILED: {exc}"
+                if not provider_failure_recorded:
+                    counters["errors"] += 1
+                    _alert(db, run_id, "provider_failure", provider_error, severity="error")
+                    provider_failure_recorded = True
+                results = []
+            if not isinstance(results, list):
+                provider_error = "SEARCH_RESPONSE_INVALID"
+                if not provider_failure_recorded:
+                    counters["errors"] += 1
+                    _alert(db, run_id, "provider_failure", provider_error, severity="error")
+                    provider_failure_recorded = True
+                results = []
             for item in results[:config["max_results_per_topic"]]:
                 if counters["fetches"] >= config["max_fetches"]:
                     break
+                if not isinstance(item, dict):
+                    counters["rejected"] += 1
+                    _alert(db, run_id, "source_rejected", "SEARCH_RESULT_NOT_OBJECT")
+                    continue
                 url = _canonical_url(item.get("url"))
                 if not url:
                     counters["rejected"] += 1
@@ -826,16 +1045,26 @@ def run_cycle(db, trigger_type="manual", search_provider=None, fetcher=None,
                     _alert(db, run_id, "fetch_failure", f"{url}: {exc}", severity="error")
     if provider_error:
         _alert(db, run_id, "provider_unavailable", provider_error, severity="error")
-    status = "failed" if provider_error and not counters["discovered"] else (
+    fallback_made_progress = bool(
+        counters["discovered"] or counters["duplicate"] or counters["fetches"]
+    )
+    status = "failed" if provider_error and not fallback_made_progress else (
         "partial_success" if counters["errors"] else "success"
     )
-    summary = {**counters, "provider_error": provider_error}
+    summary = {
+        **counters,
+        "provider_error": provider_error,
+        "provider": getattr(search_provider, "name", None),
+        "fallback_used": (
+            fallback_used or bool(getattr(search_provider, "fallback_used", False))
+        ),
+    }
     db.execute("""UPDATE knowledge_research_runs SET status=?,completed_at=now(),
         discovered_count=?,rejected_count=?,duplicate_count=?,error_count=?,
-        fetch_count=?,bytes_fetched=?,error_message=?,summary_json=? WHERE run_id=?""",
+        fetch_count=?,bytes_fetched=?,estimated_cost=?,error_message=?,summary_json=? WHERE run_id=?""",
         (status, counters["discovered"], counters["rejected"], counters["duplicate"],
-         counters["errors"], counters["fetches"], counters["bytes"], provider_error,
-         _json(summary), run_id))
+         counters["errors"], counters["fetches"], counters["bytes"],
+         counters["estimated_cost"], provider_error, _json(summary), run_id))
     db.commit()
     return {"success": status in {"success", "partial_success"}, "run_id": run_id,
             "status": status, **counters}
@@ -862,7 +1091,13 @@ def list_dashboard(db, limit=30):
     for run in runs:
         run["topics"] = _loads(run.pop("topics_json", None), [])
         run["summary"] = _loads(run.pop("summary_json", None), {})
-    return {"config": get_config(db), "runs": runs, "candidates": candidates, "alerts": alerts}
+    return {
+        "config": get_config(db),
+        "provider": search_provider_status(),
+        "runs": runs,
+        "candidates": candidates,
+        "alerts": alerts,
+    }
 
 
 def review_candidate(db, candidate_id, decision, reviewer):

@@ -110,6 +110,7 @@
       </section>
       <section class="full">
         <h3>دورة البحث المعرفي الدوري</h3>
+        <div id="cycleProviderStatus" class="notice">جارٍ تحميل حالة مزود الاكتشاف...</div>
         <div class="cycle-controls">
           <label>التشغيل الدوري<select id="cycleEnabled"><option value="false">متوقف</option><option value="true">مفعّل</option></select></label>
           <label>كل كم ساعة<input id="cycleInterval" type="number" min="1" max="2160"></label>
@@ -237,6 +238,11 @@
         if(!r.ok||!j.success)throw new Error();
         cycleEnabled.value=String(!!j.config.enabled);cycleInterval.value=j.config.interval_hours;
         cycleFetches.value=j.config.max_fetches;cycleBytes.value=j.config.max_bytes;
+        const p=j.provider||{}, providerReady=!!(p.external_configured&&p.endpoint_valid&&p.credentials_configured);
+        cycleProviderStatus.className=providerReady?'notice':'notice error';
+        cycleProviderStatus.innerHTML=`<strong>${providerReady?'مزود JSON الخارجي المعتمد مهيأ':'مزود JSON الخارجي غير مهيأ — يعمل سجل النطاقات المؤهلة فقط'}</strong>
+          <small>العقد: ${esc(p.contract_version||'—')} · الاعتماد محفوظ في Secrets: ${p.credentials_configured?'نعم':'لا'} · fallback: سجل النطاقات المعتمدة · النطاق: نطاقات مؤهلة مسبقًا فقط</small>
+          <small>نتائج المزود تبقى اقتراحات؛ لا تُجلب أو تُعتمد دون أدلة عمر الموقع والحقوق واستمرارية الناشر والمراجعة البشرية.</small>`;
         cycleAlerts.innerHTML=j.alerts.map(a=>`<div class="alert"><strong>${esc(a.alert_type)}</strong><small> · ${esc(a.severity)} · ${esc(a.created_at)}</small><div>${esc(a.message)}</div></div>`).join('')||'<small>لا توجد تنبيهات مفتوحة.</small>';
         cycleCandidates.innerHTML=j.candidates.map(c=>`<div class="candidate"><strong>${esc(c.title)}</strong>
           <small>${esc(c.publisher||'—')} · ${esc(c.status)} · عمر الموقع ${esc(c.source_age_years)} سنة · ${esc(c.trust_level)} · الحقوق ${esc(c.rights_status)}</small>
@@ -248,6 +254,7 @@
           ${c.status==='pending_review'?`<div class="actions"><button onclick="reviewCandidate('${esc(c.candidate_id)}','approved')">اعتماد الإصدار</button><button class="secondary" onclick="reviewCandidate('${esc(c.candidate_id)}','rejected')">رفض</button>${c.previous_candidate_id?`<button class="secondary" onclick="reviewCandidate('${esc(c.candidate_id)}','rollback')">تراجع للسابق</button>`:''}</div>`:''}</div>`).join('')||'<small>لا توجد مواد مرشحة.</small>';
         cycleRuns.innerHTML=j.runs.map(x=>`<div class="run"><strong>${esc(x.status)} · ${esc(x.trigger_type)}</strong>
           <small>${esc(x.started_at)} ← ${esc(x.completed_at||'قيد التشغيل')} · موضوعات ${esc((x.topics||[]).length)} · مكتشف ${esc(x.discovered_count)} · مرفوض ${esc(x.rejected_count)} · مكرر ${esc(x.duplicate_count)} · أخطاء ${esc(x.error_count)} · جلبات ${esc(x.fetch_count)} · ${esc(x.bytes_fetched)} بايت · التكلفة ${esc(x.estimated_cost||0)}</small>
+          ${x.summary&&x.summary.fallback_used?'<small>تعطل المزود الخارجي؛ اكتملت المحاولة عبر سجل النطاقات المؤهلة.</small>':''}
           ${x.error_message?`<small>${esc(x.error_message)}</small>`:''}</div>`).join('')||'<small>لا توجد دورات بعد.</small>';
       }catch(e){cycleMsg.textContent='تعذر تحميل سجل دورة البحث.'}
     }

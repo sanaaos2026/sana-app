@@ -1,3 +1,35 @@
+# مزود اكتشاف المعرفة الخارجي
+
+لا تضع عنوان المزود الخاص أو رمز الاعتماد في الكود أو السجلات. خزّنهما كأسرار
+تشغيل باسم `SANA_RESEARCH_SEARCH_ENDPOINT` و`SANA_RESEARCH_SEARCH_TOKEN`.
+يجب أن يكون العنوان HTTPS وأن يعيد استجابة JSON بعقد `sana.search.v1`:
+
+```json
+{
+  "contract_version": "sana.search.v1",
+  "estimated_cost_usd": 0.001,
+  "results": [{
+    "url": "https://qualified.example/new-page",
+    "title": "عنوان المصدر",
+    "publisher": "الناشر المسجل",
+    "source_age_years": 10,
+    "source_age_evidence_url": "https://evidence.example/domain-age",
+    "source_age_evidence_date": "2015-01-01",
+    "rights_status": "public",
+    "rights_evidence_url": "https://qualified.example/rights",
+    "trust_level": "authoritative",
+    "eligibility_checked_at": "2026-09-02",
+    "publisher_continuity_note": "الناشر مستمر ومتطابق مع السجل",
+    "document_date": "2026-09-01"
+  }]
+}
+```
+
+العقد يسمح بالاكتشاف داخل النطاقات المؤهلة مسبقًا فقط. لا تمنح استجابة المزود
+حق الاستخدام ولا الاعتماد؛ يعيد Sana فحص الأدلة ثم يبقي المادة في المراجعة
+البشرية. عند مهلة أو استجابة زائدة الحجم أو تحويل غير آمن أو عقد ناقص، ينتقل
+التشغيل إلى سجل النطاقات المعتمدة دون إرسال رمز الاعتماد إلى وجهة أخرى.
+
 # دليل أسرار إنتاج Sana على Railway
 
 ## المصدر الوحيد لكل قيمة

@@ -1,4 +1,5 @@
 """اختبار كامل لدورة البحث الدوري دون اتصال خارجي."""
+import json
 import os
 import sys
 import unittest
@@ -15,10 +16,14 @@ from app import _connect_pg
 from sana_knowledge import create_source, ensure_schema as ensure_knowledge_schema, search_knowledge
 from sana_research_cycle import (
     ConservativeFetcher,
+    FallbackSearchProvider,
+    JsonSearchProvider,
+    SEARCH_CONTRACT_VERSION,
     _pinned_open,
     _redirect_headers,
     build_topics,
     candidate_eligibility,
+    configured_search_provider,
     ensure_schema,
     get_config,
     review_candidate,
@@ -90,6 +95,9 @@ class FakeResponse:
 
 
 class PeriodicResearchPolicyTest(unittest.TestCase):
+    def _valid_search_result(self):
+        return FakeProvider("https://research.example.org/new-guide").search("test")[0]
+
     def test_topics_remove_private_identifiers_and_only_use_known_taxonomy(self):
         private = ["شركة الأسرار", "سارة الخاصة"]
         topics = build_topics(
@@ -163,6 +171,87 @@ class PeriodicResearchPolicyTest(unittest.TestCase):
         )
         self.assertNotIn("Authorization", sanitized)
         self.assertNotIn("Cookie", sanitized)
+
+    def test_json_provider_enforces_contract_timeout_limit_and_cost(self):
+        observed = {}
+        payload = json.dumps({
+            "contract_version": SEARCH_CONTRACT_VERSION,
+            "estimated_cost_usd": 0.004,
+            "results": [self._valid_search_result(), self._valid_search_result()],
+        }).encode()
+
+        def opener(request, timeout=None):
+            observed["url"] = request.full_url
+            observed["timeout"] = timeout
+            observed["authorization"] = request.get_header("Authorization")
+            return FakeResponse(payload, content_type="application/json")
+
+        provider = JsonSearchProvider(
+            "https://provider.example/search",
+            bearer_token="secret-token",
+            opener=opener,
+            timeout_seconds=7,
+        )
+        results = provider.search("evidence based operations", limit=1)
+        self.assertEqual(1, len(results))
+        self.assertEqual(7, observed["timeout"])
+        self.assertEqual("Bearer secret-token", observed["authorization"])
+        self.assertIn("limit=1", observed["url"])
+        self.assertEqual(0.004, provider.last_cost_usd)
+
+    def test_json_provider_rejects_missing_evidence_and_oversized_payload(self):
+        invalid = self._valid_search_result()
+        invalid.pop("rights_evidence_url")
+        payload = json.dumps({
+            "contract_version": SEARCH_CONTRACT_VERSION,
+            "results": [invalid],
+        }).encode()
+        provider = JsonSearchProvider(
+            "https://provider.example/search",
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                payload, content_type="application/json"
+            ),
+        )
+        with self.assertRaisesRegex(RuntimeError, "rights_evidence_url"):
+            provider.search("query")
+
+        oversized = JsonSearchProvider(
+            "https://provider.example/search",
+            opener=lambda *_args, **_kwargs: FakeResponse(
+                b"x" * 1025, content_type="application/json"
+            ),
+            max_response_bytes=1024,
+        )
+        with self.assertRaisesRegex(RuntimeError, "SEARCH_RESPONSE_TOO_LARGE"):
+            oversized.search("query")
+
+    def test_external_failure_uses_registry_fallback_without_hiding_error(self):
+        class BrokenProvider:
+            def search(self, query, limit=5):
+                raise TimeoutError("provider timed out")
+
+        class RegistryFallback:
+            def search(self, query, limit=5):
+                return [{"url": "https://approved.example/guide"}]
+
+        provider = FallbackSearchProvider(BrokenProvider(), RegistryFallback())
+        self.assertEqual(
+            [{"url": "https://approved.example/guide"}],
+            provider.search("query", limit=3),
+        )
+        self.assertTrue(provider.fallback_used)
+        self.assertIn("timed out", provider.last_error)
+
+    def test_configured_external_provider_requires_secret_credential(self):
+        with patch.dict(os.environ, {
+            "SANA_RESEARCH_SEARCH_ENDPOINT": "https://provider.example/search",
+            "SANA_RESEARCH_SEARCH_TOKEN": "",
+        }):
+            provider = configured_search_provider()
+            with self.assertRaisesRegex(
+                RuntimeError, "SEARCH_PROVIDER_CREDENTIALS_MISSING"
+            ):
+                provider.search("query")
 
     def test_quotation_only_rights_cannot_store_full_page(self):
         candidate = {
