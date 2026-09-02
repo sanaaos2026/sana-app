@@ -27,20 +27,25 @@ CREATE TABLE IF NOT EXISTS companies (
     lifecycle_status TEXT NOT NULL DEFAULT 'Active'
 );
 
--- حسابات دخول حقيقية للعملاء — كل حساب مرتبط بشركة واحدة فقط، ولا يمكنه
--- أبدًا رؤية بيانات أي شركة أخرى (العزل يُفرض في طبقة الخادم عبر الجلسة).
+-- حسابات العملاء مرتبطة بشركة واحدة. الاستثناء الوحيد هو SUPER_ADMIN العام:
+-- لا يحمل عضوية شركة، ويصل للشركات عبر مسارات الإدارة الصريحة والمسجلة فقط.
 CREATE TABLE IF NOT EXISTS user_accounts (
     account_id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    company_id TEXT NOT NULL,
+    company_id TEXT,
     referral_source TEXT,
     is_admin SMALLINT NOT NULL DEFAULT 0,
     admin_role TEXT NOT NULL DEFAULT 'USER',
     account_status TEXT NOT NULL DEFAULT 'active',
     last_login_at TIMESTAMPTZ,
     created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
-    FOREIGN KEY (company_id) REFERENCES companies(company_id)
+    FOREIGN KEY (company_id) REFERENCES companies(company_id),
+    CONSTRAINT user_accounts_company_or_global_super_admin
+      CHECK (
+        company_id IS NOT NULL
+        OR (admin_role = 'SUPER_ADMIN' AND is_admin = 1)
+      )
 );
 
 CREATE TABLE IF NOT EXISTS users (

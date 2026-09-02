@@ -432,7 +432,7 @@ def current_account():
         return None
     return {
         "account_id": session["account_id"],
-        "company_id": session["company_id"],
+        "company_id": session.get("company_id"),
         "email": session.get("email"),
         "admin_role": session.get("admin_role", "USER"),
         "account_status": session.get("account_status", "active"),
@@ -552,7 +552,12 @@ def p0_template_context():
 
 
 def _company_start_redirect(account):
-    """يعيد نقطة البداية القانونية لحساب عميل واحد."""
+    """يعيد نقطة البداية القانونية للحساب دون منح SUPER_ADMIN عضوية شركة."""
+    if (
+        str(account.get("admin_role") or "").upper() == "SUPER_ADMIN"
+        and not account.get("company_id")
+    ):
+        return url_for("admin_dashboard")
     db = get_db()
     company = db.execute(
         "SELECT name, sector, sds_done, main_goal FROM companies WHERE company_id=?",
@@ -1041,6 +1046,22 @@ def init_db(force=False):
             conn.execute("ALTER TABLE user_accounts ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active'")
         if "last_login_at" not in accts_cols:
             conn.execute("ALTER TABLE user_accounts ADD COLUMN last_login_at TIMESTAMPTZ")
+        # حساب SUPER_ADMIN العام ليس عضوًا في أي شركة. يبقى NULL ممنوعًا على
+        # USER/ADMIN بواسطة القيد التالي، وتظل بيانات الشركات خلف tenant guards.
+        conn.execute("ALTER TABLE user_accounts ALTER COLUMN company_id DROP NOT NULL")
+        account_scope_constraint = conn.execute(
+            """SELECT 1 FROM pg_constraint
+               WHERE conname='user_accounts_company_or_global_super_admin'"""
+        ).fetchone()
+        if not account_scope_constraint:
+            conn.execute(
+                """ALTER TABLE user_accounts
+                   ADD CONSTRAINT user_accounts_company_or_global_super_admin
+                   CHECK (
+                     company_id IS NOT NULL
+                     OR (admin_role='SUPER_ADMIN' AND is_admin=1)
+                   )"""
+            )
         conn.execute(
             "UPDATE user_accounts SET admin_role='SUPER_ADMIN' "
             "WHERE is_admin=1 AND COALESCE(admin_role,'USER')='USER'"
