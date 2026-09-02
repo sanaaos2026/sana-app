@@ -18,6 +18,7 @@ import hmac
 import decimal
 import re
 import time
+import html
 from urllib.parse import urlencode, urlparse
 from datetime import datetime, date, timedelta
 from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for, Response, abort, send_file
@@ -412,7 +413,7 @@ PUBLIC_ENDPOINTS = {
     "system_health", "healthz", "static", "guide_page",
     "sectors_list",   # قائمة القطاعات — عامة بلا مصادقة
     "articles_list", "article_page", "api_articles_list",  # مقالات — عامة بلا مصادقة
-    "forgot_password", "reset_password",  # استعادة كلمة المرور — عامة بالضرورة
+    "forgot_password", "reset_password", "accept_company_invitation",
     # عام على مستوى الجلسة فقط؛ محمي دائمًا برمز Bearer مستقل من Supabase Vault.
     "internal_execution_reminders_run",
     # عام على مستوى الجلسة فقط؛ محمي بتوقيع GitHub Actions OIDC قصير العمر.
@@ -436,11 +437,29 @@ def current_account():
         "email": session.get("email"),
         "admin_role": session.get("admin_role", "USER"),
         "account_status": session.get("account_status", "active"),
+        "admin_company_id": session.get("admin_company_id"),
     }
 
 
-ADMIN_ROLES = {"USER", "ADMIN", "SUPER_ADMIN"}
-ADMIN_STATUSES = {"active", "disabled"}
+ADMIN_ROLES = {
+    "USER", "COMPANY_OWNER", "COMPANY_MEMBER", "ADMIN", "SUPER_ADMIN"
+}
+SYSTEM_ADMIN_ROLES = {"ADMIN", "SUPER_ADMIN"}
+COMPANY_ROLES = {"COMPANY_OWNER", "COMPANY_MEMBER"}
+ADMIN_STATUSES = {"active", "invited", "disabled"}
+ADMIN_PERMISSION_OPTIONS = {
+    "manage_companies": "إدارة الشركات",
+    "manage_users": "إدارة المستخدمين",
+    "link_accounts": "إنشاء وربط الحسابات",
+    "edit_company": "إدخال وتعديل معلومات الشركات",
+    "run_reports": "تشغيل وعرض التقارير",
+    "export_reports": "تصدير التقارير",
+    "review_cases": "مراجعة الحالات",
+}
+COMPANY_CONTEXT_PERMISSIONS = {
+    "manage_companies", "edit_company", "run_reports",
+    "export_reports", "review_cases", "link_accounts",
+}
 
 
 def _admin_role():
@@ -458,15 +477,53 @@ def _admin_role():
     role = str(row["admin_role"] or "USER").upper()
     if role == "USER" and row["is_admin"]:
         return "SUPER_ADMIN"
-    return role if role in ADMIN_ROLES - {"USER"} else None
+    return role if role in SYSTEM_ADMIN_ROLES else None
 
 
-def _admin_guard(minimum="ADMIN", *, json_response=True):
+def _admin_permissions():
+    account = current_account()
+    if not account:
+        return set()
+    row = get_db().execute(
+        "SELECT admin_role,admin_permissions FROM user_accounts WHERE account_id=?",
+        (account["account_id"],),
+    ).fetchone()
+    if not row:
+        return set()
+    if row["admin_role"] == "SUPER_ADMIN":
+        return set(ADMIN_PERMISSION_OPTIONS)
+    try:
+        values = json.loads(row["admin_permissions"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        values = []
+    return {str(value) for value in values if value in ADMIN_PERMISSION_OPTIONS}
+
+
+def _admin_guard(minimum="ADMIN", *, json_response=True, permission=None,
+                 any_permissions=None):
     """Server-side RBAC guard for the internal operations console."""
     role = _admin_role()
     allowed = {"ADMIN", "SUPER_ADMIN"} if minimum == "ADMIN" else {"SUPER_ADMIN"}
     if role in allowed:
-        return role, None
+        if role == "SUPER_ADMIN":
+            return role, None
+        required = set(any_permissions or ())
+        if permission:
+            required.add(permission)
+        granted = _admin_permissions()
+        if not required or (
+            permission and permission in granted
+        ) or (
+            any_permissions and granted.intersection(set(any_permissions))
+        ):
+            return role, None
+        if json_response:
+            return None, (jsonify({
+                "success": False,
+                "error": "ADMIN_PERMISSION_REQUIRED",
+                "required": sorted(required),
+            }), 403)
+        return None, redirect(url_for("admin_dashboard_page"))
     if json_response:
         return None, (jsonify({
             "success": False,
@@ -496,7 +553,18 @@ def request_company_context():
     """سياق الشركة لهذا الطلب دون تحويل المعاينة الداخلية إلى جلسة عميل حقيقية."""
     account = current_account()
     if account:
-        return {**account, "admin_preview": False}
+        company_id = account.get("company_id")
+        if not company_id and account.get("admin_company_id"):
+            if _admin_role() in SYSTEM_ADMIN_ROLES:
+                company_id = account["admin_company_id"]
+        return {
+            **account,
+            "company_id": company_id,
+            "admin_preview": False,
+            "admin_company_context": bool(
+                not account.get("company_id") and company_id
+            ),
+        }
     if not is_admin_preview():
         return None
     company_id = (request.args.get("company_id") or "").strip()
@@ -514,7 +582,13 @@ def default_company_id():
     """مصدر شركة القوالب: الجلسة للعميل، وسياق المعاينة للمشرف فقط."""
     account = current_account()
     if account:
-        return account["company_id"]
+        return (
+            account.get("company_id")
+            or (
+                account.get("admin_company_id")
+                if _admin_role() in SYSTEM_ADMIN_ROLES else None
+            )
+        )
     if is_admin_preview() and request.args.get("company_id"):
         return request.args["company_id"]
     return "C001"
@@ -554,10 +628,10 @@ def p0_template_context():
 def _company_start_redirect(account):
     """يعيد نقطة البداية القانونية للحساب دون منح SUPER_ADMIN عضوية شركة."""
     if (
-        str(account.get("admin_role") or "").upper() == "SUPER_ADMIN"
+        str(account.get("admin_role") or "").upper() in SYSTEM_ADMIN_ROLES
         and not account.get("company_id")
     ):
-        return url_for("admin_dashboard")
+        return url_for("admin_dashboard_page")
     db = get_db()
     company = db.execute(
         "SELECT name, sector, sds_done, main_goal FROM companies WHERE company_id=?",
@@ -598,6 +672,18 @@ def enforce_company_auth():
     ):
         return
 
+    effective_company_id = account.get("company_id") if account else None
+    if account and not effective_company_id and account.get("admin_company_id"):
+        if _admin_role() in SYSTEM_ADMIN_ROLES:
+            effective_company_id = account["admin_company_id"]
+    if account and not effective_company_id:
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "success": False,
+                "error": "ADMIN_COMPANY_CONTEXT_REQUIRED",
+            }), 403
+        return redirect(url_for("admin_dashboard_page"))
+
     # 1) أي مسار (صفحة أو API) يحمل بيانات شركة — يتطلب جلسة دخول حقيقية،
     #    أو مفتاح العرض الداخلي للمشرف. بدون أحدهما لا وصول إطلاقًا،
     #    سواء عبر المتصفح أو عبر استدعاء API مباشر.
@@ -612,7 +698,7 @@ def enforce_company_auth():
     # 2) أي مسار API يحمل company_id في الرابط نفسه — لا يمكن لحساب مسجَّل
     #    الوصول إلا لشركته هو، حتى لو عدّل الرابط يدويًا
     if account and "company_id" in (request.view_args or {}):
-        if request.view_args["company_id"] != account["company_id"]:
+        if request.view_args["company_id"] != effective_company_id:
             return jsonify({
                 "success": False, "error": "FORBIDDEN",
                 "message": "لا تملك صلاحية الوصول لبيانات هذه الشركة."
@@ -623,7 +709,11 @@ def enforce_entity_company_scope(entity_company_id):
     """للمسارات التي لا تحمل company_id في الرابط (مثل /api/cases/<id>) —
     يتحقق أن الحساب المسجَّل (إن وُجد) يملك هذا السجل فعلًا قبل إرجاعه."""
     account = current_account()
-    if account and entity_company_id != account["company_id"]:
+    effective_company_id = account.get("company_id") if account else None
+    if account and not effective_company_id and account.get("admin_company_id"):
+        if _admin_role() in SYSTEM_ADMIN_ROLES:
+            effective_company_id = account["admin_company_id"]
+    if account and entity_company_id != effective_company_id:
         return jsonify({
             "success": False, "error": "FORBIDDEN",
             "message": "لا تملك صلاحية الوصول لبيانات هذه الشركة."
@@ -1042,6 +1132,10 @@ def init_db(force=False):
             conn.execute("ALTER TABLE user_accounts ADD COLUMN is_admin SMALLINT NOT NULL DEFAULT 0")
         if "admin_role" not in accts_cols:
             conn.execute("ALTER TABLE user_accounts ADD COLUMN admin_role TEXT NOT NULL DEFAULT 'USER'")
+        if "admin_permissions" not in accts_cols:
+            conn.execute(
+                "ALTER TABLE user_accounts ADD COLUMN admin_permissions TEXT NOT NULL DEFAULT '[]'"
+            )
         if "account_status" not in accts_cols:
             conn.execute("ALTER TABLE user_accounts ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active'")
         if "last_login_at" not in accts_cols:
@@ -1049,17 +1143,21 @@ def init_db(force=False):
         # حساب SUPER_ADMIN العام ليس عضوًا في أي شركة. يبقى NULL ممنوعًا على
         # USER/ADMIN بواسطة القيد التالي، وتظل بيانات الشركات خلف tenant guards.
         conn.execute("ALTER TABLE user_accounts ALTER COLUMN company_id DROP NOT NULL")
+        conn.execute(
+            """ALTER TABLE user_accounts
+               DROP CONSTRAINT IF EXISTS user_accounts_company_or_global_super_admin"""
+        )
         account_scope_constraint = conn.execute(
             """SELECT 1 FROM pg_constraint
-               WHERE conname='user_accounts_company_or_global_super_admin'"""
+               WHERE conname='user_accounts_company_or_system_admin'"""
         ).fetchone()
         if not account_scope_constraint:
             conn.execute(
                 """ALTER TABLE user_accounts
-                   ADD CONSTRAINT user_accounts_company_or_global_super_admin
+                   ADD CONSTRAINT user_accounts_company_or_system_admin
                    CHECK (
                      company_id IS NOT NULL
-                     OR (admin_role='SUPER_ADMIN' AND is_admin=1)
+                     OR (admin_role IN ('ADMIN','SUPER_ADMIN') AND is_admin=1)
                    )"""
             )
         conn.execute(
@@ -1071,6 +1169,14 @@ def init_db(force=False):
             conn.execute(
                 "ALTER TABLE companies ADD COLUMN lifecycle_status TEXT NOT NULL DEFAULT 'Active'"
             )
+        if "company_code" not in company_cols_for_admin:
+            conn.execute("ALTER TABLE companies ADD COLUMN company_code TEXT")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_companies_company_code "
+                "ON companies(company_code)"
+            )
+        if "contact_email" not in company_cols_for_admin:
+            conn.execute("ALTER TABLE companies ADD COLUMN contact_email TEXT")
         conn.execute("""CREATE TABLE IF NOT EXISTS admin_audit_log (
             audit_id TEXT PRIMARY KEY,
             actor_account_id TEXT NOT NULL REFERENCES user_accounts(account_id),
@@ -1085,6 +1191,41 @@ def init_db(force=False):
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_admin_audit_created "
             "ON admin_audit_log(created_at DESC)"
+        )
+        conn.execute("""CREATE TABLE IF NOT EXISTS company_invitations (
+            invitation_id TEXT PRIMARY KEY,
+            company_id TEXT NOT NULL REFERENCES companies(company_id),
+            account_id TEXT NOT NULL REFERENCES user_accounts(account_id),
+            email TEXT NOT NULL,
+            company_role TEXT NOT NULL
+              CHECK (company_role IN ('COMPANY_OWNER','COMPANY_MEMBER')),
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at TIMESTAMPTZ NOT NULL,
+            used_at TIMESTAMPTZ,
+            cancelled_at TIMESTAMPTZ,
+            created_by TEXT NOT NULL REFERENCES user_accounts(account_id),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_company_invitations_company "
+            "ON company_invitations(company_id,created_at DESC)"
+        )
+        conn.execute("""CREATE TABLE IF NOT EXISTS admin_notification_outbox (
+            notification_id TEXT PRIMARY KEY,
+            notification_type TEXT NOT NULL,
+            recipient_email TEXT NOT NULL,
+            company_id TEXT REFERENCES companies(company_id),
+            status TEXT NOT NULL CHECK (status IN ('queued','sent','failed')),
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_by TEXT NOT NULL REFERENCES user_accounts(account_id),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            sent_at TIMESTAMPTZ,
+            error_code TEXT
+        )""")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_admin_notification_outbox_status "
+            "ON admin_notification_outbox(status,created_at DESC)"
         )
 
         conn.commit()
@@ -1553,8 +1694,13 @@ def signup():
 
     account_id = "ACC" + uuid.uuid4().hex[:10].upper()
     db.execute(
-        "INSERT INTO user_accounts (account_id, email, password_hash, company_id, referral_source) VALUES (?,?,?,?,?)",
-        (account_id, email, generate_password_hash(password), company_id, referral_source)
+        """INSERT INTO user_accounts
+           (account_id,email,password_hash,company_id,referral_source,admin_role)
+           VALUES (?,?,?,?,?,?)""",
+        (
+            account_id, email, generate_password_hash(password), company_id,
+            referral_source, "COMPANY_OWNER",
+        ),
     )
     db.commit()
 
@@ -1786,7 +1932,8 @@ def forgot_password():
 
     db      = get_db()
     account = db.execute(
-        "SELECT account_id, email FROM user_accounts WHERE email=?", (email,)
+        """SELECT account_id,email,company_id FROM user_accounts
+           WHERE email=?""", (email,)
     ).fetchone()
 
     if account:
@@ -1796,6 +1943,12 @@ def forgot_password():
             """INSERT INTO password_reset_tokens (token, email, account_id, expires_at)
                VALUES (?, ?, ?, ?)""",
             (token, account["email"], account["account_id"], expires_at),
+        )
+        _admin_audit(
+            db, account["account_id"], "password_reset_requested",
+            "user_account", account["account_id"], account["company_id"],
+            reason="طلب استعادة كلمة المرور عبر المسار العام",
+            metadata={"expires_in_minutes": 30},
         )
         db.commit()
 
@@ -1873,16 +2026,92 @@ def reset_password():
 
     # حدّث كلمة المرور — نفس آلية التشفير المستخدمة في التسجيل
     db.execute(
-        "UPDATE user_accounts SET password_hash=? WHERE account_id=?",
+        """UPDATE user_accounts
+           SET password_hash=?,account_status='active' WHERE account_id=?""",
         (generate_password_hash(password), row["account_id"]),
     )
     # استهلك الرمز فوراً (single-use)
     db.execute(
         "UPDATE password_reset_tokens SET used=true WHERE token=?", (token,)
     )
+    account = db.execute(
+        "SELECT company_id FROM user_accounts WHERE account_id=?",
+        (row["account_id"],),
+    ).fetchone()
+    _admin_audit(
+        db, row["account_id"], "password_reset_completed", "user_account",
+        row["account_id"], account["company_id"] if account else None,
+        reason="استخدام رابط إعادة تعيين صالح لمرة واحدة",
+    )
     db.commit()
 
     return jsonify({"success": True, "message": "تم تغيير كلمة المرور بنجاح. يمكنك تسجيل الدخول الآن."})
+
+
+@app.route("/accept-invitation", methods=["GET", "POST"])
+def accept_company_invitation():
+    if request.method == "GET":
+        token = (request.args.get("token") or "").strip()
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest() if token else ""
+        row = get_db().execute(
+            """SELECT expires_at,used_at,cancelled_at FROM company_invitations
+               WHERE token_hash=?""",
+            (token_hash,),
+        ).fetchone()
+        valid = bool(
+            row and not row["used_at"] and not row["cancelled_at"]
+            and row["expires_at"].replace(tzinfo=None) > datetime.utcnow()
+        )
+        return render_template(
+            "20-accept-invitation.html", token=token if valid else "", valid=valid
+        )
+
+    body = request.get_json(silent=True) or {}
+    token = (body.get("token") or "").strip()
+    password = body.get("password") or ""
+    if len(password) < 8:
+        return jsonify({
+            "success": False, "error": "WEAK_PASSWORD",
+            "message": "كلمة المرور يجب أن تكون 8 أحرف على الأقل.",
+        }), 400
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    db = get_db()
+    invitation = db.execute(
+        """SELECT * FROM company_invitations WHERE token_hash=? FOR UPDATE""",
+        (token_hash,),
+    ).fetchone()
+    if (
+        not invitation or invitation["used_at"] or invitation["cancelled_at"]
+        or invitation["expires_at"].replace(tzinfo=None) <= datetime.utcnow()
+    ):
+        return jsonify({
+            "success": False, "error": "INVITATION_INVALID_OR_EXPIRED",
+        }), 400
+    db.execute(
+        """UPDATE user_accounts
+           SET password_hash=?,account_status='active',company_id=?,admin_role=?,
+               is_admin=0
+           WHERE account_id=?""",
+        (
+            generate_password_hash(password), invitation["company_id"],
+            invitation["company_role"], invitation["account_id"],
+        ),
+    )
+    db.execute(
+        "UPDATE company_invitations SET used_at=now() WHERE invitation_id=?",
+        (invitation["invitation_id"],),
+    )
+    _admin_audit(
+        db, invitation["account_id"], "company_invitation_accepted",
+        "company_invitation", invitation["invitation_id"],
+        invitation["company_id"], reason="قبول رابط دعوة صالح لمرة واحدة",
+        metadata={"company_role": invitation["company_role"]},
+    )
+    db.commit()
+    return jsonify({
+        "success": True,
+        "data": {"redirect": "/login"},
+    })
 
 
 @app.route("/discovery")
@@ -2216,7 +2445,188 @@ def api_session():
 # لوحة الإدارة الداخلية — فوق البيانات الحالية، بلا مسار شركة بديل
 # ═══════════════════════════════════════════════════════════════════
 
-ADMIN_COMPANY_STATUSES = {"Active", "Trial", "Suspended", "Archived"}
+ADMIN_COMPANY_STATUSES = {
+    "Registered", "Internal Managed", "Active", "Trial", "Suspended", "Archived"
+}
+SANA_LEADERSHIP_EMAIL = "sanaaos2026@gmail.com"
+
+
+def _valid_email(value):
+    value = (value or "").strip().lower()
+    return value if (
+        value and "@" in value and "." in value.split("@")[-1]
+    ) else None
+
+
+def _new_company_identity(db, name):
+    prefix = re.sub(r"[^A-Z0-9]", "", (name or "").upper())[:4] or "SANA"
+    for _ in range(20):
+        random_part = secrets.token_hex(3).upper()
+        company_id = f"CO-{prefix}-{random_part}"
+        company_code = f"SANA-{random_part[:3]}-{random_part[3:]}"
+        exists = db.execute(
+            """SELECT 1 FROM companies
+               WHERE company_id=? OR company_code=? OR signup_code=?""",
+            (company_id, company_code, company_code),
+        ).fetchone()
+        if not exists:
+            return company_id, company_code
+    raise RuntimeError("COMPANY_CODE_GENERATION_FAILED")
+
+
+def _create_company_default_assets(db, company_id):
+    for asset_type, asset_name in (
+        ("Knowledge", "أصل المعرفة"),
+        ("Operations", "أصل التشغيل"),
+        ("Brand", "أصل البراند"),
+        ("Data", "أصل البيانات"),
+        ("Independence", "أصل الاستقلال"),
+    ):
+        db.execute(
+            """INSERT INTO assets
+               (asset_id,company_id,asset_type,asset_name,current_score,
+                fragility_score,status)
+               VALUES (?,?,?,?,?,?,?)""",
+            (
+                "A" + uuid.uuid4().hex[:10].upper(),
+                company_id, asset_type, asset_name, 0, 100, "غير مقيَّم",
+            ),
+        )
+
+
+def _admin_send_email(db, *, notification_type, recipient_email, subject,
+                      html_body, actor_id, company_id=None, payload=None):
+    notification_id = "NTF-" + secrets.token_hex(8).upper()
+    db.execute(
+        """INSERT INTO admin_notification_outbox
+           (notification_id,notification_type,recipient_email,company_id,status,
+            payload_json,created_by)
+           VALUES (?,?,?,?,?,?,?)""",
+        (
+            notification_id, notification_type, recipient_email, company_id,
+            "queued", json.dumps(payload or {}, ensure_ascii=False), actor_id,
+        ),
+    )
+    if not RESEND_API_KEY:
+        return {"notification_id": notification_id, "status": "queued"}
+    try:
+        resend.Emails.send({
+            "from": "سنع <noreply@sanaclarity.com>",
+            "to": [recipient_email],
+            "subject": subject,
+            "html": html_body,
+        })
+        db.execute(
+            """UPDATE admin_notification_outbox
+               SET status='sent',sent_at=now() WHERE notification_id=?""",
+            (notification_id,),
+        )
+        return {"notification_id": notification_id, "status": "sent"}
+    except Exception as exc:
+        db.execute(
+            """UPDATE admin_notification_outbox
+               SET status='failed',error_code=? WHERE notification_id=?""",
+            (type(exc).__name__[:80], notification_id),
+        )
+        return {"notification_id": notification_id, "status": "failed"}
+
+
+def _issue_admin_password_reset(db, account, actor_id, reason):
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(minutes=30)
+    db.execute(
+        """INSERT INTO password_reset_tokens (token,email,account_id,expires_at)
+           VALUES (?,?,?,?)""",
+        (token, account["email"], account["account_id"], expires_at),
+    )
+    reset_url = f"{APP_BASE_URL}/reset-password?token={token}"
+    delivery = _admin_send_email(
+        db,
+        notification_type="password_reset",
+        recipient_email=account["email"],
+        subject="تعيين أو إعادة تعيين كلمة المرور — سنع",
+        html_body=(
+            "<div dir='rtl'><h2>تعيين كلمة المرور</h2>"
+            "<p>الرابط صالح لمدة 30 دقيقة ولاستخدام واحد فقط.</p>"
+            f"<p><a href='{html.escape(reset_url)}'>تعيين كلمة المرور</a></p></div>"
+        ),
+        actor_id=actor_id,
+        company_id=account.get("company_id"),
+        payload={"account_id": account["account_id"], "expires_in_minutes": 30},
+    )
+    _admin_audit(
+        db, actor_id, "password_reset_issued", "user_account",
+        account["account_id"], account.get("company_id"), reason,
+        {"delivery_status": delivery["status"]},
+    )
+    return {"expires_at": expires_at.isoformat(), "delivery": delivery["status"]}
+
+
+def _issue_company_invitation(db, company, account, company_role, actor_id,
+                              reason, invitation_id=None):
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    expires_at = datetime.utcnow() + timedelta(hours=24)
+    invitation_id = invitation_id or ("INV-" + secrets.token_hex(8).upper())
+    if db.execute(
+        "SELECT 1 FROM company_invitations WHERE invitation_id=?",
+        (invitation_id,),
+    ).fetchone():
+        db.execute(
+            """UPDATE company_invitations
+               SET token_hash=?,expires_at=?,used_at=NULL,cancelled_at=NULL,
+                   last_sent_at=now(),company_role=?
+               WHERE invitation_id=?""",
+            (token_hash, expires_at, company_role, invitation_id),
+        )
+        action = "company_invitation_resent"
+    else:
+        db.execute(
+            """INSERT INTO company_invitations
+               (invitation_id,company_id,account_id,email,company_role,
+                token_hash,expires_at,created_by)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                invitation_id, company["company_id"], account["account_id"],
+                account["email"], company_role, token_hash, expires_at, actor_id,
+            ),
+        )
+        action = "company_invitation_issued"
+    invite_url = f"{APP_BASE_URL}/accept-invitation?token={token}"
+    delivery = _admin_send_email(
+        db,
+        notification_type="company_invitation",
+        recipient_email=account["email"],
+        subject=f"دعوة للانضمام إلى {company['name']} في سنع",
+        html_body=(
+            "<div dir='rtl'><h2>دعوة آمنة إلى سنع</h2>"
+            f"<p>تمت دعوتك كـ {html.escape(company_role)} في "
+            f"{html.escape(company['name'])}.</p>"
+            "<p>الرابط صالح 24 ساعة ولاستخدام واحد.</p>"
+            f"<p><a href='{html.escape(invite_url)}'>قبول الدعوة</a></p></div>"
+        ),
+        actor_id=actor_id,
+        company_id=company["company_id"],
+        payload={
+            "invitation_id": invitation_id,
+            "account_id": account["account_id"],
+            "expires_in_hours": 24,
+        },
+    )
+    _admin_audit(
+        db, actor_id, action, "company_invitation", invitation_id,
+        company["company_id"], reason,
+        {
+            "account_id": account["account_id"],
+            "company_role": company_role,
+            "delivery_status": delivery["status"],
+        },
+    )
+    return {
+        "invitation_id": invitation_id,
+        "expires_at": expires_at.isoformat(),
+        "delivery_status": delivery["status"],
+    }
 
 
 def _admin_date(value):
@@ -2320,7 +2730,9 @@ def _admin_company_snapshot(db, company):
     last_activity = max((str(v) for v in activity_values if v), default=None)
     return {
         "company_id": company_id,
+        "company_code": company.get("company_code"),
         "name": company["name"],
+        "contact_email": company.get("contact_email"),
         "status": company.get("lifecycle_status") or "Active",
         "sector": company.get("sector_other") or company.get("sector"),
         "users_active": users,
@@ -2479,6 +2891,8 @@ def admin_overview():
         "success": True,
         "data": {
             "role": role,
+            "permissions": sorted(_admin_permissions()),
+            "permission_options": ADMIN_PERMISSION_OPTIONS,
             "metrics": {
                 "companies": len(companies),
                 "active_users": active_users,
@@ -2510,9 +2924,71 @@ def admin_overview():
     })
 
 
-@app.route("/api/admin/companies")
+@app.route("/api/admin/companies", methods=["GET", "POST"])
 def admin_companies():
-    _role, failure = _admin_guard()
+    if request.method == "POST":
+        _role, failure = _admin_guard(permission="manage_companies")
+        if failure:
+            return failure
+        body = request.get_json(silent=True) or {}
+        name = (body.get("name") or "").strip()
+        contact_email = _valid_email(body.get("contact_email"))
+        status = (body.get("lifecycle_status") or "Registered").strip()
+        if not name:
+            return jsonify({"success": False, "error": "COMPANY_NAME_REQUIRED"}), 400
+        if body.get("contact_email") and not contact_email:
+            return jsonify({"success": False, "error": "CONTACT_EMAIL_INVALID"}), 400
+        if status not in {"Registered", "Internal Managed"}:
+            return jsonify({"success": False, "error": "COMPANY_STATUS_INVALID"}), 400
+        db = get_db()
+        company_id, company_code = _new_company_identity(db, name)
+        db.execute(
+            """INSERT INTO companies
+               (company_id,name,sector,city,company_code,signup_code,
+                contact_email,lifecycle_status)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                company_id, name, (body.get("sector") or "").strip() or None,
+                (body.get("city") or "").strip() or None,
+                company_code, company_code, contact_email, status,
+            ),
+        )
+        _create_company_default_assets(db, company_id)
+        actor_id = current_account()["account_id"]
+        delivery = _admin_send_email(
+            db,
+            notification_type="company_registered",
+            recipient_email=SANA_LEADERSHIP_EMAIL,
+            subject=f"تسجيل شركة جديدة في سنع — {name}",
+            html_body=(
+                "<div dir='rtl'><h2>تم تسجيل شركة جديدة</h2>"
+                f"<p>{html.escape(name)}</p>"
+                f"<p>رمز الشركة: {html.escape(company_code)}</p></div>"
+            ),
+            actor_id=actor_id,
+            company_id=company_id,
+            payload={"company_id": company_id, "company_code": company_code},
+        )
+        _admin_audit(
+            db, actor_id, "company_created", "company", company_id, company_id,
+            reason=(body.get("reason") or "إنشاء شركة يدويًا من Command Center"),
+            metadata={
+                "company_code": company_code,
+                "lifecycle_status": status,
+                "notification_status": delivery["status"],
+            },
+        )
+        db.commit()
+        return jsonify({"success": True, "data": {
+            "company_id": company_id,
+            "company_code": company_code,
+            "name": name,
+            "contact_email": contact_email,
+            "lifecycle_status": status,
+            "notification_status": delivery["status"],
+        }}), 201
+
+    _role, failure = _admin_guard(any_permissions=COMPANY_CONTEXT_PERMISSIONS)
     if failure:
         return failure
     return jsonify({"success": True, "data": _admin_companies(get_db())})
@@ -2520,7 +2996,7 @@ def admin_companies():
 
 @app.route("/api/admin/companies/<company_id>")
 def admin_company_detail(company_id):
-    role, failure = _admin_guard()
+    role, failure = _admin_guard(any_permissions=COMPANY_CONTEXT_PERMISSIONS)
     if failure:
         return failure
     db = get_db()
@@ -2538,15 +3014,45 @@ def admin_company_detail(company_id):
     return jsonify({"success": True, "data": _admin_company_snapshot(db, company)})
 
 
+@app.route("/api/admin/companies/<company_id>/open", methods=["POST"])
+def admin_open_company(company_id):
+    role, failure = _admin_guard(any_permissions=COMPANY_CONTEXT_PERMISSIONS)
+    if failure:
+        return failure
+    db = get_db()
+    company = db.execute(
+        "SELECT company_id,name,company_code FROM companies WHERE company_id=?",
+        (company_id,),
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    session["admin_company_id"] = company_id
+    _admin_audit(
+        db, current_account()["account_id"], "company_admin_open",
+        "company", company_id, company_id,
+        reason="فتح الشركة صراحة من Sana Command Center",
+        metadata={"role": role, "company_code": company["company_code"]},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "company_id": company_id,
+        "company_code": company["company_code"],
+        "workspace_url": "/home",
+    }})
+
+
 @app.route("/api/admin/users")
 def admin_users():
-    _role, failure = _admin_guard()
+    _role, failure = _admin_guard(
+        any_permissions={"manage_users", "link_accounts"}
+    )
     if failure:
         return failure
     query = (request.args.get("q") or "").strip().lower()
     db = get_db()
     rows = db.execute(
         """SELECT a.account_id,a.email,a.company_id,a.admin_role,a.is_admin,
+                  a.admin_permissions,
                   a.account_status,a.created_at,a.last_login_at,c.name AS company_name
            FROM user_accounts a LEFT JOIN companies c ON c.company_id=a.company_id
            WHERE LOWER(a.email) LIKE ? OR LOWER(a.account_id) LIKE ?
@@ -2558,7 +3064,8 @@ def admin_users():
         {
             **{k: row[k] for k in (
                 "account_id", "email", "company_id", "admin_role",
-                "account_status", "created_at", "last_login_at", "company_name"
+                "account_status", "created_at", "last_login_at", "company_name",
+                "admin_permissions"
             )},
             "admin_role": (
                 "SUPER_ADMIN" if row["is_admin"] and row["admin_role"] == "USER"
@@ -2569,9 +3076,316 @@ def admin_users():
     ]})
 
 
+@app.route("/api/admin/admins", methods=["POST"])
+def admin_create_admin():
+    _role, failure = _admin_guard(minimum="SUPER_ADMIN")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    email = _valid_email(body.get("email"))
+    requested = {str(item) for item in (body.get("permissions") or [])}
+    if not email:
+        return jsonify({"success": False, "error": "EMAIL_INVALID"}), 400
+    if not requested or not requested.issubset(ADMIN_PERMISSION_OPTIONS):
+        return jsonify({
+            "success": False, "error": "ADMIN_PERMISSIONS_INVALID",
+            "allowed": ADMIN_PERMISSION_OPTIONS,
+        }), 400
+    db = get_db()
+    existing = db.execute(
+        "SELECT * FROM user_accounts WHERE LOWER(email)=?", (email,)
+    ).fetchone()
+    if existing and existing["admin_role"] == "SUPER_ADMIN":
+        return jsonify({"success": False, "error": "SUPER_ADMIN_IMMUTABLE"}), 409
+    if existing and existing["company_id"]:
+        return jsonify({
+            "success": False, "error": "ACCOUNT_ALREADY_COMPANY_MEMBER",
+        }), 409
+    if existing:
+        account_id = existing["account_id"]
+        db.execute(
+            """UPDATE user_accounts
+               SET admin_role='ADMIN',is_admin=1,account_status='invited',
+                   admin_permissions=?,company_id=NULL
+               WHERE account_id=?""",
+            (json.dumps(sorted(requested)), account_id),
+        )
+    else:
+        account_id = "ACC-ADMIN-" + uuid.uuid4().hex[:10].upper()
+        db.execute(
+            """INSERT INTO user_accounts
+               (account_id,email,password_hash,company_id,is_admin,admin_role,
+                admin_permissions,account_status)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                account_id, email,
+                generate_password_hash(secrets.token_urlsafe(48)), None, 1,
+                "ADMIN", json.dumps(sorted(requested)), "invited",
+            ),
+        )
+    account = db.execute(
+        "SELECT * FROM user_accounts WHERE account_id=?", (account_id,)
+    ).fetchone()
+    actor_id = current_account()["account_id"]
+    reset = _issue_admin_password_reset(
+        db, account, actor_id, "دعوة Admin جديد لتعيين كلمة مروره"
+    )
+    _admin_audit(
+        db, actor_id, "admin_created", "user_account", account_id, None,
+        reason=(body.get("reason") or "إنشاء Admin بصلاحيات محددة"),
+        metadata={"permissions": sorted(requested)},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "account_id": account_id,
+        "email": email,
+        "admin_role": "ADMIN",
+        "permissions": sorted(requested),
+        "account_status": "invited",
+        "reset_delivery_status": reset["delivery"],
+    }}), 201
+
+
+@app.route("/api/admin/companies/<company_id>/accounts/link", methods=["POST"])
+def admin_link_company_account(company_id):
+    _role, failure = _admin_guard(permission="link_accounts")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    email = _valid_email(body.get("email"))
+    company_role = str(body.get("company_role") or "COMPANY_MEMBER").upper()
+    reason = (body.get("reason") or "").strip()
+    if not email or company_role not in COMPANY_ROLES:
+        return jsonify({"success": False, "error": "ACCOUNT_LINK_INVALID"}), 400
+    if not reason:
+        return jsonify({"success": False, "error": "AUDIT_REASON_REQUIRED"}), 400
+    db = get_db()
+    company = db.execute(
+        "SELECT company_id FROM companies WHERE company_id=?", (company_id,)
+    ).fetchone()
+    account = db.execute(
+        "SELECT * FROM user_accounts WHERE LOWER(email)=?", (email,)
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    if not account:
+        return jsonify({"success": False, "error": "ACCOUNT_NOT_FOUND"}), 404
+    if account["admin_role"] in SYSTEM_ADMIN_ROLES:
+        return jsonify({"success": False, "error": "SYSTEM_ADMIN_NOT_COMPANY_MEMBER"}), 409
+    if account["company_id"] and account["company_id"] != company_id:
+        return jsonify({"success": False, "error": "ACCOUNT_ALREADY_LINKED"}), 409
+    db.execute(
+        """UPDATE user_accounts
+           SET company_id=?,admin_role=?,is_admin=0 WHERE account_id=?""",
+        (company_id, company_role, account["account_id"]),
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "company_account_linked",
+        "user_account", account["account_id"], company_id, reason,
+        {"email": email, "company_role": company_role},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "account_id": account["account_id"],
+        "company_id": company_id,
+        "company_role": company_role,
+    }})
+
+
+@app.route("/api/admin/companies/<company_id>/invitations", methods=["GET", "POST"])
+def admin_issue_company_invitation(company_id):
+    _role, failure = _admin_guard(permission="link_accounts")
+    if failure:
+        return failure
+    db = get_db()
+    if request.method == "GET":
+        rows = db.execute(
+            """SELECT invitation_id,email,company_role,expires_at,used_at,
+                      cancelled_at,created_at,last_sent_at
+               FROM company_invitations WHERE company_id=?
+               ORDER BY created_at DESC LIMIT 100""",
+            (company_id,),
+        ).fetchall()
+        return jsonify({"success": True, "data": [dict(row) for row in rows]})
+    body = request.get_json(silent=True) or {}
+    email = _valid_email(body.get("email"))
+    company_role = str(body.get("company_role") or "COMPANY_MEMBER").upper()
+    reason = (body.get("reason") or "").strip() or "إصدار دعوة شركة"
+    if not email or company_role not in COMPANY_ROLES:
+        return jsonify({"success": False, "error": "INVITATION_INVALID"}), 400
+    company = db.execute(
+        "SELECT company_id,name FROM companies WHERE company_id=?", (company_id,)
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    account = db.execute(
+        "SELECT * FROM user_accounts WHERE LOWER(email)=?", (email,)
+    ).fetchone()
+    if account and account["admin_role"] in SYSTEM_ADMIN_ROLES:
+        return jsonify({"success": False, "error": "SYSTEM_ADMIN_NOT_COMPANY_MEMBER"}), 409
+    if account and account["company_id"] and account["company_id"] != company_id:
+        return jsonify({"success": False, "error": "ACCOUNT_ALREADY_LINKED"}), 409
+    if not account:
+        account_id = "ACC-" + uuid.uuid4().hex[:12].upper()
+        db.execute(
+            """INSERT INTO user_accounts
+               (account_id,email,password_hash,company_id,is_admin,admin_role,
+                account_status)
+               VALUES (?,?,?,?,?,?,?)""",
+            (
+                account_id, email,
+                generate_password_hash(secrets.token_urlsafe(48)),
+                company_id, 0, company_role, "invited",
+            ),
+        )
+        account = db.execute(
+            "SELECT * FROM user_accounts WHERE account_id=?", (account_id,)
+        ).fetchone()
+    else:
+        db.execute(
+            """UPDATE user_accounts SET company_id=?,admin_role=?,is_admin=0
+               WHERE account_id=?""",
+            (company_id, company_role, account["account_id"]),
+        )
+        account = db.execute(
+            "SELECT * FROM user_accounts WHERE account_id=?",
+            (account["account_id"],),
+        ).fetchone()
+    invitation = _issue_company_invitation(
+        db, company, account, company_role,
+        current_account()["account_id"], reason,
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        **invitation,
+        "account_id": account["account_id"],
+        "email": email,
+        "company_role": company_role,
+    }}), 201
+
+
+@app.route(
+    "/api/admin/companies/<company_id>/invitations/<invitation_id>/resend",
+    methods=["POST"],
+)
+def admin_resend_company_invitation(company_id, invitation_id):
+    _role, failure = _admin_guard(permission="link_accounts")
+    if failure:
+        return failure
+    db = get_db()
+    invitation = db.execute(
+        """SELECT i.*,c.name FROM company_invitations i
+           JOIN companies c ON c.company_id=i.company_id
+           WHERE i.invitation_id=? AND i.company_id=?""",
+        (invitation_id, company_id),
+    ).fetchone()
+    if not invitation or invitation["used_at"] or invitation["cancelled_at"]:
+        return jsonify({"success": False, "error": "INVITATION_NOT_ACTIVE"}), 409
+    account = db.execute(
+        "SELECT * FROM user_accounts WHERE account_id=?",
+        (invitation["account_id"],),
+    ).fetchone()
+    result = _issue_company_invitation(
+        db,
+        {"company_id": company_id, "name": invitation["name"]},
+        account, invitation["company_role"], current_account()["account_id"],
+        "إعادة إرسال دعوة الشركة", invitation_id=invitation_id,
+    )
+    db.commit()
+    return jsonify({"success": True, "data": result})
+
+
+@app.route(
+    "/api/admin/companies/<company_id>/invitations/<invitation_id>/cancel",
+    methods=["POST"],
+)
+def admin_cancel_company_invitation(company_id, invitation_id):
+    _role, failure = _admin_guard(permission="link_accounts")
+    if failure:
+        return failure
+    db = get_db()
+    invitation = db.execute(
+        """SELECT * FROM company_invitations
+           WHERE invitation_id=? AND company_id=?""",
+        (invitation_id, company_id),
+    ).fetchone()
+    if not invitation or invitation["used_at"] or invitation["cancelled_at"]:
+        return jsonify({"success": False, "error": "INVITATION_NOT_ACTIVE"}), 409
+    db.execute(
+        "UPDATE company_invitations SET cancelled_at=now() WHERE invitation_id=?",
+        (invitation_id,),
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "company_invitation_cancelled",
+        "company_invitation", invitation_id, company_id,
+        reason="إلغاء دعوة الشركة",
+        metadata={"account_id": invitation["account_id"]},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"invitation_id": invitation_id}})
+
+
+@app.route("/api/admin/users/<account_id>/reset-password", methods=["POST"])
+def admin_reset_user_password(account_id):
+    _role, failure = _admin_guard(
+        any_permissions={"manage_users", "link_accounts"}
+    )
+    if failure:
+        return failure
+    db = get_db()
+    account = db.execute(
+        "SELECT * FROM user_accounts WHERE account_id=?", (account_id,)
+    ).fetchone()
+    if not account:
+        return jsonify({"success": False, "error": "USER_NOT_FOUND"}), 404
+    if account["admin_role"] == "SUPER_ADMIN" and _admin_role() != "SUPER_ADMIN":
+        return jsonify({"success": False, "error": "SUPER_ADMIN_REQUIRED"}), 403
+    result = _issue_admin_password_reset(
+        db, account, current_account()["account_id"],
+        "إصدار رابط إعادة تعيين من Sana Command Center",
+    )
+    db.commit()
+    return jsonify({"success": True, "data": result})
+
+
+@app.route("/api/admin/companies/<company_id>/reports/export")
+def admin_export_company_report(company_id):
+    _role, failure = _admin_guard(permission="export_reports")
+    if failure:
+        return failure
+    db = get_db()
+    company = db.execute(
+        "SELECT company_id,company_code FROM companies WHERE company_id=?",
+        (company_id,),
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    session["admin_company_id"] = company_id
+    _admin_audit(
+        db, current_account()["account_id"], "company_report_exported",
+        "company_report", company_id, company_id,
+        reason="تصدير تقرير الشركة من Sana Command Center",
+        metadata={
+            "company_code": company["company_code"],
+            "format": request.args.get("format", "text"),
+        },
+    )
+    db.commit()
+    response = (
+        passport_report_pdf(company_id)
+        if request.args.get("format") == "pdf"
+        else passport_report_text(company_id)
+    )
+    if isinstance(response, tuple):
+        return response
+    response.headers["X-Sana-Company-Id"] = company_id
+    response.headers["X-Sana-Company-Code"] = company["company_code"] or ""
+    return response
+
+
 @app.route("/api/admin/ops-queue")
 def admin_ops_queue():
-    _role, failure = _admin_guard()
+    _role, failure = _admin_guard(permission="review_cases")
     if failure:
         return failure
     return jsonify({"success": True, "data": _admin_ops_queue(get_db())})
@@ -2607,7 +3421,7 @@ def admin_system_health():
 
 @app.route("/api/admin/audit")
 def admin_audit():
-    _role, failure = _admin_guard()
+    _role, failure = _admin_guard(minimum="SUPER_ADMIN")
     if failure:
         return failure
     rows = get_db().execute(
@@ -2623,7 +3437,7 @@ def admin_audit():
 
 @app.route("/api/admin/search")
 def admin_search():
-    _role, failure = _admin_guard()
+    _role, failure = _admin_guard(any_permissions=COMPANY_CONTEXT_PERMISSIONS)
     if failure:
         return failure
     query = (request.args.get("q") or "").strip()
@@ -2703,6 +3517,7 @@ def admin_update_user(account_id):
         return jsonify({"success": False, "error": "AUDIT_REASON_REQUIRED"}), 400
     new_status = body.get("account_status")
     new_role = body.get("admin_role")
+    requested_permissions = body.get("admin_permissions")
     if new_status is not None and new_status not in ADMIN_STATUSES:
         return jsonify({"success": False, "error": "ACCOUNT_STATUS_INVALID"}), 400
     if new_role is not None:
@@ -2711,6 +3526,12 @@ def admin_update_user(account_id):
             return jsonify({"success": False, "error": "SUPER_ADMIN_REQUIRED"}), 403
         if new_role not in ADMIN_ROLES:
             return jsonify({"success": False, "error": "ADMIN_ROLE_INVALID"}), 400
+    if requested_permissions is not None:
+        requested_permissions = {str(item) for item in requested_permissions}
+        if role != "SUPER_ADMIN":
+            return jsonify({"success": False, "error": "SUPER_ADMIN_REQUIRED"}), 403
+        if not requested_permissions.issubset(ADMIN_PERMISSION_OPTIONS):
+            return jsonify({"success": False, "error": "ADMIN_PERMISSIONS_INVALID"}), 400
     target_role = (
         "SUPER_ADMIN"
         if target["is_admin"] and target["admin_role"] == "USER"
@@ -2718,20 +3539,54 @@ def admin_update_user(account_id):
     )
     if role == "ADMIN" and target_role == "SUPER_ADMIN":
         return jsonify({"success": False, "error": "SUPER_ADMIN_REQUIRED"}), 403
+    if role == "ADMIN" and target_role in SYSTEM_ADMIN_ROLES:
+        return jsonify({"success": False, "error": "SUPER_ADMIN_REQUIRED"}), 403
+    if role != "SUPER_ADMIN" and not _admin_permissions().intersection(
+        {"manage_users", "link_accounts"}
+    ):
+        return jsonify({
+            "success": False,
+            "error": "ADMIN_PERMISSION_REQUIRED",
+            "required": ["link_accounts", "manage_users"],
+        }), 403
     if account_id == current_account()["account_id"] and new_status == "disabled":
         return jsonify({"success": False, "error": "CANNOT_DISABLE_SELF"}), 400
     new_status = new_status or target["account_status"]
     new_role = new_role or target_role
+    if new_role in SYSTEM_ADMIN_ROLES:
+        company_id = None
+    else:
+        company_id = target["company_id"]
+        if not company_id:
+            return jsonify({
+                "success": False, "error": "COMPANY_MEMBERSHIP_REQUIRED",
+            }), 400
+    permissions_json = (
+        json.dumps(sorted(requested_permissions))
+        if requested_permissions is not None
+        else target.get("admin_permissions") or "[]"
+    )
+    if new_role not in SYSTEM_ADMIN_ROLES:
+        permissions_json = "[]"
     db.execute(
-        """UPDATE user_accounts SET account_status=?,admin_role=?,is_admin=?
+        """UPDATE user_accounts
+           SET account_status=?,admin_role=?,is_admin=?,admin_permissions=?,
+               company_id=?
            WHERE account_id=?""",
-        (new_status, new_role, 1 if new_role != "USER" else 0, account_id),
+        (
+            new_status, new_role, 1 if new_role in SYSTEM_ADMIN_ROLES else 0,
+            permissions_json, company_id, account_id,
+        ),
     )
     _admin_audit(
         db, current_account()["account_id"], "user_update", "user", account_id,
         target["company_id"], reason,
-        {"from_role": target["admin_role"], "to_role": new_role,
-         "from_status": target["account_status"], "to_status": new_status},
+         {"from_role": target["admin_role"], "to_role": new_role,
+          "from_status": target["account_status"], "to_status": new_status,
+          "permissions": (
+              sorted(requested_permissions)
+              if requested_permissions is not None else None
+          )},
     )
     db.commit()
     return jsonify({"success": True, "data": {"account_id": account_id,
@@ -2741,35 +3596,78 @@ def admin_update_user(account_id):
 
 @app.route("/api/admin/companies/<company_id>", methods=["PATCH"])
 def admin_update_company(company_id):
-    _role, failure = _admin_guard()
+    _role, failure = _admin_guard(
+        any_permissions={"manage_companies", "edit_company"}
+    )
     if failure:
         return failure
     db = get_db()
     company = db.execute(
-        "SELECT company_id,lifecycle_status FROM companies WHERE company_id=?",
+        "SELECT * FROM companies WHERE company_id=?",
         (company_id,),
     ).fetchone()
     if not company:
         return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
     body = request.get_json(silent=True) or {}
-    status = body.get("lifecycle_status")
+    status = body.get("lifecycle_status", company["lifecycle_status"])
     reason = (body.get("reason") or "").strip()
     if status not in ADMIN_COMPANY_STATUSES:
         return jsonify({"success": False, "error": "COMPANY_STATUS_INVALID"}), 400
     if not reason:
         return jsonify({"success": False, "error": "AUDIT_REASON_REQUIRED"}), 400
+    contact_email = (
+        _valid_email(body.get("contact_email"))
+        if "contact_email" in body else company.get("contact_email")
+    )
+    if body.get("contact_email") and not contact_email:
+        return jsonify({"success": False, "error": "CONTACT_EMAIL_INVALID"}), 400
+    editable = {
+        "name": (body.get("name") or company["name"]).strip(),
+        "sector": (body.get("sector") or "").strip() or company.get("sector"),
+        "city": (body.get("city") or "").strip() or company.get("city"),
+        "business_description": (
+            (body.get("business_description") or "").strip()
+            if "business_description" in body else company.get("business_description")
+        ),
+        "goal_90_days": (
+            (body.get("goal_90_days") or "").strip()
+            if "goal_90_days" in body else company.get("goal_90_days")
+        ),
+        "primary_challenge": (
+            (body.get("primary_challenge") or "").strip()
+            if "primary_challenge" in body else company.get("primary_challenge")
+        ),
+    }
+    if not editable["name"]:
+        return jsonify({"success": False, "error": "COMPANY_NAME_REQUIRED"}), 400
     db.execute(
-        "UPDATE companies SET lifecycle_status=? WHERE company_id=?",
-        (status, company_id),
+        """UPDATE companies SET name=?,sector=?,city=?,business_description=?,
+           goal_90_days=?,primary_challenge=?,contact_email=?,lifecycle_status=?
+           WHERE company_id=?""",
+        (
+            editable["name"], editable["sector"], editable["city"],
+            editable["business_description"], editable["goal_90_days"],
+            editable["primary_challenge"], contact_email, status, company_id,
+        ),
     )
     _admin_audit(
-        db, current_account()["account_id"], "company_status_update",
+        db, current_account()["account_id"], "company_updated",
         "company", company_id, company_id, reason,
-        {"from_status": company["lifecycle_status"], "to_status": status},
+        {
+            "from_status": company["lifecycle_status"], "to_status": status,
+            "updated_fields": sorted(
+                key for key in (
+                    "name", "sector", "city", "business_description",
+                    "goal_90_days", "primary_challenge", "contact_email",
+                    "lifecycle_status",
+                ) if key in body
+            ),
+        },
     )
     db.commit()
     return jsonify({"success": True, "data": {
-        "company_id": company_id, "lifecycle_status": status
+        "company_id": company_id, "company_code": company.get("company_code"),
+        "lifecycle_status": status, "contact_email": contact_email,
     }})
 
 
@@ -4888,6 +5786,8 @@ def passport_report_text(company_id):
         "══════════════════════════════════════════",
         "",
         f"تاريخ التصدير: {context['export_date']}",
+        f"company_id: {company['company_id']}",
+        f"company_code: {company.get('company_code') or 'N/A'}",
         f"Snapshot: {review['snapshot']['scan_id'] or 'NOT_RUN'}",
         "",
         "❶  حالة Sana Scan",

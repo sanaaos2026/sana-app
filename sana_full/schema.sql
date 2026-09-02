@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS companies (
     vision TEXT,
     main_goal TEXT,
     signup_code TEXT UNIQUE,
+    company_code TEXT UNIQUE,
+    contact_email TEXT,
     created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
     sds_done SMALLINT DEFAULT 0,
     success_criteria TEXT,
@@ -37,14 +39,15 @@ CREATE TABLE IF NOT EXISTS user_accounts (
     referral_source TEXT,
     is_admin SMALLINT NOT NULL DEFAULT 0,
     admin_role TEXT NOT NULL DEFAULT 'USER',
+    admin_permissions TEXT NOT NULL DEFAULT '[]',
     account_status TEXT NOT NULL DEFAULT 'active',
     last_login_at TIMESTAMPTZ,
     created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
     FOREIGN KEY (company_id) REFERENCES companies(company_id),
-    CONSTRAINT user_accounts_company_or_global_super_admin
+    CONSTRAINT user_accounts_company_or_system_admin
       CHECK (
         company_id IS NOT NULL
-        OR (admin_role = 'SUPER_ADMIN' AND is_admin = 1)
+        OR (admin_role IN ('ADMIN','SUPER_ADMIN') AND is_admin = 1)
       )
 );
 
@@ -246,6 +249,39 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_admin_audit_created
     ON admin_audit_log(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS company_invitations (
+    invitation_id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL REFERENCES companies(company_id),
+    account_id TEXT NOT NULL REFERENCES user_accounts(account_id),
+    email TEXT NOT NULL,
+    company_role TEXT NOT NULL
+      CHECK (company_role IN ('COMPANY_OWNER','COMPANY_MEMBER')),
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ,
+    created_by TEXT NOT NULL REFERENCES user_accounts(account_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_company_invitations_company
+    ON company_invitations(company_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS admin_notification_outbox (
+    notification_id TEXT PRIMARY KEY,
+    notification_type TEXT NOT NULL,
+    recipient_email TEXT NOT NULL,
+    company_id TEXT REFERENCES companies(company_id),
+    status TEXT NOT NULL CHECK (status IN ('queued','sent','failed')),
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_by TEXT NOT NULL REFERENCES user_accounts(account_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    sent_at TIMESTAMPTZ,
+    error_code TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_admin_notification_outbox_status
+    ON admin_notification_outbox(status,created_at DESC);
 
 -- وثائق منهجية عامة (مثل "نظام سنع لجلب العملاء") — مراجع مستقلة عن أي شركة،
 -- يمكن الرجوع إليها وربطها من أي Case Workspace مستقبلي.

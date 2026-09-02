@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<title>سنع — قبول الدعوة</title>
+<style>
+body{margin:0;background:#f5f7fa;color:#222b38;font-family:Arial,sans-serif;min-height:100vh;display:grid;place-items:center}
+.card{width:min(390px,calc(100% - 32px));background:#fff;border:1px solid #e3e7ee;border-radius:14px;padding:28px}
+h1{font-size:20px;color:#091126;margin:0 0 8px}p{color:#6f7886;line-height:1.7}
+input,button{width:100%;box-sizing:border-box;padding:12px;border-radius:8px;font:inherit}
+input{border:1px solid #d8dde6;margin:10px 0}button{border:0;background:#091126;color:#fff;cursor:pointer}
+.msg{margin-top:12px;font-size:13px}.bad{color:#b43f36}.good{color:#08706d}
+</style>
+</head>
+<body>
+<div class="card">
+{% if valid %}
+  <h1>قبول الدعوة</h1>
+  <p>عيّن كلمة مرورك بنفسك. الرابط محدود الصلاحية ويُستخدم مرة واحدة.</p>
+  <input id="password" type="password" minlength="8" autocomplete="new-password" placeholder="كلمة مرور جديدة">
+  <button id="submit">تفعيل الحساب</button>
+  <div id="message" class="msg"></div>
+{% else %}
+  <h1>الرابط غير صالح</h1>
+  <p>انتهت الدعوة أو استُخدمت أو أُلغيت. اطلب إعادة إرسال دعوة جديدة.</p>
+{% endif %}
+</div>
+{% if valid %}
+<script>
+const csrf=document.querySelector('meta[name="csrf-token"]').content;
+document.getElementById('submit').onclick=async()=>{
+  const message=document.getElementById('message');
+  const password=document.getElementById('password').value;
+  const response=await fetch('/accept-invitation',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf},
+    body:JSON.stringify({token:{{ token|tojson }},password})
+  });
+  const data=await response.json();
+  message.textContent=data.message||data.error||(data.success?'تم التفعيل':'تعذر التفعيل');
+  message.className=`msg ${data.success?'good':'bad'}`;
+  if(data.success)setTimeout(()=>location.href='/login',700);
+};
+</script>
+{% endif %}
+</body>
+</html>

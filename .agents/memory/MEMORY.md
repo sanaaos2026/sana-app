@@ -1,6 +1,6 @@
 - [Sana multi-company support](sana-multi-company.md) — app was hardcoded single-tenant (COMPANY_ID="C001" in JS); added `?company_id=` query param support instead of a full switcher UI.
 - [Sana Growth OS evidence gate](sana-growth-os.md) — missing metrics stay N/A — Deferred; only a complete, sourced baseline may feed experiments or decisions.
-- [Sana auth & tenant isolation](sana-auth-isolation.md) — customer accounts are company-bound; a system SUPER_ADMIN may be company-less and reaches tenants only through audited admin routes.
+- [Sana auth & tenant isolation](sana-auth-isolation.md) — company roles stay tenant-bound; system admins may be company-less and enter tenants only through explicit audited context.
 - [Sana SQLite → PostgreSQL migration](sana-postgres-migration.md) — compatibility-wrapper pattern (auto `?`→`%s`, DictCursor, information_schema instead of PRAGMA) avoided rewriting every call site.
 - [Sana uploaded zip drift](sana-uploaded-zip-drift.md) — user-provided app.py/schema.sql in feature zips are often stale forks missing later migrations; diff against current before applying, merge additively.
 - [Sana SDS-001 discovery session](sana-sds001-discovery.md) — 7-question onboarding flow (v3); sds_done guards idempotency; success_criteria not vision; no score in outro (SCORE-03).

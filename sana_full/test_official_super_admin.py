@@ -91,7 +91,7 @@ class OfficialSuperAdminAcceptanceTest(unittest.TestCase):
             ).fetchone()
             self.assertIsNotNone(account)
             self.assertEqual(COMPANY_ID, account["company_id"])
-            self.assertEqual("USER", account["admin_role"])
+            self.assertEqual("COMPANY_OWNER", account["admin_role"])
             self.assertFalse(account["is_admin"])
             self.assertEqual("active", account["account_status"])
 
