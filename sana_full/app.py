@@ -95,6 +95,177 @@ SECTORS = [
 ]
 SECTOR_KEYS = {s["key"] for s in SECTORS}
 
+# ------------------------------------------------------------------
+# FIN-001 — بوابة القيمة المالية
+# ------------------------------------------------------------------
+# هذه السياسة تصف ما يلزم قبل أن يصبح من الآمن تحويل دليل مالي إلى قيمة
+# معروضة. وجود إيراد معلن أو قيمة صفقة في سجل قديم لا يفتح البوابة.
+FINANCIAL_VALUE_POLICY_VERSION = "FIN-001 v1.0"
+FINANCIAL_VALUE_POLICY_STATUS = "APPROVED_GATE"
+FINANCIAL_VALUE_STATUS = "DEFERRED"
+FINANCIAL_VALUE_FIELDS = frozenset({"current_value", "potential_value", "value_gap"})
+FINANCIAL_SOURCE_RULES = {
+    "AUDITED_FINANCIAL_STATEMENT": {
+        "label": "قوائم مالية مدققة",
+        "minimum_confidence": 90,
+        "validity_days": 395,
+        "role": "primary",
+        "information_types": frozenset({"Actual"}),
+    },
+    "ACCOUNTING_LEDGER_EXPORT": {
+        "label": "تصدير دفتر محاسبي أو ERP",
+        "minimum_confidence": 90,
+        "validity_days": 95,
+        "role": "primary",
+        "information_types": frozenset({"Actual"}),
+    },
+    "BANK_OR_PAYMENT_PROCESSOR_STATEMENT": {
+        "label": "كشف بنكي أو تقرير مزود دفع",
+        "minimum_confidence": 85,
+        "validity_days": 45,
+        "role": "corroborating",
+        "information_types": frozenset({"Actual"}),
+    },
+    "INVOICE_REGISTER": {
+        "label": "سجل فواتير قابل للمطابقة",
+        "minimum_confidence": 85,
+        "validity_days": 45,
+        "role": "corroborating",
+        "information_types": frozenset({"Actual"}),
+    },
+    "SIGNED_CONTRACT": {
+        "label": "عقد موقّع",
+        "minimum_confidence": 80,
+        "validity_days": 95,
+        "role": "corroborating",
+        "information_types": frozenset({"Actual", "Forecast"}),
+    },
+    "MARKET_BENCHMARK": {
+        "label": "مقارنة سوقية منشورة",
+        "minimum_confidence": 70,
+        "validity_days": 185,
+        "role": "context_only",
+        "information_types": frozenset({"Actual", "Estimate"}),
+    },
+}
+
+
+def _financial_date(value):
+    """Parse the ISO date prefix used by both SQLite and PostgreSQL."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def financial_value_gate(
+    *,
+    methodology_approved=False,
+    sources=None,
+    human_reviewed=False,
+    today=None,
+):
+    """Return the auditable FIN-001 gate without calculating a monetary value.
+
+    This is intentionally a gate, not a valuation function. It allows a future
+    approved implementation to prove its prerequisites without allowing
+    legacy revenue fields or an unverified forecast to become a report value.
+    """
+    today = today or date.today()
+    sources = list(sources or [])
+    accepted = []
+    rejected = []
+    for source in sources:
+        source = dict(source or {})
+        rule = FINANCIAL_SOURCE_RULES.get(str(source.get("source_type") or ""))
+        reason = None
+        try:
+            confidence = int(source["confidence"])
+        except (KeyError, TypeError, ValueError):
+            confidence = None
+        if not rule:
+            reason = "مصدر مالي غير مقبول"
+        elif source.get("verification_status") != "VERIFIED":
+            reason = "المصدر غير متحقق"
+        elif source.get("information_type") not in rule["information_types"]:
+            reason = "نوع المعلومة غير مقبول لهذا المصدر"
+        elif not source.get("source_ref"):
+            reason = "مرجع المصدر مفقود"
+        elif confidence is None or confidence < rule["minimum_confidence"]:
+            reason = f"الثقة أقل من {rule['minimum_confidence']}٪"
+        else:
+            observed = _financial_date(
+                source.get("observed_at")
+                or source.get("date_collected")
+                or source.get("period_end")
+            )
+            if not observed:
+                reason = "تاريخ المصدر مفقود أو غير صالح"
+            elif observed > today:
+                reason = "تاريخ المصدر في المستقبل"
+            elif (today - observed).days > rule["validity_days"]:
+                reason = f"المصدر أقدم من مدة الصلاحية ({rule['validity_days']} يومًا)"
+        if reason:
+            rejected.append({
+                "source_ref": source.get("source_ref"),
+                "reason": reason,
+            })
+        else:
+            accepted.append((source, rule))
+
+    primary_actual = [
+        source for source, rule in accepted
+        if rule["role"] == "primary" and source.get("information_type") == "Actual"
+    ]
+    independent_refs = {
+        str(source.get("source_ref"))
+        for source, _rule in accepted
+        if source.get("source_ref")
+    }
+    requirements = []
+    if not methodology_approved:
+        requirements.append("اعتماد نسخة منهجية مالية منشورة")
+    if not primary_actual:
+        requirements.append("مصدر أساسي Actual متحقق وحديث")
+    if len(independent_refs) < 2:
+        requirements.append("مصدر ثانٍ مستقل للمطابقة")
+    if not human_reviewed:
+        requirements.append("مراجعة واعتماد بشري للمدخلات والفترة")
+
+    eligible = not requirements
+    return {
+        "status": "READY" if eligible else FINANCIAL_VALUE_STATUS,
+        "eligible": eligible,
+        "methodology_version": FINANCIAL_VALUE_POLICY_VERSION,
+        "methodology_status": FINANCIAL_VALUE_POLICY_STATUS,
+        "accepted_source_count": len(accepted),
+        "rejected_sources": rejected,
+        "missing_requirements": requirements,
+        # These remain null until a separately approved calculator consumes
+        # this gate and records its formula, period, currency, and attribution.
+        "current_value": None,
+        "potential_value": None,
+        "value_gap": None,
+    }
+
+
+def _redact_deferred_financial_values(value):
+    """Prevent legacy/nested Scan payloads from leaking monetary value fields."""
+    if isinstance(value, dict):
+        return {
+            key: (
+                None
+                if key in FINANCIAL_VALUE_FIELDS
+                else _redact_deferred_financial_values(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_deferred_financial_values(item) for item in value]
+    return value
+
 
 def ask_sana_ai(system_prompt, user_prompt):
     """
@@ -3593,6 +3764,7 @@ def passport_summary(company_id):
         "تظل درجة Sana Score التشغيلية N/A — Deferred حتى تكتمل محاور Scan وتُراجع بشريًا."
     )
 
+    financial_value = financial_value_gate()
     return jsonify({
         "success": True,
         "data": {
@@ -3621,11 +3793,12 @@ def passport_summary(company_id):
             "evidence_count": evidence_count,
         },
         "meta": {
-            "financial_value_status": "DEFERRED",
+            "financial_value_status": financial_value["status"],
             "financial_value_note": (
                 "التقييم المالي غير معروض — لا توجد منهجية وأدلة معتمدة تسمح بتحويل "
                 "Sana Score إلى قيمة نقدية."
             ),
+            "financial_value_policy": financial_value,
             "disclaimer": "Sana Score هنا مؤشر تشغيلي مشروط، وليس تقييمًا ماليًا أو وعدًا بالنتيجة.",
         }
     })
@@ -4081,6 +4254,7 @@ def _build_scan_report_context(company_id):
             scan = json.loads(latest_scan_row["result"]) or {}
         except (TypeError, json.JSONDecodeError):
             scan = {}
+        scan = _redact_deferred_financial_values(scan)
         scan["scan_id"] = latest_scan_row["scan_id"]
         scan["created_at"] = latest_scan_row["created_at"]
         scan["methodology_version"] = (
@@ -4398,9 +4572,10 @@ def _build_passport_context(company_id):
     ).fetchone()["cnt"]
 
     avg_score = round(sum(a["current_score"] for a in assets) / len(assets)) if assets else 0
-    # لا توجد منهجية مالية معتمدة؛ تبقى خانات التقييم المالي القديمة None حتى لا
-    # تتحول معادلة العرض السابقة إلى تقييم نقدي مضلل.
-    current_value = potential_value = gap = None
+    financial_value = financial_value_gate()
+    current_value = financial_value["current_value"]
+    potential_value = financial_value["potential_value"]
+    gap = financial_value["value_gap"]
 
     def _asset_color(score):
         if score <= 30:   return "#E5484D"
@@ -4430,6 +4605,7 @@ def _build_passport_context(company_id):
             "التقييم المالي غير معروض — لا توجد منهجية وأدلة معتمدة تسمح بتحويل "
             "Sana Score إلى قيمة نقدية."
         ),
+        "financial_value_policy": financial_value,
         "assets_sorted":  [dict(a) for a in assets],
         "asset_colors":   asset_colors,
         "tasks_by_phase": tasks_by_phase,

@@ -1,6 +1,7 @@
 import unittest
 import uuid
 import json
+from datetime import date
 
 import app as sana_app
 from sana_scan import run_scan
@@ -299,6 +300,58 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
             ).render(**report))
             self.db.execute("DELETE FROM scan_runs WHERE scan_id=?", (scan_id,))
             self.db.commit()
+
+    def test_financial_value_gate_and_nested_scan_values_stay_deferred(self):
+        gate = sana_app.financial_value_gate(
+            sources=[{
+                "source_type": "ACCOUNTING_LEDGER_EXPORT",
+                "verification_status": "VERIFIED",
+                "information_type": "Actual",
+                "source_ref": "ledger:2026-08",
+                "confidence": 95,
+                "observed_at": "2026-08-31",
+            }],
+            today=date(2026, 9, 2),
+        )
+        self.assertEqual("DEFERRED", gate["status"])
+        self.assertFalse(gate["eligible"])
+        self.assertIn("اعتماد نسخة منهجية مالية منشورة", gate["missing_requirements"])
+        self.assertIsNone(gate["current_value"])
+        self.assertIsNone(gate["potential_value"])
+
+        scan_id = f"FINANCE{self.company_id.removeprefix('RPT')}"
+        self.db.execute(
+            """INSERT INTO scan_runs
+               (scan_id,case_id,company_id,status,result,methodology_version)
+               VALUES (?,?,?,?,?,?)""",
+            (
+                scan_id,
+                self.case_id,
+                self.company_id,
+                "COMPLETE",
+                json.dumps({
+                    "status": "COMPLETE",
+                    "case_id": self.case_id,
+                    "asset_scores": [],
+                    "current_value": 800000,
+                    "potential_value": 1200000,
+                    "value_gap": 400000,
+                    "nested": {"current_value": 777, "potential_value": 888},
+                }),
+                "test",
+            ),
+        )
+        self.db.commit()
+
+        context = sana_app._build_passport_context(self.company_id)
+        self.assertIsNone(context["current_value"])
+        self.assertIsNone(context["potential_value"])
+        self.assertIsNone(context["scan"]["current_value"])
+        self.assertIsNone(context["scan"]["potential_value"])
+        self.assertIsNone(context["scan"]["value_gap"])
+        self.assertIsNone(context["scan"]["nested"]["current_value"])
+        self.assertIsNone(context["scan"]["nested"]["potential_value"])
+        self.assertEqual("DEFERRED", context["financial_value_policy"]["status"])
 
     def test_decisions_do_not_inherit_evidence_and_snapshot_type_is_enforced(self):
         scan = run_scan(self.db, self.case_id)
