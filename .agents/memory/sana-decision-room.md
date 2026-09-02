@@ -20,3 +20,9 @@ Execution reminders must remain internal and must never change source status or 
 **Why:** Owner labels are not necessarily account identities. Guessing the recipient can hide an alert from its owner or expose it to the wrong account.
 
 **How to apply:** Scope inbox reads and updates to the resolved recipient account. If ownership is ambiguous, keep the failed delivery visible to administrators and require an explicit assignment before delivery.
+
+P0 completion must append one sourced Result and one explicit Impact Review against the captured baseline; the historical review is immutable and must not auto-change asset scores.
+
+**Why:** Marking a task complete or applying an expected score delta is not proof that the business outcome improved, and overwriting the review would erase the decision trail.
+
+**How to apply:** Close a P0 task only with a result summary, source reference, impact outcome, and reviewer note. Keep unsupported financial or growth effects `N/A — Deferred`; change scores only through separately qualified evidence.

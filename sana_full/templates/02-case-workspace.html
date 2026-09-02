@@ -664,7 +664,15 @@ function render(d){
     (decCounts['مقترح'] + decCounts['قيد التنفيذ']) ? `${decCounts['مقترح'] + decCounts['قيد التنفيذ']} بانتظار الاعتماد` : null,
   ].filter(Boolean).join(' · ');
   html += `<section><h2>القرارات الناتجة (${d.decisions.length})</h2>${decBreakdown ? `<p style="font-size:12px; color:#9AA0AB; margin:-8px 0 12px;">${decBreakdown}</p>` : ''}`;
-  if(d.decisions.length === 0){ html += `<p style="color:#6E7580; font-size:13px;">لا توجد قرارات بعد لهذه القضية.</p>`; }
+  const p0Decision = d.decisions.find(dec => dec.phase_label === 'P0');
+  if(!p0Decision && d.scan && ['REVIEW_REQUIRED','COMPLETE'].includes(d.scan.status) && d.scan.proposed_decision){
+    html += `<div class="decision-box" style="margin-bottom:12px;border-color:#F2B233;">
+      <div class="t">الخطوة التالية: ثبّت قرار P0 من التشخيص</div>
+      <div class="r">سيُنشأ القرار من الاختناق والمصادر المؤهلة في لقطة Sana Scan نفسها.</div>
+      <button class="btn btn-primary" id="createP0DecisionBtn" onclick="createP0Decision()">إنشاء قرار P0 للمراجعة</button>
+    </div>`;
+  }
+  if(d.decisions.length === 0 && !p0Decision){ html += `<p style="color:#6E7580; font-size:13px;">لا يوجد قرار بعد. أكمل Evidence Gate وشغّل Sana Scan أولًا.</p>`; }
   const decisionsByPhase = {};
   d.decisions.forEach(dec => {
     const key = dec.phase_label || null;
@@ -687,8 +695,7 @@ function render(d){
         </div>`;
     });
   });
-  html += `<a href="https://lawyeroffice-jkcjqayg.manus.space" target="_blank" rel="noopener noreferrer" class="link-out" style="display:block; margin-bottom:10px;">📋 خطة العمل التنفيذية (90 يومًا) ↗</a>`;
-  html += `<a href="/passport${qs(CASE_COMPANY_ID)}" class="link-out">← بعد تنفيذ القرارات، شاهد أثرها على قيمة الشركة الكاملة</a></section>`;
+  html += `</section>`;
 
   const requiredTasks = (d.tasks || []).filter(t => t.status !== 'منجزة');
   if(requiredTasks.length){
@@ -703,6 +710,8 @@ function render(d){
         <div style="font-size:12.5px; font-weight:600; color:#F2B233; margin-bottom:8px;">تحت مرحلة: ${phase}</div>`;
       byPhaseReq[phase].forEach(t => {
         const statusColor = t.status === 'قيد التنفيذ' ? '#0EA5A5' : '#9AA0AB';
+        const linkedDecision = d.decisions.find(dec => dec.decision_id === t.decision_id);
+        const isP0Task = linkedDecision && linkedDecision.phase_label === 'P0';
         html += `
           <div class="evidence-item">
             <span class="dot" style="background:${statusColor};"></span>
@@ -711,6 +720,7 @@ function render(d){
                 <span class="conf-tag" style="margin-right:6px;">— ${t.status}${t.priority ? `، أولوية ${t.priority}` : ''}${t.due_date ? `، موعده ${t.due_date}` : ''}</span>
               </div>
               ${t.value_note ? `<div style="font-size:12px; color:#6E7580; margin-top:2px;">${t.value_note}</div>` : ''}
+              ${isP0Task ? `<button class="btn btn-primary" style="margin-top:9px;" onclick="openResultModal('${t.task_id}')">سجّل Result وراجع Impact</button>` : ''}
             </div>
           </div>`;
       });
@@ -744,6 +754,23 @@ function render(d){
     });
     html += `</section>`;
   }
+
+  const impactReviews = d.p0_impact_reviews || [];
+  html += `<section><h2>Impact Review — سجل الأثر (${impactReviews.length})</h2>`;
+  if(!impactReviews.length){
+    html += `<p style="color:#6E7580;font-size:13px;">ينتظر تنفيذ مهمة P0 وتسجيل نتيجة بمصدر واضح.</p>`;
+  } else {
+    impactReviews.forEach(r => {
+      const labels = {IMPROVED:'تحسّن',UNCHANGED:'لم يتغير',WORSE:'تراجع',INCONCLUSIVE:'غير حاسم'};
+      html += `<div class="knowledge-finding">
+        <div class="knowledge-finding-title">${escHtml(labels[r.impact_outcome] || r.impact_outcome)}</div>
+        <div class="knowledge-finding-text"><strong>Result:</strong> ${escHtml(r.result_summary)}</div>
+        <div class="knowledge-finding-text"><strong>Impact:</strong> ${escHtml(r.impact_notes)}</div>
+        <div class="knowledge-meta"><span>المصدر: ${escHtml(r.result_source_ref)}</span><span>${escHtml((r.reviewed_at || '').slice(0,10))}</span><span>سجل تاريخي غير قابل للكتابة فوقه</span></div>
+      </div>`;
+    });
+  }
+  html += `</section>`;
 
   // ══════════════════════════════════════════════════════════
   // قسم الأصول المتأثرة
@@ -1078,7 +1105,22 @@ async function addEvidence(){
   }
 }
 
-// DEC-01: modal اعتماد القرار بثلاثة حقول إلزامية
+async function createP0Decision(){
+  const btn = document.getElementById('createP0DecisionBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'جارٍ تثبيت القرار...'; }
+  try{
+    const res = await fetch(`/api/cases/${CASE_ID}/p0-decision`, {method:'POST'});
+    const json = await res.json();
+    if(!res.ok || !json.success) throw new Error(json.message || 'تعذر إنشاء القرار');
+    showToast('تم إنشاء قرار P0 من لقطة التشخيص وأدلتها');
+    loadCase();
+  }catch(e){
+    showToast(e.message);
+    if(btn){ btn.disabled = false; btn.textContent = 'إنشاء قرار P0 للمراجعة'; }
+  }
+}
+
+// DEC-01: اعتماد القرار وخلق مهمة التنفيذ في معاملة واحدة
 function openApproveModal(decisionId){
   // أزل modal قديم إن وُجد
   const old = document.getElementById('approveModal');
@@ -1096,6 +1138,8 @@ function openApproveModal(decisionId){
        <input id="mDue" type="date" required style="width:100%;box-sizing:border-box;border:1.5px solid #DEE1EC;border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;margin-bottom:14px;">
       <label style="display:block;font-size:12.5px;font-weight:600;color:#0B132B;margin-bottom:4px;">مقياس النجاح <span style="color:#E53935;">*</span></label>
        <input id="mMetric" required placeholder="مثال: ارتفاع نسبة تحويل العملاء من 5% إلى 10%" style="width:100%;box-sizing:border-box;border:1.5px solid #DEE1EC;border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;margin-bottom:6px;">
+      <label style="display:block;font-size:12.5px;font-weight:600;color:#0B132B;margin:8px 0 4px;">مهمة التنفيذ التالية <span style="color:#E53935;">*</span></label>
+       <input id="mNextAction" required placeholder="إجراء واحد واضح قابل للإنجاز" style="width:100%;box-sizing:border-box;border:1.5px solid #DEE1EC;border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;margin-bottom:6px;">
       <div id="mErr" style="font-size:12px;color:#E53935;min-height:16px;margin-bottom:14px;"></div>
       <div style="display:flex;gap:10px;">
         <button id="mConfirm" class="btn btn-primary" style="flex:1;padding:11px;" onclick="submitApprove('${decisionId}')">اعتماد ✓</button>
@@ -1110,17 +1154,19 @@ async function submitApprove(id){
   const metric = (document.getElementById('mMetric').value || '').trim();
   const owner  = (document.getElementById('mOwner').value  || '').trim();
   const due    = (document.getElementById('mDue').value    || '').trim();
+  const nextAction = (document.getElementById('mNextAction').value || '').trim();
   const err    = document.getElementById('mErr');
   if(!owner){ err.textContent = 'المسؤول عن التنفيذ مطلوب لاعتماد القرار.'; return; }
   if(!due){ err.textContent = 'الموعد النهائي مطلوب لاعتماد القرار.'; return; }
   if(!metric){ err.textContent = 'مقياس النجاح مطلوب لاعتماد القرار.'; return; }
+  if(!nextAction){ err.textContent = 'مهمة التنفيذ التالية مطلوبة لاعتماد القرار.'; return; }
   err.textContent = '';
   const btn = document.getElementById('mConfirm');
   btn.disabled = true; btn.textContent = 'جارٍ الاعتماد...';
   try {
     const res = await fetch(`/api/decisions/${id}/approve`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({owner_name: owner, due_date: due, success_metric: metric})
+      body: JSON.stringify({owner_name: owner, due_date: due, success_metric: metric, next_action: nextAction})
     });
     const json = await res.json();
     if(json.success){
@@ -1134,6 +1180,62 @@ async function submitApprove(id){
   } catch(e) {
     err.textContent = 'تعذر الاتصال بالخادم — لم تتغير حالة القرار. حاول مرة أخرى.';
     btn.disabled = false; btn.textContent = 'اعتماد ✓';
+  }
+}
+
+function openResultModal(taskId){
+  const old = document.getElementById('resultModal');
+  if(old) old.remove();
+  const modal = document.createElement('div');
+  modal.id = 'resultModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(11,19,43,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  modal.innerHTML = `<div style="background:#fff;border-radius:14px;padding:24px;width:100%;max-width:480px;max-height:90vh;overflow:auto;">
+    <div style="font-size:16px;font-weight:700;color:#0B132B;margin-bottom:16px;">Result → Impact Review</div>
+    <label style="display:block;font-size:12px;font-weight:600;">ما النتيجة التي حدثت؟</label>
+    <textarea id="rSummary" rows="3" style="width:100%;padding:9px;border:1px solid #DEE1EC;border-radius:8px;font-family:inherit;"></textarea>
+    <label style="display:block;font-size:12px;font-weight:600;margin-top:10px;">مرجع النتيجة</label>
+    <input id="rSource" placeholder="تقرير، سجل، مستند، أو رابط داخلي" style="width:100%;padding:9px;border:1px solid #DEE1EC;border-radius:8px;font-family:inherit;">
+    <label style="display:block;font-size:12px;font-weight:600;margin-top:10px;">الحكم مقارنة بالـBaseline</label>
+    <select id="rOutcome" style="width:100%;padding:9px;border:1px solid #DEE1EC;border-radius:8px;font-family:inherit;background:#fff;">
+      <option value="IMPROVED">تحسّن</option><option value="UNCHANGED">لم يتغير</option>
+      <option value="WORSE">تراجع</option><option value="INCONCLUSIVE">غير حاسم</option>
+    </select>
+    <label style="display:block;font-size:12px;font-weight:600;margin-top:10px;">لماذا هذا هو حكم الأثر؟</label>
+    <textarea id="rNotes" rows="3" style="width:100%;padding:9px;border:1px solid #DEE1EC;border-radius:8px;font-family:inherit;"></textarea>
+    <div id="rErr" style="font-size:12px;color:#E53935;min-height:18px;margin-top:6px;"></div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button id="rConfirm" class="btn btn-primary" style="flex:1;" onclick="submitP0Result('${taskId}')">حفظ النتيجة وإغلاق المهمة</button>
+      <button class="btn" style="flex:1;background:#F5F6FB;" onclick="document.getElementById('resultModal').remove()">إلغاء</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+}
+
+async function submitP0Result(taskId){
+  const payload = {
+    result_summary: document.getElementById('rSummary').value.trim(),
+    result_source_ref: document.getElementById('rSource').value.trim(),
+    impact_outcome: document.getElementById('rOutcome').value,
+    impact_notes: document.getElementById('rNotes').value.trim()
+  };
+  const err = document.getElementById('rErr');
+  if(!payload.result_summary || !payload.result_source_ref || !payload.impact_notes){
+    err.textContent = 'أكمل النتيجة ومرجعها وتفسير الأثر.'; return;
+  }
+  const btn = document.getElementById('rConfirm');
+  btn.disabled = true; btn.textContent = 'جارٍ الحفظ...';
+  try{
+    const res = await fetch(`/api/tasks/${taskId}/p0-result`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if(!res.ok || !json.success) throw new Error(json.message || 'تعذر حفظ النتيجة');
+    document.getElementById('resultModal').remove();
+    showToast('أُغلقت الحلقة: Result محفوظ وImpact Review موثق');
+    loadCase();
+  }catch(e){
+    err.textContent = e.message;
+    btn.disabled = false; btn.textContent = 'حفظ النتيجة وإغلاق المهمة';
   }
 }
 

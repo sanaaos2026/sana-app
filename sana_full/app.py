@@ -710,6 +710,23 @@ def init_db(force=False):
         )""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_task_evidence_task ON task_evidence(task_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_task_evidence_company ON task_evidence(company_id)")
+        conn.execute("""CREATE TABLE IF NOT EXISTS p0_impact_reviews (
+            review_id TEXT PRIMARY KEY,
+            company_id TEXT NOT NULL REFERENCES companies(company_id),
+            case_id TEXT NOT NULL REFERENCES cases(case_id),
+            decision_id TEXT NOT NULL REFERENCES decisions(decision_id),
+            task_id TEXT NOT NULL UNIQUE REFERENCES tasks(task_id),
+            baseline_snapshot_json TEXT NOT NULL,
+            result_summary TEXT NOT NULL,
+            result_source_ref TEXT NOT NULL,
+            impact_outcome TEXT NOT NULL
+              CHECK (impact_outcome IN ('IMPROVED','UNCHANGED','WORSE','INCONCLUSIVE')),
+            impact_notes TEXT NOT NULL,
+            reviewed_by TEXT NOT NULL,
+            reviewed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""")
+        conn.execute("""CREATE INDEX IF NOT EXISTS idx_p0_impact_reviews_case
+                        ON p0_impact_reviews(company_id,case_id,reviewed_at DESC)""")
 
         # ── سنع الخبير: نظام اكتشاف وتأهيل الخبراء (مستقل تمامًا عن جداول الشركات) ──
         conn.execute("""CREATE TABLE IF NOT EXISTS experts (
@@ -3329,6 +3346,7 @@ def case_detail(case_id):
     decision_ids = [d["decision_id"] for d in decisions]
     tasks = []
     affected_assets = []
+    p0_impact_reviews = []
     if decision_ids:
         placeholders = ",".join("?" * len(decision_ids))
         tasks = db.execute(
@@ -3353,6 +3371,11 @@ def case_detail(case_id):
                      a.current_score, a.fragility_score, a.status
             ORDER BY total_impact DESC
         """, decision_ids).fetchall()
+        p0_impact_reviews = db.execute(f"""
+            SELECT * FROM p0_impact_reviews
+            WHERE company_id=? AND case_id=? AND decision_id IN ({placeholders})
+            ORDER BY reviewed_at DESC
+        """, [case["company_id"], case_id, *decision_ids]).fetchall()
 
     # SOP docs — لا يوجد ربط مباشر بين methodology_docs والقضايا حالياً
     sop_docs = []  # قابل للتوسعة: أضف عمود case_id لـmethodology_docs لاحقاً
@@ -3369,6 +3392,7 @@ def case_detail(case_id):
             "evidence":        [dict(e) for e in evidence],
             "decisions":       [dict(d) for d in decisions],
             "tasks":           [dict(t) for t in tasks],
+            "p0_impact_reviews": [dict(r) for r in p0_impact_reviews],
             "affected_assets": [dict(a) for a in affected_assets],
             "sop_docs":        sop_docs,
             "reports":         [],  # لا توجد جداول تقارير مرتبطة بالقضية حالياً
@@ -5218,6 +5242,120 @@ def complete_task(task_id):
             "new_asset_score": updated_assets[0]["new_score"] if updated_assets else None
         }
     })
+
+
+@app.route("/api/tasks/<task_id>/p0-result", methods=["POST"])
+def record_p0_task_result(task_id):
+    """يسجل نتيجة P0 ومراجعة أثرها كسجل تاريخي واحد ثم يغلق المهمة ذريًا."""
+    db = get_db()
+    task = db.execute(
+        """SELECT t.*, d.case_id, d.phase_label AS decision_phase_label,
+                  d.status AS decision_status,
+                  d.success_metric, d.scan_id
+           FROM tasks t
+           JOIN decisions d ON d.decision_id=t.decision_id
+           WHERE t.task_id=? FOR UPDATE""",
+        (task_id,),
+    ).fetchone()
+    if not task:
+        return jsonify({"success": False, "error": "TASK_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(task["company_id"])
+    if guard:
+        return guard
+    if task["decision_phase_label"] != "P0" or task["decision_status"] not in ("معتمد", "قيد التنفيذ"):
+        return jsonify({
+            "success": False,
+            "error": "P0_APPROVED_DECISION_REQUIRED",
+            "message": "تسجيل النتيجة متاح فقط لمهمة ناتجة عن قرار P0 معتمد.",
+        }), 409
+    if db.execute(
+        "SELECT review_id FROM p0_impact_reviews WHERE task_id=?", (task_id,)
+    ).fetchone():
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_REVIEW_ALREADY_RECORDED",
+            "message": "مراجعة الأثر محفوظة تاريخيًا ولا يمكن الكتابة فوقها.",
+        }), 409
+
+    body = request.get_json(silent=True) or {}
+    result_summary = (body.get("result_summary") or "").strip()
+    result_source_ref = (body.get("result_source_ref") or "").strip()
+    impact_outcome = (body.get("impact_outcome") or "").strip().upper()
+    impact_notes = (body.get("impact_notes") or "").strip()
+    if not all((result_summary, result_source_ref, impact_outcome, impact_notes)):
+        return jsonify({
+            "success": False,
+            "error": "P0_RESULT_FIELDS_REQUIRED",
+            "message": "يلزم وصف النتيجة ومرجعها وحكم الأثر وملاحظات المراجعة.",
+        }), 400
+    if impact_outcome not in {"IMPROVED", "UNCHANGED", "WORSE", "INCONCLUSIVE"}:
+        return jsonify({"success": False, "error": "P0_IMPACT_OUTCOME_INVALID"}), 400
+
+    account = current_account()
+    reviewed_by = account["account_id"] if account else None
+    if not reviewed_by:
+        return jsonify({"success": False, "error": "AUTHENTICATION_REQUIRED"}), 401
+
+    baseline_snapshot = {
+        "success_metric": task["success_metric"],
+        "scan_id": task["scan_id"],
+    }
+    if task["scan_id"]:
+        scan_row = db.execute(
+            "SELECT result FROM scan_runs WHERE scan_id=? AND company_id=? AND case_id=?",
+            (task["scan_id"], task["company_id"], task["case_id"]),
+        ).fetchone()
+        if scan_row:
+            try:
+                baseline_snapshot["diagnostic_baseline"] = (
+                    json.loads(scan_row["result"]).get("diagnostic_baseline") or {}
+                )
+            except (TypeError, json.JSONDecodeError):
+                baseline_snapshot["diagnostic_baseline"] = {}
+
+    review_id = "P0R-" + secrets.token_hex(6).upper()
+    try:
+        db.execute(
+            """INSERT INTO p0_impact_reviews
+               (review_id,company_id,case_id,decision_id,task_id,
+                baseline_snapshot_json,result_summary,result_source_ref,
+                impact_outcome,impact_notes,reviewed_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                review_id, task["company_id"], task["case_id"], task["decision_id"],
+                task_id, json.dumps(baseline_snapshot, ensure_ascii=False),
+                result_summary, result_source_ref, impact_outcome, impact_notes,
+                reviewed_by,
+            ),
+        )
+        db.execute(
+            """UPDATE tasks
+               SET status='منجزة',
+                   completed_at=to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+                   value_note=?, updated_at=now()
+               WHERE task_id=?""",
+            (result_summary, task_id),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        app.logger.exception("P0 result recording failed: task_id=%s", task_id)
+        return jsonify({
+            "success": False,
+            "error": "P0_RESULT_RECORDING_FAILED",
+            "message": "تعذر حفظ النتيجة؛ لم تُغلق المهمة.",
+        }), 500
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "review_id": review_id,
+            "task_id": task_id,
+            "status": "منجزة",
+            "impact_outcome": impact_outcome,
+            "asset_scores_changed": False,
+        },
+    }), 201
 
 
 # ------------------------------------------------------------------

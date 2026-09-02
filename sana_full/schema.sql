@@ -205,6 +205,25 @@ CREATE TABLE IF NOT EXISTS tasks (
     FOREIGN KEY (decision_id) REFERENCES decisions(decision_id)
 );
 
+-- سجل P0 تاريخي: النتيجة والأثر لا يكتبان فوق الحالة الحالية ولا يرفعان درجة أصل تلقائيًا.
+CREATE TABLE IF NOT EXISTS p0_impact_reviews (
+    review_id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL REFERENCES companies(company_id),
+    case_id TEXT NOT NULL REFERENCES cases(case_id),
+    decision_id TEXT NOT NULL REFERENCES decisions(decision_id),
+    task_id TEXT NOT NULL UNIQUE REFERENCES tasks(task_id),
+    baseline_snapshot_json TEXT NOT NULL,
+    result_summary TEXT NOT NULL,
+    result_source_ref TEXT NOT NULL,
+    impact_outcome TEXT NOT NULL
+      CHECK (impact_outcome IN ('IMPROVED','UNCHANGED','WORSE','INCONCLUSIVE')),
+    impact_notes TEXT NOT NULL,
+    reviewed_by TEXT NOT NULL,
+    reviewed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_p0_impact_reviews_case
+    ON p0_impact_reviews(company_id,case_id,reviewed_at DESC);
+
 -- وثائق منهجية عامة (مثل "نظام سنع لجلب العملاء") — مراجع مستقلة عن أي شركة،
 -- يمكن الرجوع إليها وربطها من أي Case Workspace مستقبلي.
 CREATE TABLE IF NOT EXISTS methodology_docs (
