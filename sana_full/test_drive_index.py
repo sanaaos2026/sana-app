@@ -1,6 +1,8 @@
 """حواجز فهرس Drive: قراءة Metadata، idempotency، الخصوصية، والسلسلة."""
 import json
 import os
+import socket
+import subprocess
 import sys
 import threading
 import unittest
@@ -8,12 +10,14 @@ import uuid
 import time
 from pathlib import Path
 from unittest.mock import patch
+from urllib.request import urlopen
 
 BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from app import _connect_pg, app as flask_app
+from werkzeug.security import generate_password_hash
 from drive_index import (
     add_drive_provenance,
     create_client_mapping,
@@ -758,6 +762,308 @@ class DriveIndexIntegrationTest(unittest.TestCase):
         )
         self.assertIsNotNone(rule)
         self.assertIn("PATCH", rule.methods)
+
+
+@unittest.skipUnless(
+    os.environ.get("RUN_SANA_BROWSER_TESTS") == "1"
+    and (os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_PASSWORD")),
+    "يتطلب RUN_SANA_BROWSER_TESTS=1 واتصال قاعدة البيانات",
+)
+class DriveExcerptBrowserTest(unittest.TestCase):
+    """اختبار قبول المتصفح لمسار مراجعة مقتطف Drive من حساب إداري حقيقي."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = _connect_pg()
+        ensure_knowledge_schema(cls.db)
+        ensure_schema(cls.db)
+        cls.company_id = "DRIVE-BROWSER-" + uuid.uuid4().hex[:10].upper()
+        cls.account_id = "ACC-DRIVE-BROWSER-" + uuid.uuid4().hex[:10].upper()
+        cls.case_id = "CASE-DRIVE-BROWSER-" + uuid.uuid4().hex[:10].upper()
+        cls.file_id = "FILE-DRIVE-BROWSER-" + uuid.uuid4().hex[:10].upper()
+        cls.email = f"drive-browser-{uuid.uuid4().hex[:10]}@example.test"
+        cls.password = "Browser-test-password-2026!"
+        cls.base_url = None
+        cls.server = None
+        cls.browser = None
+        cls.playwright = None
+
+        cls.db.execute(
+            """INSERT INTO companies
+               (company_id,name,sector,sds_done,main_goal)
+               VALUES (?,?,?,1,?)""",
+            (
+                cls.company_id,
+                "شركة اختبار اعتماد Drive",
+                "tech",
+                "اختبار اعتماد مقتطفات Drive",
+            ),
+        )
+        cls.db.execute(
+            """INSERT INTO user_accounts
+               (account_id,email,password_hash,company_id,is_admin)
+               VALUES (?,?,?,?,1)""",
+            (
+                cls.account_id,
+                cls.email,
+                generate_password_hash(cls.password),
+                cls.company_id,
+            ),
+        )
+        cls.db.execute(
+            """INSERT INTO cases
+               (case_id,company_id,case_title)
+               VALUES (?,?,?)""",
+            (
+                cls.case_id,
+                cls.company_id,
+                "قضية اختبار اعتماد Drive المرئي",
+            ),
+        )
+        cls.db.execute(
+            """INSERT INTO drive_files
+               (drive_file_id,name,mime_type,is_folder,drive_state,access_status,
+                company_id,confidentiality,knowledge_classification,web_view_link)
+               VALUES (?,?,?,0,'active','ok',?,?,?,?)""",
+            (
+                cls.file_id,
+                "ملف Drive سري لاختبار المتصفح.txt",
+                "text/plain",
+                cls.company_id,
+                "CLIENT_CONFIDENTIAL",
+                "client_context",
+                "https://drive/browser-test",
+            ),
+        )
+        cls.db.commit()
+
+        extracted = extract_selected_drive_excerpt(
+            cls.db,
+            cls.file_id,
+            section_locator="قسم المتصفح 1",
+            start_char=0,
+            end_char=4000,
+            case_id=cls.case_id,
+            actor=cls.account_id,
+            actor_company_id=cls.company_id,
+            mirror=FakeDrive(),
+        )
+        if not extracted.get("success"):
+            cls._cleanup_fixture()
+            raise RuntimeError(f"تعذر تجهيز مقتطف اختبار المتصفح: {extracted}")
+        cls.excerpt_id = extracted["excerpt_id"]
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        cls.port = sock.getsockname()[1]
+        sock.close()
+        server_env = os.environ.copy()
+        server_env.update(
+            {
+                "PORT": str(cls.port),
+                "SANA_ENV": "production",
+                "REPLIT_DEPLOYMENT": "1",
+                "SESSION_SECRET": "drive-browser-test-session-secret",
+            }
+        )
+        cls.server = subprocess.Popen(
+            [sys.executable, "app.py"],
+            cwd=BASE_DIR,
+            env=server_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        cls.base_url = f"http://127.0.0.1:{cls.port}"
+        try:
+            for _ in range(60):
+                if cls.server.poll() is not None:
+                    raise RuntimeError("خادم اختبار المتصفح توقف قبل الجاهزية")
+                try:
+                    with urlopen(f"{cls.base_url}/login", timeout=1) as response:
+                        if response.status == 200:
+                            break
+                except Exception:
+                    time.sleep(0.25)
+            else:
+                raise RuntimeError("انتهت مهلة تشغيل خادم اختبار المتصفح")
+        except Exception:
+            cls._stop_server()
+            cls._cleanup_fixture()
+            raise
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.browser:
+            cls.browser.close()
+        if cls.playwright:
+            cls.playwright.stop()
+        cls._stop_server()
+        cls._cleanup_fixture()
+        cls.db.close()
+
+    @classmethod
+    def _stop_server(cls):
+        if cls.server and cls.server.poll() is None:
+            cls.server.terminate()
+            try:
+                cls.server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                cls.server.kill()
+                cls.server.wait(timeout=5)
+
+    @classmethod
+    def _cleanup_fixture(cls):
+        if not getattr(cls, "db", None):
+            return
+        try:
+            cls.db.rollback()
+            object_rows = cls.db.execute(
+                """SELECT entity_id FROM drive_provenance_links
+                   WHERE entity_type='knowledge_object' AND drive_file_id=?""",
+                (getattr(cls, "file_id", ""),),
+            ).fetchall()
+            object_ids = [row["entity_id"] for row in object_rows]
+            cls.db.execute(
+                "DELETE FROM drive_provenance_links WHERE drive_file_id=?",
+                (getattr(cls, "file_id", ""),),
+            )
+            cls.db.execute(
+                "DELETE FROM drive_knowledge_sources WHERE drive_file_id=?",
+                (getattr(cls, "file_id", ""),),
+            )
+            for object_id in object_ids:
+                cls.db.execute(
+                    "DELETE FROM knowledge_objects WHERE object_id=?",
+                    (object_id,),
+                )
+            cls.db.execute(
+                "DELETE FROM drive_source_excerpts WHERE drive_file_id=?",
+                (getattr(cls, "file_id", ""),),
+            )
+            cls.db.execute(
+                "DELETE FROM research_sources WHERE drive_file_id=?",
+                (getattr(cls, "file_id", ""),),
+            )
+            cls.db.execute(
+                "DELETE FROM drive_files WHERE drive_file_id=?",
+                (getattr(cls, "file_id", ""),),
+            )
+            cls.db.execute(
+                "DELETE FROM cases WHERE case_id=?",
+                (getattr(cls, "case_id", ""),),
+            )
+            cls.db.execute(
+                "DELETE FROM user_accounts WHERE account_id=?",
+                (getattr(cls, "account_id", ""),),
+            )
+            cls.db.execute(
+                "DELETE FROM companies WHERE company_id=?",
+                (getattr(cls, "company_id", ""),),
+            )
+            cls.db.commit()
+        except Exception:
+            cls.db.rollback()
+            raise
+
+    def test_browser_admin_can_review_confidential_drive_excerpt(self):
+        from playwright.sync_api import sync_playwright
+        type(self).playwright = sync_playwright().start()
+        type(self).browser = self.playwright.chromium.launch(headless=True)
+
+        page = self.browser.new_page(viewport={"width": 1440, "height": 1100})
+        page.goto(f"{self.base_url}/login", wait_until="networkidle")
+        page.locator("#email").fill(self.email)
+        page.locator("#password").fill(self.password)
+        page.locator("#submitBtn").click()
+        page.wait_for_url("**/home", timeout=10_000)
+
+        page.goto(f"{self.base_url}/knowledge", wait_until="networkidle")
+        card = page.locator(f"#excerpt-{self.excerpt_id}")
+        card.wait_for(state="visible", timeout=10_000)
+        self.assertIn(
+            "ملف Drive سري لاختبار المتصفح.txt",
+            card.inner_text(),
+        )
+        self.assertIn("قسم المتصفح 1", card.inner_text())
+        self.assertIn("شركة اختبار اعتماد Drive", card.inner_text())
+        self.assertIn("قضية اختبار اعتماد Drive المرئي", card.inner_text())
+        self.assertIn("CLIENT_CONFIDENTIAL", card.inner_text())
+        self.assertIn("الاعتماد محظور", card.inner_text())
+
+        card.locator(".review-reason").fill("المقتطف يحتاج إخفاء هوية قبل النشر.")
+        card.locator(".review-references").fill("BROWSER-DRIVE-REVIEW")
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "PATCH"
+                and "/api/knowledge/drive/excerpts/" in response.url
+            )
+        ) as blocked_response:
+            card.get_by_role("button", name="اعتماد وإنشاء الكائنات").click()
+        blocked_payload = blocked_response.value.json()
+        self.assertFalse(blocked_payload["success"])
+        self.assertEqual(
+            "ANONYMIZATION_DOCUMENTATION_REQUIRED",
+            blocked_payload["error"],
+        )
+        self.assertIn("المقتطف السري لا يُنشر", card.locator(".review-msg").inner_text())
+        self.assertTrue(card.is_visible())
+
+        card.locator(".anonymized-text").fill(
+            "يجب مراجعة طلبات العملاء قبل اعتمادها."
+        )
+        card.locator(".anonymization-notes").fill(
+            "أزيل اسم العميل والمعرف الداخلي، وعُمّم الوصف إلى طلبات العملاء."
+        )
+        first_object = card.locator(".ko-object").nth(0)
+        first_object.locator(".ko-category").fill("browser-review")
+        first_object.locator(".ko-title").fill("قاعدة مراجعة طلبات العملاء")
+        first_object.locator(".ko-statement").fill(
+            "راجع طلبات العملاء قبل اعتمادها."
+        )
+        first_object.locator(".ko-when").fill("عند وصول طلب عميل جديد.")
+        first_object.locator(".ko-not-when").fill("لا ينطبق على الطلبات الداخلية.")
+
+        card.get_by_role("button", name="+ كائن صغير آخر").click()
+        self.assertEqual(2, card.locator(".ko-object").count())
+        second_object = card.locator(".ko-object").nth(1)
+        second_object.locator(".ko-category").fill("browser-review")
+        second_object.locator(".ko-title").fill("توثيق قرار المراجعة")
+        second_object.locator(".ko-statement").fill(
+            "وثّق قرار المراجعة بمصدر واضح."
+        )
+        second_object.locator(".ko-when").fill("عند اعتماد مقتطف من Drive.")
+        second_object.locator(".ko-not-when").fill("لا ينطبق دون مرجع.")
+
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "PATCH"
+                and "/api/knowledge/drive/excerpts/" in response.url
+            )
+        ) as approved_response:
+            card.get_by_role("button", name="اعتماد وإنشاء الكائنات").click()
+        approved_payload = approved_response.value.json()
+        self.assertTrue(approved_payload["success"], approved_payload)
+        self.assertEqual(2, len(approved_payload["knowledge_objects"]))
+        page.locator("#driveExcerpts .excerpt-card").wait_for(
+            state="detached", timeout=10_000
+        )
+        self.assertNotIn(
+            "ملف Drive سري لاختبار المتصفح.txt",
+            page.locator("#driveExcerpts").inner_text(),
+        )
+
+        review = self.db.execute(
+            """SELECT review_status FROM drive_source_excerpts
+               WHERE excerpt_id=?""",
+            (self.excerpt_id,),
+        ).fetchone()
+        object_count = self.db.execute(
+            """SELECT COUNT(*) AS count FROM drive_provenance_links
+               WHERE entity_type='knowledge_object' AND drive_file_id=?""",
+            (self.file_id,),
+        ).fetchone()["count"]
+        self.assertEqual("approved", review["review_status"])
+        self.assertEqual(2, object_count)
 
 
 if __name__ == "__main__":

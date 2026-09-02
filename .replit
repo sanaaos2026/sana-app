@@ -25,6 +25,10 @@ args = "Sana Flask App"
 task = "workflow.run"
 args = "sana-knowledge-release"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "drive-excerpt-browser"
+
 [[workflows.workflow]]
 name = "Sana Flask App"
 author = "agent"
@@ -44,6 +48,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd sana_full && python3 -m unittest test_b2b_service_os.py -v"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "drive-excerpt-browser"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd sana_full && RUN_SANA_BROWSER_TESTS=1 python3 -m unittest test_drive_index.DriveExcerptBrowserTest -v"
 
 [workflows.workflow.metadata]
 isValidation = true
