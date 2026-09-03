@@ -319,6 +319,80 @@ class ZubairDealBrainAcceptanceTests(unittest.TestCase):
             (self.cid_a,),
         ).fetchone()["n"])
 
+    def test_review_recommendations_require_a_deal_brain_draft_link(self):
+        linked_draft = self._draft(f"مصدر توصية {self.run}")
+        linked = confirm_draft(
+            self.db, self.cid_a, self.admin_id, linked_draft["draft_id"],
+            edits={
+                "opportunity": f"فرصة مرتبطة {self.run}",
+                "next_action": "اتصال",
+                "next_action_due": (date.today() + timedelta(days=2)).isoformat(),
+            },
+            create_opportunity=True,
+        )
+        unlinked = f"OPP-ZDB-UNLINKED-{self.run}"
+        self.db.execute(
+            """INSERT INTO opportunities
+               (opp_id,company_id,title,stage,next_action,next_action_due)
+               VALUES (?,?,?,'مؤهل','اتصال',?)""",
+            (
+                unlinked, self.cid_a, f"فرصة خارج التجربة {self.run}",
+                (date.today() + timedelta(days=1)).isoformat(),
+            ),
+        )
+
+        packet = review_packet(self.db, self.cid_a)
+        recommendations = packet["audit_sample"]["recommendations"]
+        recommendation = next(
+            item for item in recommendations if item["opp_id"] == linked["opp_id"]
+        )
+        self.assertNotIn(unlinked, {
+            item["opp_id"] for item in recommendations
+        })
+        self.assertEqual(
+            [linked_draft["draft_id"]],
+            [item["draft_id"] for item in recommendation["deal_brain_links"]],
+        )
+        self.assertIn(
+            "opportunity_created",
+            recommendation["deal_brain_links"][0]["event_types"],
+        )
+        linked_draft_sample = next(
+            item for item in packet["audit_sample"]["drafts"]
+            if item["draft_id"] == linked_draft["draft_id"]
+        )
+        self.assertEqual(
+            [linked["opp_id"]],
+            [item["opp_id"] for item in linked_draft_sample["recommendations"]],
+        )
+
+        draft_audit = [
+            {
+                "draft_id": item["draft_id"],
+                "draft_accuracy": "accurate",
+                "match_accuracy": "accurate",
+                "no_fabrication": "accurate",
+            }
+            for item in packet["audit_sample"]["drafts"]
+        ]
+        with self.assertRaisesRegex(
+            ValueError, "REVIEW_RECOMMENDATION_SAMPLE_INCOMPLETE"
+        ):
+            save_review(
+                self.db, self.cid_a, self.admin_id, "pattern",
+                "لا يعتمد القرار إلا على عينة Deal Brain المرتبطة.",
+                {
+                    "drafts": draft_audit,
+                    "recommendations": [
+                        {
+                            "opp_id": unlinked,
+                            "accuracy": "accurate",
+                            "no_fabrication": "accurate",
+                        }
+                    ],
+                },
+            )
+
     def test_review_rejects_incomplete_manual_audit(self):
         self._draft(f"مسودة غير مكتملة {self.run}")
         packet = review_packet(self.db, self.cid_a)
