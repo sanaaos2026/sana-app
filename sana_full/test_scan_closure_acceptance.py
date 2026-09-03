@@ -195,6 +195,16 @@ class ScanClosureAcceptanceTests(unittest.TestCase):
         self.assertIn("أرغب أن تتواصلوا معي", page_text)
         self.assertIn('href="/home"', page_text)
         self.assertNotIn("الأنسب الآن: Build &amp; Launch", page_text)
+        self.assertIn("window.umami?.track(name)", page_text)
+        event_call = "trackEvent('fit_gate_interest_submitted')"
+        self.assertEqual(1, page_text.count(event_call))
+        success_script = page_text.split(
+            "if(!response.ok||!result.success)", 1
+        )[1].split("}catch(error)", 1)[0]
+        self.assertIn(event_call, success_script)
+        self.assertNotIn("phone", success_script)
+        self.assertNotIn("email", success_script)
+        self.assertNotIn("company", success_script)
         saved = self.client.post("/api/fit-gate/interest", json={"phone": "+966 50 123 4567"})
         self.assertIn(saved.status_code, (200, 201))
         row = self.db.execute(

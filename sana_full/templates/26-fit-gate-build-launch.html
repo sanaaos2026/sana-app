@@ -69,6 +69,15 @@
   </div>
 </main>
 <script>
+function trackEvent(name){
+  try{
+    // Replit injects Umami into published pages when Project Analytics is enabled.
+    window.umami?.track(name);
+  }catch(_error){
+    // Analytics must never affect interest registration.
+  }
+}
+
 document.getElementById('interestForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   const button=document.getElementById('submitBtn'), message=document.getElementById('message');
@@ -83,6 +92,7 @@ document.getElementById('interestForm').addEventListener('submit', async (event)
     if(!response.ok||!result.success) throw new Error(result.message||'تعذر التسجيل الآن.');
     message.textContent=result.message;
     button.hidden=true;
+    trackEvent('fit_gate_interest_submitted');
   }catch(error){message.textContent=error.message;button.disabled=false;button.textContent='أرغب أن تتواصلوا معي';}
 });
 </script>
