@@ -7,6 +7,7 @@
 
 import hashlib
 import json
+import os
 import uuid
 from datetime import date, datetime, timedelta
 
@@ -85,7 +86,8 @@ def _confidence(value, field):
 def ensure_schema(db):
     """ترقية إضافية غير هدامة؛ يثبت خانات الحوكمة الخمس قبل أي سجل."""
     global _SCHEMA_READY
-    if _SCHEMA_READY:
+    if _SCHEMA_READY or os.environ.get("SANA_PRODUCTION_SCHEMA_READY") == "1":
+        _SCHEMA_READY = True
         return
     acquire_schema_lock(db)
     db.execute("""CREATE TABLE IF NOT EXISTS company_memory_governance (

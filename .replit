@@ -1,7 +1,7 @@
 modules = ["nodejs-24", "python-3.11", "postgresql-16"]
 
 [deployment]
-run = ["bash", "-c", "cd sana_full && export SANA_ENV=production && exec gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 --threads 4 --timeout 120 wsgi:app"]
+run = ["bash", "-c", "cd sana_full && export SANA_ENV=production && python3 production_init.py && export SANA_PRODUCTION_SCHEMA_READY=1 && exec gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 --threads 4 --timeout 120 wsgi:app"]
 router = "application"
 deploymentTarget = "autoscale"
 
