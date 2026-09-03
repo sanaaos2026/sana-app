@@ -53,17 +53,17 @@
 
   <div class="card">
     <h1>تسجيل الدخول</h1>
-    <div class="sub">ادخل إلى بيانات شركتك — بيانات شركتك أنت فقط، بمعزل تام عن أي شركة أخرى.</div>
+    <div class="sub">ادخل إلى مساحة شركتك وتابع عملك من حيث توقفت.</div>
 
     <div class="error" id="errorMsg"></div>
 
     <label for="email">البريد الإلكتروني</label>
-    <input type="email" id="email" autocomplete="username" placeholder="you@company.com">
+    <input type="email" id="email" autocomplete="username" placeholder="بريدك الإلكتروني">
 
     <label for="password">كلمة المرور</label>
     <input type="password" id="password" autocomplete="current-password" placeholder="••••••••">
 
-    <button class="btn" id="submitBtn" onclick="doLogin()">دخول</button>
+    <button class="btn" id="submitBtn" onclick="doLogin()">تسجيل الدخول</button>
 
     <div class="foot" style="margin-bottom:10px;">
       <a href="/forgot-password">نسيت كلمة المرور؟</a>
@@ -86,7 +86,7 @@ async function doLogin(){
   }
 
   btn.disabled = true;
-  btn.textContent = 'جارٍ الدخول...';
+   btn.textContent = 'جارٍ تسجيل الدخول...';
   try{
     const res = await fetch('/login', {
       method: 'POST',
@@ -100,13 +100,13 @@ async function doLogin(){
       errorMsg.textContent = json.message || 'تعذّر تسجيل الدخول.';
       errorMsg.classList.add('show');
       btn.disabled = false;
-      btn.textContent = 'دخول';
+       btn.textContent = 'تسجيل الدخول';
     }
   } catch(e){
     errorMsg.textContent = 'تعذّر الاتصال بالخادم، حاول مرة أخرى.';
     errorMsg.classList.add('show');
     btn.disabled = false;
-    btn.textContent = 'دخول';
+     btn.textContent = 'تسجيل الدخول';
   }
 }
 

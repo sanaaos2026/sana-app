@@ -5,6 +5,7 @@
 الحساب ومصادرها.
 """
 import json
+import hashlib
 import uuid
 from datetime import datetime
 
@@ -12,12 +13,15 @@ from database_config import acquire_schema_lock
 from sana_reliability import (
     diagnostic_quality,
     source_is_fresh,
+    source_family,
     triangulate_sources,
 )
 
 
 METHODOLOGY_VERSION = "Sana Scan v1.0 — قيد المعايرة"
 SCAN_STATUSES = frozenset({"NOT_RUN", "INCOMPLETE", "REVIEW_REQUIRED", "COMPLETE"})
+MAX_CRITICAL_EVIDENCE_REQUESTS = 2
+EVIDENCE_REQUEST_CYCLE_VERSION = "SANA-EVIDENCE-CYCLE-v1"
 _SCAN_SCHEMA_READY = False
 EVIDENCE_TYPES = {
     "Fact",
@@ -121,6 +125,142 @@ def _loads(value, default):
         return json.loads(value)
     except (TypeError, json.JSONDecodeError):
         return default
+
+
+def evidence_request_fingerprint(case_id, question):
+    """Return a stable, case-scoped fingerprint for an evidence question."""
+    normalized = " ".join(str(question or "").split()).casefold()
+    return hashlib.sha256(
+        f"{case_id}:{normalized}".encode("utf-8")
+    ).hexdigest()[:24]
+
+
+def _previous_evidence_request_cycle(db, case_id):
+    row = db.execute(
+        """SELECT result FROM scan_runs
+           WHERE case_id=? ORDER BY created_at DESC, scan_id DESC LIMIT 1""",
+        (case_id,),
+    ).fetchone()
+    if not row:
+        return {}
+    result = _loads(row["result"], {})
+    cycle = result.get("evidence_request_cycle")
+    return cycle if isinstance(cycle, dict) else {}
+
+
+def _evidence_request_cycle(
+    db,
+    case_id,
+    missing_evidence,
+    *,
+    proposed_decision=None,
+    response=None,
+):
+    """Track at most two critical questions for one decision journey."""
+    previous = _previous_evidence_request_cycle(db, case_id)
+    if previous.get("outcome") in {"DECISION", "CONDITIONAL_EXPERIMENT", "UNKNOWN"} and not response:
+        previous = {}
+
+    cycle_id = previous.get("cycle_id") or (
+        "EVIDENCE-CYCLE-" + uuid.uuid4().hex[:12].upper()
+    )
+    requests = []
+    for item in previous.get("requests") or []:
+        if not isinstance(item, dict) or not item.get("fingerprint"):
+            continue
+        requests.append({
+            "fingerprint": str(item["fingerprint"]),
+            "request_key": str(item.get("request_key") or item["fingerprint"]),
+            "question": str(item.get("question") or item.get("label") or ""),
+            "label": str(item.get("label") or item.get("question") or ""),
+            "kind": "CRITICAL",
+            "status": item.get("status") or "PENDING",
+        })
+    by_fingerprint = {item["fingerprint"]: item for item in requests}
+
+    normalized_missing = []
+    for question in missing_evidence or []:
+        question = str(question or "").strip()
+        if not question:
+            continue
+        fingerprint = evidence_request_fingerprint(case_id, question)
+        if fingerprint not in {item["fingerprint"] for item in normalized_missing}:
+            normalized_missing.append({
+                "fingerprint": fingerprint,
+                "question": question,
+            })
+    missing_fingerprints = {item["fingerprint"] for item in normalized_missing}
+
+    if isinstance(response, dict) and (
+        response.get("fingerprint") or response.get("request_key")
+    ):
+        response_fingerprint = str(
+            response.get("fingerprint") or response.get("request_key")
+        )
+        response_status = (
+            "UNKNOWN" if response.get("outcome") == "UNKNOWN" else "ANSWERED"
+        )
+        target = by_fingerprint.get(response_fingerprint)
+        if target:
+            target["status"] = response_status
+
+    for item in requests:
+        if item["status"] == "PENDING" and item["fingerprint"] not in missing_fingerprints:
+            item["status"] = "ANSWERED"
+
+    for item in normalized_missing:
+        if len(requests) >= MAX_CRITICAL_EVIDENCE_REQUESTS:
+            break
+        if item["fingerprint"] not in by_fingerprint:
+            request = {
+                "fingerprint": item["fingerprint"],
+                "request_key": item["fingerprint"],
+                "question": item["question"],
+                "label": item["question"],
+                "kind": "CRITICAL",
+                "status": "PENDING",
+            }
+            requests.append(request)
+            by_fingerprint[item["fingerprint"]] = request
+
+    if proposed_decision:
+        decision_status = str(proposed_decision.get("decision_status") or "")
+        outcome = (
+            "CONDITIONAL_EXPERIMENT"
+            if "Conditional" in decision_status
+            else "DECISION"
+        )
+    elif isinstance(response, dict) and response.get("outcome") == "UNKNOWN":
+        outcome = "UNKNOWN"
+    elif (
+        requests
+        and missing_fingerprints
+        and all(item["status"] != "PENDING" for item in requests)
+    ):
+        outcome = "UNKNOWN"
+    else:
+        outcome = previous.get("outcome")
+
+    pending = [
+        item for item in requests
+        if item["status"] == "PENDING" and item["fingerprint"] in missing_fingerprints
+    ]
+    if outcome == "UNKNOWN":
+        pending = []
+    exhausted = len(requests) >= MAX_CRITICAL_EVIDENCE_REQUESTS and bool(pending)
+    return {
+        "version": EVIDENCE_REQUEST_CYCLE_VERSION,
+        "cycle_id": cycle_id,
+        "critical_request_limit": MAX_CRITICAL_EVIDENCE_REQUESTS,
+        "critical_request_count": len(requests),
+        "requested_fingerprints": [item["fingerprint"] for item in requests],
+        "requests": requests,
+        "pending_requests": pending,
+        "exhausted": exhausted,
+        "outcome": outcome,
+        "reevaluation_count": int(previous.get("reevaluation_count") or 0)
+        + (1 if response else 0),
+    }
 
 
 def ensure_schema(db):
@@ -604,12 +744,12 @@ def _canonical_assets(rows):
 
 
 def _priority_values(rule, matched_sources, recurrence):
-    source_ids = {item["source_id"] for item in matched_sources}
+    source_families = {source_family(item) for item in matched_sources}
     has_fact = any(item["classification"] == "Fact" for item in matched_sources)
     impact = "High" if rule["priority"] >= 80 or recurrence >= 2 else "Medium"
     effort = rule["effort"]
-    confidence = "High" if has_fact and len(source_ids) >= 2 else (
-        "Medium" if len(source_ids) >= 2 else "Low"
+    confidence = "High" if has_fact and len(source_families) >= 2 else (
+        "Medium" if len(source_families) >= 2 else "Low"
     )
     urgency = "High" if recurrence >= 3 else ("Medium" if recurrence >= 2 else "Low")
     if impact == "Low":
@@ -632,6 +772,42 @@ def _priority_values(rule, matched_sources, recurrence):
     }
 
 
+def _capacity_utilization(sources):
+    """Derive utilization arithmetically; it does not establish a cause."""
+    current_keys = {"students", "student_count", "enrolled_students", "current_students"}
+    capacity_keys = {"capacity", "student_capacity", "maximum_capacity"}
+    current = next(
+        (
+            item for item in sources
+            if str(item.get("topic_key") or "").lower() in current_keys
+            and item.get("information_type") == "Actual"
+            and item.get("normalized_value") is not None
+        ),
+        None,
+    )
+    capacity = next(
+        (
+            item for item in sources
+            if str(item.get("topic_key") or "").lower() in capacity_keys
+            and item.get("information_type") in {"Actual", "Target"}
+            and item.get("normalized_value") is not None
+        ),
+        None,
+    )
+    if not current or not capacity or float(capacity["normalized_value"]) <= 0:
+        return None
+    utilization = round(
+        (float(current["normalized_value"]) / float(capacity["normalized_value"])) * 100,
+        2,
+    )
+    return {
+        "current": current,
+        "capacity": capacity,
+        "utilization_percent": utilization,
+        "source_ids": [current["source_id"], capacity["source_id"]],
+    }
+
+
 def _derived_item(classification, title, statement, source_ids, **extra):
     if classification not in EVIDENCE_TYPES:
         raise ValueError(f"Unsupported Scan classification: {classification}")
@@ -646,8 +822,12 @@ def _derived_item(classification, title, statement, source_ids, **extra):
     return item
 
 
-def run_scan(db, case_id):
-    """ينشئ Sana Scan واحدًا للقضية ويحفظ سلسلة التتبع كاملة."""
+def run_scan(db, case_id, evidence_response=None):
+    """ينشئ Sana Scan واحدًا للقضية ويحفظ سلسلة التتبع كاملة.
+
+    ``evidence_response`` is metadata from the single save that triggered
+    this re-evaluation; it is never used as diagnostic evidence.
+    """
     ensure_schema(db)
     case = db.execute("SELECT * FROM cases WHERE case_id=?", (case_id,)).fetchone()
     if not case:
@@ -748,6 +928,7 @@ def run_scan(db, case_id):
                 )
 
     quality = diagnostic_quality(sources, triangulation["conflicts"])
+    decision_confidence = quality["decision_confidence"]
     baseline_row = db.execute(
         """SELECT * FROM diagnostic_baselines
            WHERE company_id=? AND case_id=?""",
@@ -762,10 +943,14 @@ def run_scan(db, case_id):
         baseline
         and baseline.get("baseline_start")
         and baseline.get("baseline_end")
-        and baseline.get("comparison_start")
-        and baseline.get("comparison_end")
         and baseline["baseline_end"] >= baseline["baseline_start"]
-        and baseline["comparison_end"] >= baseline["comparison_start"]
+        and (
+            not baseline.get("comparison_start")
+            or (
+                baseline.get("comparison_end")
+                and baseline["comparison_end"] >= baseline["comparison_start"]
+            )
+        )
     )
     asset_scores = [_score_asset(asset, sources) for asset in assets]
 
@@ -814,6 +999,14 @@ def run_scan(db, case_id):
         and not matched_conflicts
         and baseline_valid
     )
+    capacity_utilization = _capacity_utilization(sources)
+    submitted_client_sources = [
+        item for item in sources
+        if not _is_discovery(item)
+        and item.get("source_type") != "Case"
+        and item["classification"] in {"Fact", "Evidence"}
+        and str(item.get("source_ref") or "").strip()
+    ]
     hypothesis = _derived_item(
         "Hypothesis",
         rule["title"],
@@ -872,6 +1065,46 @@ def run_scan(db, case_id):
             conflicts=[],
         )
         findings.extend([opportunity, proposed_decision])
+    elif (
+        capacity_utilization
+        and decision_confidence["score"] is not None
+        and decision_confidence["score"] >= 50
+        and not triangulation["conflicts"]
+    ):
+        source_ids = capacity_utilization["source_ids"]
+        proposed_decision = _derived_item(
+            "Recommendation",
+            "تجربة قياس آمنة قبل قرار كبير",
+            "نفّذ تجربة قياس لمدة 7–14 يومًا للتحقق من استغلال السعة قبل أي توسع أو خفض.",
+            source_ids,
+            decision_status="Conditional — Human Review Required",
+            decision_risk="Low",
+            decision_confidence=decision_confidence,
+            kpi={
+                "name": "نسبة استغلال السعة",
+                "baseline": capacity_utilization["utilization_percent"],
+                "unit": "%",
+            },
+            causal_claim=False,
+        )
+        findings.append(proposed_decision)
+    elif (
+        baseline_valid
+        and len({item.get("asset_id") for item in submitted_client_sources if item.get("asset_id")}) >= 2
+        and not triangulation["conflicts"]
+    ):
+        source_ids = [item["source_id"] for item in submitted_client_sources]
+        proposed_decision = _derived_item(
+            "Recommendation",
+            "تجربة قياس مشروطة قبل القرار",
+            "راجع المعلومتين مع مختص، ثم نفّذ تجربة قياس قصيرة مرتبطة بالسؤال قبل أي تغيير كبير.",
+            source_ids,
+            decision_status="Conditional — Human Review Required",
+            decision_risk="Low",
+            decision_confidence=decision_confidence,
+            causal_claim=False,
+        )
+        findings.append(proposed_decision)
 
     missing_evidence = []
     for score in asset_scores:
@@ -884,7 +1117,7 @@ def run_scan(db, case_id):
             "Fact أو Evidence مستقل يدعم فرضية الاختناق قبل إصدار استنتاج أو توصية أو قرار"
         )
     if not baseline_valid:
-        missing_evidence.append("تحديد فترة الأساس التشخيصي وفترة المقارنة أو توضيح عدم توفرها")
+        missing_evidence.append("تحديد الفترة التي توجد عنها بيانات فعلية")
     for conflict in triangulation["conflicts"]:
         missing_evidence.append(conflict["verification_question"])
     stale_sources = [
@@ -898,7 +1131,20 @@ def run_scan(db, case_id):
         )
     missing_evidence = list(dict.fromkeys(missing_evidence))
 
-    status = "REVIEW_REQUIRED" if rule_qualified else "INCOMPLETE"
+    evidence_request_cycle = _evidence_request_cycle(
+        db,
+        case_id,
+        missing_evidence,
+        proposed_decision=proposed_decision,
+        response=evidence_response,
+    )
+
+    readiness = (
+        "READY" if rule_qualified
+        else "CONDITIONAL" if proposed_decision
+        else "NOT_READY"
+    )
+    status = "REVIEW_REQUIRED" if readiness in {"READY", "CONDITIONAL"} else "INCOMPLETE"
     result = {
         "status": status,
         "methodology_version": METHODOLOGY_VERSION,
@@ -915,7 +1161,20 @@ def run_scan(db, case_id):
         "opportunity": opportunity,
         "proposed_decision": proposed_decision,
         "missing_evidence": missing_evidence,
+        "evidence_requests": evidence_request_cycle["pending_requests"],
+        "critical_evidence_requests": evidence_request_cycle["pending_requests"],
+        "evidence_request_cycle": evidence_request_cycle,
+        "journey_outcome": evidence_request_cycle["outcome"],
+        "evidence_progress": {
+            "completed": sum(
+                1 for item in evidence_request_cycle["requests"]
+                if item["status"] != "PENDING"
+            ),
+            "total": evidence_request_cycle["critical_request_count"],
+        },
         "diagnostic_quality": quality,
+        "decision_readiness": readiness,
+        "decision_confidence": decision_confidence,
         "diagnostic_baseline": baseline,
         "diagnostic_baseline_valid": baseline_valid,
         "triangulation": triangulation,
@@ -924,12 +1183,12 @@ def run_scan(db, case_id):
             conflict["verification_question"] for conflict in triangulation["conflicts"]
         ],
         "decisions_available_now": (
-            [proposed_decision] if proposed_decision and rule_qualified else []
+            [proposed_decision] if proposed_decision else []
         ),
         "decisions_waiting_for_evidence": (
-            [] if proposed_decision and rule_qualified else [{
+            [] if proposed_decision else [{
                 "title": "القرار التنفيذي مؤجل",
-                "reason": "الصورة التشخيصية ذاتية أو ناقصة أو متعارضة أو قديمة.",
+                "reason": "الثقة غير كافية أو البيانات متعارضة أو قديمة.",
             }]
         ),
         "assumptions": [],

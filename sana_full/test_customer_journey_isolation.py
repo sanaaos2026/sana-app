@@ -173,7 +173,7 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         landing = sana_app.app.test_client().get("/")
         landing_html = landing.get_data(as_text=True)
         self.assertIn('href="/signup"', landing_html)
-        self.assertIn("أنشئ حسابك وابدأ", landing_html)
+        self.assertIn("ابدأ الآن", landing_html)
 
         customer_a = self._new_customer("A")
         customer_b = self._new_customer("B")
@@ -215,6 +215,58 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
             "فترة الأساس التشخيصي" in item
             for item in later_scan_data["missing_evidence"]
         ))
+
+        case_page = client_a.get(f"/case/{later_case_id}")
+        case_html = case_page.get_data(as_text=True)
+        self.assertIn("وش الفترة اللي عندك عنها بيانات فعلية؟", case_html)
+        self.assertIn("آخر 30 يوم", case_html)
+        self.assertIn("آخر 3 أشهر", case_html)
+        self.assertIn("هل هذه الفترة مختلفة عن المعتاد؟", case_html)
+        self.assertIn("احفظ وكمل", case_html)
+        self.assertNotIn(">بداية الأساس<", case_html)
+        self.assertNotIn(">بداية المقارنة<", case_html)
+
+        future_comparison = client_a.put(
+            f"/api/cases/{later_case_id}/diagnostic-baseline",
+            json={
+                "baseline_start": "2026-08-01",
+                "baseline_end": "2026-08-31",
+                "comparison_start": "2099-07-01",
+                "comparison_end": "2099-07-31",
+                "seasonality_context": "فترة تشغيل اعتيادية",
+            },
+        )
+        self.assertEqual(400, future_comparison.status_code)
+        self.assertEqual(
+            "المقارنة تحتاج فترة انتهت فعليًا",
+            future_comparison.get_json()["message"],
+        )
+
+        baseline_only = client_a.put(
+            f"/api/cases/{later_case_id}/diagnostic-baseline",
+            json={
+                "baseline_start": "2026-08-01",
+                "baseline_end": "2026-08-31",
+                "comparison_start": None,
+                "comparison_end": None,
+                "seasonality_context": "غير معروف — يحتاج تحقق",
+            },
+        )
+        self.assertEqual(200, baseline_only.status_code, baseline_only.get_data(as_text=True))
+        self.assertIsNone(baseline_only.get_json()["data"]["comparison_start"])
+        self.assertIsNone(baseline_only.get_json()["data"]["comparison_end"])
+
+        restored = client_a.put(
+            f"/api/cases/{later_case_id}/diagnostic-baseline",
+            json={
+                "baseline_start": "2026-08-01",
+                "baseline_end": "2026-08-31",
+                "comparison_start": "2026-07-01",
+                "comparison_end": "2026-07-31",
+                "seasonality_context": "فترة تشغيل اعتيادية",
+            },
+        )
+        self.assertEqual(200, restored.status_code)
 
         from sana_growth_os import METRIC_DEFINITIONS
         forged_metrics = {
@@ -283,12 +335,20 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         decision_file = client_a.get(f"/case/{customer_a['case_id']}")
         self.assertEqual(200, decision_file.status_code)
         decision_html = decision_file.get_data(as_text=True)
-        self.assertIn("فرصة تحسين", decision_html)
-        self.assertIn("حلّل الأدلة الحالية", decision_html)
-        self.assertIn("حفظ الدليل وإعادة التحليل", decision_html)
-        self.assertIn("إنشاء ملف قرار للمراجعة", decision_html)
-        self.assertIn("Sana Scan", decision_html)
-        self.assertIn("المعرفة المرجعية — ليست Evidence", decision_html)
+        self.assertIn("وش عرفنا؟", decision_html)
+        self.assertIn("رتّب المعلومات", decision_html)
+        self.assertIn("احفظ وكمل", decision_html)
+        self.assertIn("وش ناقص؟", decision_html)
+        self.assertIn("وش القرار؟", decision_html)
+        self.assertIn("وش تسوي الآن؟", decision_html)
+        self.assertIn("وش تغيّر؟", decision_html)
+        self.assertIn("اكتب المعلومة", decision_html)
+        self.assertIn("مثال: تقرير مبيعات أو كشف حساب", decision_html)
+        self.assertNotIn("N/A — Deferred", decision_html)
+        self.assertNotIn("حفظ الدليل وإعادة التحليل", decision_html)
+        self.assertIn("جهّز القرار", decision_html)
+        self.assertNotIn("Sana Scan", decision_html)
+        self.assertNotIn("المعرفة المرجعية — ليست Evidence", decision_html)
         self.assertNotIn("Knowledge Console", decision_html)
         self.assertNotIn("Research Library", decision_html)
 

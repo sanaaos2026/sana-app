@@ -109,8 +109,8 @@
 
 <div class="concept-nav">
   <a href="/">① الدخول</a>
-  <a href="/home" id="navHome">② CEO Home</a>
-  <a href="/passport" id="navPassport">④ الأصول + Sana Scan</a>
+  <a href="/home" id="navHome">② اليوم</a>
+  <a href="/passport" id="navPassport">④ الأصول + نظرة سنع</a>
   <a href="/assessment" class="active">📊 تقييم الأصول</a>
 </div>
 <script>
@@ -132,16 +132,16 @@
 
 <header>
   <a href="/home" class="back" id="backLink">← الرئيسية</a>
-  <div class="page-title" id="pageTitle">التقييم السريع — جزء من ملف الأصول</div>
+  <div class="page-title" id="pageTitle">وش عرفنا عن أصولك؟</div>
 </header>
 
 <!-- شريط الدرجات الثابت — يُبنى ديناميكيًا حسب أصول الشركة الفعلية -->
 <div class="score-strip" id="scoreStrip"></div>
 
 <main>
-  <span class="eyebrow">تقييم الأصول الخمسة</span>
+  <span class="eyebrow">وش عرفنا عن أصولك؟</span>
   <h1>اكتشف أين تقف الشركة الآن</h1>
-  <p class="sub">هذا التقييم هو مدخل ملف الأصول وSana Scan، وليس تقريرًا مستقلًا. أجب بصدق — كل إجابة تبني صورة قابلة للمراجعة.</p>
+  <p class="sub">أجب كما هو واقعك؛ إجاباتك تعطينا صورة واضحة لما يعمل وما يحتاج انتباهًا.</p>
 
   <div class="progress-row">
     <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
@@ -151,21 +151,21 @@
   <div id="questionsWrap"></div>
 
   <div class="show-result-wrap" id="showResultWrap">
-    <button class="btn btn-primary" onclick="showResult()">عرض النتيجة الكاملة ←</button>
+    <button class="btn btn-primary" onclick="showResult()">شوف وش عرفنا ←</button>
   </div>
 
   <div class="result-section" id="resultSection">
     <div class="result-card">
-      <div class="rc-title">تقييم سنع — ملخص الأصول</div>
+      <div class="rc-title">وش عرفنا؟ — ملخص الأصول</div>
       <div id="resultRows"></div>
     </div>
-    <button class="btn btn-secondary" id="saveBtn" onclick="saveEvidence()">احفظ كأدلة حقيقية في ملف الشركة</button>
+    <button class="btn btn-secondary" id="saveBtn" onclick="saveEvidence()">احفظ الإجابات في ملف الشركة</button>
     <div class="status-bar" id="statusBar">
       <span id="statusIcon"></span>
       <span id="statusMsg"></span>
     </div>
   </div>
-  <a href="/passport" id="passportAfterAssessment" data-testid="passport-after-assessment" style="display:block;text-align:center;color:#0EA5A5;font-size:13px;font-weight:600;margin-top:16px;">← العودة إلى ملف الأصول والملخص الحي لـ Sana Scan</a>
+  <a href="/passport" id="passportAfterAssessment" data-testid="passport-after-assessment" style="display:block;text-align:center;color:#0EA5A5;font-size:13px;font-weight:600;margin-top:16px;">← ارجع إلى الأصول وشوف الصورة المحدثة</a>
 </main>
 
 <div id="toast"></div>
@@ -187,14 +187,14 @@ let ASSET_ID_BY_TYPE = {};   // asset_type -> asset_id الحقيقي لهذه �
 
 // تعريف الأسئلة العشرة — سؤالان لكل أصل، مرتبطة بـ asset_type (ثابت) لا بمعرف أصل شركة محددة
 const QUESTIONS = [
-  { id:"q1",  assetType:"Knowledge",    assetName:"المعرفة",    text:"هل يوجد توثيق مكتوب للعمليات الأساسية في الشركة (SOPs أو أدلة تشغيل)؟" },
+  { id:"q1",  assetType:"Knowledge",    assetName:"المعرفة",    text:"هل توجد خطوات عمل مكتوبة للعمليات الأساسية في الشركة؟" },
   { id:"q2",  assetType:"Knowledge",    assetName:"المعرفة",    text:"هل يستطيع موظف جديد تعلّم مهامه الأساسية بدون تدخل شخصي منك؟" },
   { id:"q3",  assetType:"Operations",   assetName:"التشغيل",    text:"هل تُسلَّم الطلبات أو الخدمات في الوقت المحدد بشكل منتظم؟" },
   { id:"q4",  assetType:"Operations",   assetName:"التشغيل",    text:"هل يوجد معيار موثق وواضح لقبول جودة التنفيذ؟" },
   { id:"q5",  assetType:"Brand",        assetName:"البراند",    text:"هل يفهم عميل جديد ما تقدمه شركتك خلال 30 ثانية من زيارة قنواتك؟" },
   { id:"q6",  assetType:"Brand",        assetName:"البراند",    text:"هل تحصل الشركة على عملاء جدد بانتظام من قنوات تسويقية محددة ومعروفة؟" },
   { id:"q7",  assetType:"Data",         assetName:"البيانات",   text:"هل تعرف إيراداتك وتكاليفك الأساسية بدقة الآن دون الحاجة لسؤال أحد؟" },
-  { id:"q8",  assetType:"Data",         assetName:"البيانات",   text:"هل تستخدم مؤشرات أداء (KPIs) محددة لاتخاذ قراراتك الأسبوعية؟" },
+  { id:"q8",  assetType:"Data",         assetName:"البيانات",   text:"هل تستخدم مقاييس واضحة لاتخاذ قراراتك الأسبوعية؟" },
   { id:"q9",  assetType:"Independence", assetName:"الاستقلال",  text:"هل تستطيع الشركة العمل أسبوعًا كاملاً بدون تدخل مباشر منك؟" },
   { id:"q10", assetType:"Independence", assetName:"الاستقلال",  text:"هل يوجد أكثر من شخص واحد يستطيع اتخاذ القرارات اليومية بثقة؟" },
 ];
@@ -336,7 +336,7 @@ function showResult(){
 async function saveEvidence(){
   const btn = document.getElementById('saveBtn');
   btn.disabled = true;
-  btn.textContent = 'جارٍ الحفظ...';
+  btn.textContent = 'جارٍ حفظ الإجابات...';
 
   const labelMap = { yes:'نعم', partial:'جزئيًا', no:'لا' };
   let saved = 0, failed = 0;
@@ -368,8 +368,8 @@ async function saveEvidence(){
   bar.classList.remove('err');
   if(failed === 0){
     document.getElementById('statusIcon').textContent = '✓';
-    document.getElementById('statusMsg').textContent  = `حُفظت ${saved} أدلة في ملف الشركة بنجاح.`;
-    showToast('تم حفظ الأدلة في ملف القضية');
+    document.getElementById('statusMsg').textContent  = `حُفظت ${saved} إجابات في ملف الشركة بنجاح.`;
+    showToast('تم حفظ الإجابات في ملف الشركة');
   } else {
     bar.classList.add('err');
     document.getElementById('statusIcon').textContent = '⚠️';
@@ -377,7 +377,7 @@ async function saveEvidence(){
   }
   bar.classList.add('visible');
   btn.disabled = false;
-  btn.textContent = 'احفظ كأدلة حقيقية في ملف الشركة';
+  btn.textContent = 'احفظ الإجابات في ملف الشركة';
 }
 
 function showToast(msg){
@@ -398,7 +398,7 @@ async function init(){
     const json = await res.json();
     if(json.success){
       const d = json.data;
-      document.getElementById('pageTitle').textContent = `التقييم السريع — ${d.company.name}`;
+      document.getElementById('pageTitle').textContent = `وش عرفنا عن ${d.company.name}؟`;
       (d.assets || []).forEach(a => { ASSET_ID_BY_TYPE[a.asset_type] = a.asset_id; });
       if(d.cases && d.cases.length) CASE_ID = d.cases[0].case_id;
     }

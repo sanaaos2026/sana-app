@@ -82,7 +82,23 @@ class AdminDashboardP0Tests(unittest.TestCase):
         client = self._client(self.super_id, self.company_a)
         response = client.get("/api/admin/overview")
         self.assertEqual(200, response.status_code)
-        self.assertEqual("SUPER_ADMIN", response.get_json()["data"]["role"])
+        data = response.get_json()["data"]
+        self.assertEqual("SUPER_ADMIN", data["role"])
+        self.assertEqual("production", data["mode"])
+        self.assertEqual(
+            {
+                "discovery", "evidence_ready", "scan_complete",
+                "decision", "task", "result", "impact",
+            },
+            set(data["funnel"]),
+        )
+        self.assertEqual(
+            {
+                "decision_without_task", "task_without_result",
+                "result_without_impact", "evidence_missing",
+            },
+            set(data["attention"]),
+        )
         self.assertNotIn("password_hash", response.get_data(as_text=True))
 
         detail = client.get(f"/api/admin/companies/{self.company_b}")
@@ -95,6 +111,16 @@ class AdminDashboardP0Tests(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(audit)
         self.assertEqual("company_cross_company_view", audit["action"])
+
+    def test_command_center_defaults_to_production_and_qa_is_explicit(self):
+        client = self._client(self.super_id, self.company_a)
+        production = client.get("/api/admin/companies").get_json()["data"]
+        qa = client.get("/api/admin/companies?mode=qa").get_json()["data"]
+
+        self.assertNotIn(self.company_a, {row["company_id"] for row in production})
+        self.assertIn(self.company_a, {row["company_id"] for row in qa})
+        self.assertTrue(all(row["classification"] == "production" for row in production))
+        self.assertTrue(all(row["classification"] == "test" for row in qa))
 
     def test_admin_cannot_change_super_admin_role(self):
         client = self._client(self.admin_id, self.company_a)

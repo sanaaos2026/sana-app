@@ -114,7 +114,7 @@ function render(d, meta, sds){
   const journey = d.journey || {
     status:'NOT_RUN',
     label:'لم يُشغّل بعد',
-    message:'لم تُجمع نتيجة Sana Scan بعد.',
+    message:'لم تكتمل صورة الشركة بعد.',
     action_label:'ابدأ تقييم الأصول',
     action_url:'/assessment',
     tone:'neutral'
@@ -127,26 +127,26 @@ function render(d, meta, sds){
   let html = `
     <div class="cover">
       <div class="name">${d.company.name}</div>
-      <div class="sub">ملف الأصول ونتيجة Sana Scan · مُحدَّث الآن</div>
+      <div class="sub">صورة الشركة الحالية · مُحدَّثة الآن</div>
       <div class="value-row">
-        <div class="vitem teal"><div class="label">Sana Score التشغيلي</div><div class="val num">${d.operational_score == null ? '—' : d.operational_score}<span style="font-size:13px;">${d.operational_score == null ? '' : '/100'}</span></div></div>
-        <div class="vitem"><div class="label">حالة Scan</div><div class="val" style="font-family:'IBM Plex Sans Arabic';font-size:15px;">${journey.status}</div></div>
+        <div class="vitem teal"><div class="label">مؤشر الجاهزية التشغيلي</div><div class="val num">${d.operational_score == null ? '—' : d.operational_score}<span style="font-size:13px;">${d.operational_score == null ? '' : '/100'}</span></div></div>
+        <div class="vitem"><div class="label">وضعك الآن</div><div class="val" style="font-family:'IBM Plex Sans Arabic';font-size:15px;">${journey.label}</div></div>
         <div class="vitem gold"><div class="label">المحاور المكتملة</div><div class="val num">${scoreProgress.complete}<span style="font-size:13px;">/${scoreProgress.total || 0}</span></div></div>
       </div>
     </div>
 
     <main>
       <section class="journey-card ${journey.tone}" data-testid="live-scan-journey" data-scan-status="${journey.status}">
-        <div class="journey-kicker">SANA JOURNEY · ${journey.status}</div>
+        <div class="journey-kicker">خطوتك التالية</div>
         <div class="journey-title">${journey.label}</div>
         <div class="journey-message">${journey.message}</div>
         <a class="journey-action" href="${journey.action_url}${CQS}">${journey.action_label} ←</a>
       </section>
 
       <section data-testid="live-passport-summary">
-        <div class="journey-kicker">LIVE PASSPORT · ملف الأصول</div>
-        <h2>الملخص الحي ودرجة اكتمال الدليل</h2>
-        <p style="font-size:12px;color:#6E7580;margin:-6px 0 12px;line-height:1.7;">هذه الصفحة تتحدث مع ملف الشركة الحالي. التقرير التنفيذي صفحة مستقلة تحفظ نتيجة Scan ومصادرها للمراجعة.</p>
+        <div class="journey-kicker">صورة الشركة</div>
+        <h2>أين تحتاج أن تبدأ؟</h2>
+        <p style="font-size:12px;color:#6E7580;margin:-6px 0 12px;line-height:1.7;">ابدأ بالأصل الأقل جاهزية. يمكنك فتح التقرير عند الحاجة لمراجعة التفاصيل.</p>
   `;
   // أشرطة تقدم الأدلة: عدد الأدلة الفعلي / 5 كحد أقصى للعرض (SDS-002)
   const evPer = (sds && sds.evidence_per_asset) || {};
@@ -154,9 +154,9 @@ function render(d, meta, sds){
     const evCount = evPer[a.asset_type] || 0;
     const evPct   = Math.min(evCount / 5, 1) * 100;
     const scanScore = scoreByType[a.asset_type] || {};
-    const scoreText = scanScore.score == null ? 'N/A — Deferred' : `${scanScore.score}/100`;
+    const scoreText = scanScore.score == null ? 'بانتظار المعلومات' : `${scanScore.score}/100`;
     html += `<div class="asset-row">
-      <span class="ar-name">${a.asset_name}</span>
+      <span class="ar-name">${a.client_asset_name}</span>
       <div class="ev-bar"><div class="ev-bar-fill" style="width:${evPct}%"></div></div>
       <span class="ev-count">${evCount}</span>
       <span class="ar-score" style="font-size:11px;">${scoreText}</span>
@@ -165,18 +165,18 @@ function render(d, meta, sds){
   html += `</section>
       <section>
         <h2>التقييم المالي</h2>
-        <div class="deferred-note">${meta.financial_value_note || 'التقييم المالي غير متاح — N/A — Deferred حتى تعتمد منهجية وأدلة مالية.'}</div>
+        <div class="deferred-note">${meta.financial_value_note || 'لا يمكن عرض قيمة مالية الآن؛ نحتاج معلومات مالية موثقة أولًا.'}</div>
       </section>
       ${d.weakest_asset_case_id ? `
       <section style="text-align:center;">
         <a href="/case/${d.weakest_asset_case_id}${CQS}" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح القضية المرتبطة به</a>
       </section>` : ''}
       <section style="text-align:center;">
-        <div style="font-size:11.5px;color:#6E7580;margin-bottom:8px;">هل تحتاج إلى نتيجة قابلة للمراجعة؟ افتح التقرير التنفيذي المنفصل.</div>
-        <a data-testid="executive-report-link" href="${journey.report_url || `/company/${COMPANY_ID}/scan-report`}" style="display:inline-block;color:#0EA5A5;font-weight:600;font-size:13.5px;margin-bottom:14px;">افتح التقرير التنفيذي الكامل ←</a><br>
+        <div style="font-size:11.5px;color:#6E7580;margin-bottom:8px;">راجع التفاصيل قبل اتخاذ قرار كبير.</div>
+        <a data-testid="executive-report-link" href="${journey.report_url || `/company/${COMPANY_ID}/scan-report`}" style="display:inline-block;color:#0EA5A5;font-weight:600;font-size:13.5px;margin-bottom:14px;">عرض ملخص القرار والتفاصيل ←</a><br>
         <button class="btn" id="downloadReportBtn" onclick="downloadReport()"
           style="background:#0B132B; color:#fff; border:none; padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans Arabic';">
-          ⬇ تحميل تقرير Sana Scan
+          ⬇ تحميل التقرير
         </button>
       </section>
     </main>
@@ -191,9 +191,9 @@ function render(d, meta, sds){
     sec.className = 'sds-section';
     sec.id = 'sdsSection';
     sec.innerHTML = `
-      <div class="sds-eyebrow">SDS-002 · داخل ملف الأصول</div>
-      <div class="sds-q">${sds.question} <span style="font-size:11px; color:#9AA0AB; font-weight:400;">(${sds.asset_name})</span></div>
-      <div style="font-size:12px;color:#6E7580;margin:-8px 0 14px;">سؤال تكيفي واحد لإغلاق أكبر فجوة أدلة الآن؛ لا ينشئ قرارًا تلقائيًا.</div>
+      <div class="sds-eyebrow">خطوة سريعة</div>
+      <div class="sds-q">${sds.question} <span style="font-size:11px; color:#9AA0AB; font-weight:400;">(${sds.client_asset_name})</span></div>
+      <div style="font-size:12px;color:#6E7580;margin:-8px 0 14px;">أجب عن سؤال واحد لتوضيح أهم نقطة ناقصة الآن.</div>
       <div class="sds-options">${optHtml}</div>
       <div class="sds-msg" id="sdsMsg">تمام، ارتفعت معرفتنا بهذا الأصل 🎯</div>
       <div class="sds-suggestion" id="sdsSuggestion"></div>
@@ -262,7 +262,7 @@ async function downloadReport(){
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href = url;
-      a.download = `تقرير Sana Scan.pdf`;
+      a.download = `ملخص الشركة.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

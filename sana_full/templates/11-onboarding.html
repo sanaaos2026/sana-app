@@ -22,7 +22,7 @@
     font-family:'IBM Plex Sans Arabic', sans-serif;
     min-height:100vh; display:flex; flex-direction:column;
     align-items:center; justify-content:flex-start;
-    padding:40px 20px 60px;
+    padding:28px 20px 40px;
   }
   .mark{ width:36px; height:36px; margin-bottom:18px; }
 
@@ -85,17 +85,17 @@
 </div>
 
 <div class="card">
-  <h1>أخبرنا عن شركتك</h1>
-  <div class="sub">خمسة حقول حقيقية تجهّز سياق شركتك قبل جلسة الاكتشاف.</div>
+  <h1>أخبرنا عن عملك</h1>
+  <div class="sub">إجابات قصيرة تساعدنا على فهم أولويتك.</div>
 
   <div class="error" id="errorMsg"></div>
 
   <label for="name">اسم الشركة <span class="req">*</span></label>
   <input type="text" id="name" value="{{ company.name if company and company.name != 'شركة جديدة' else '' }}" placeholder="مثال: مؤسسة النجاح للتجارة">
 
-  <label for="sectorSelect">القطاع <span class="req">*</span></label>
+  <label for="sectorSelect">مجال الشركة <span class="req">*</span></label>
   <select id="sectorSelect" onchange="onSectorChange(this.value)">
-    <option value="">— اختر قطاع شركتك —</option>
+    <option value="">— اختر مجال شركتك —</option>
     <option value="legal">⚖️ قانوني / محاماة</option>
     <option value="food">🍽️ مطاعم وضيافة</option>
     <option value="manufacturing">🏭 تصنيع وعطور</option>
@@ -110,23 +110,23 @@
   </select>
 
   <div class="other-field" id="otherField">
-    <label for="otherInput">صف قطاعك بكلمة أو جملة قصيرة <span class="req">*</span></label>
+    <label for="otherInput">اكتب مجالها باختصار <span class="req">*</span></label>
     <input type="text" id="otherInput" placeholder="مثال: عيادات أسنان، شركة شحن دولي...">
   </div>
 
-  <label for="employeeCount" style="margin-top:2px;">عدد الموظفين تقريبًا</label>
+  <label for="employeeCount" style="margin-top:2px;">كم شخصًا يعمل معك تقريبًا؟</label>
   <input type="number" id="employeeCount" min="1" placeholder="مثال: 12">
 
-  <label for="businessDescription">ماذا تقدم الشركة ولمن؟ <span class="req">*</span></label>
-  <textarea id="businessDescription" rows="3" placeholder="صف النشاط والعميل في جملة واضحة">{{ company.business_description or '' }}</textarea>
+  <label for="businessDescription">ماذا تقدمون ولمن؟ <span class="req">*</span></label>
+  <textarea id="businessDescription" rows="3" placeholder="مثال: نقدم خدماتنا للشركات الصغيرة">{{ company.business_description or '' }}</textarea>
 
-  <label for="goal90Days">ما الهدف الأهم خلال 90 يومًا؟ <span class="req">*</span></label>
-  <textarea id="goal90Days" rows="2" placeholder="نتيجة محددة تريد الوصول إليها">{{ company.goal_90_days or '' }}</textarea>
+  <label for="goal90Days">ما النتيجة الأهم خلال 90 يومًا؟ <span class="req">*</span></label>
+  <textarea id="goal90Days" rows="2" placeholder="مثال: زيادة المبيعات الشهرية">{{ company.goal_90_days or '' }}</textarea>
 
-  <label for="primaryChallenge">ما التحدي الأكبر الآن؟ <span class="req">*</span></label>
-  <textarea id="primaryChallenge" rows="2" placeholder="العائق الذي يمنع الوصول إلى الهدف">{{ company.primary_challenge or '' }}</textarea>
+  <label for="primaryChallenge">ما أكبر تحدٍ في العمل الآن؟ <span class="req">*</span></label>
+  <textarea id="primaryChallenge" rows="2" placeholder="مثال: تأخر متابعة العملاء">{{ company.primary_challenge or '' }}</textarea>
 
-  <button class="btn" id="submitBtn" onclick="submitOnboarding()">متابعة ←</button>
+  <button class="btn" id="submitBtn" onclick="submitOnboarding()">حفظ ومتابعة</button>
 </div>
 
 <script>
@@ -153,19 +153,19 @@ async function submitOnboarding(){
     return;
   }
   if(!selectedSector){
-    errorMsg.textContent = 'يرجى اختيار قطاع الشركة — هذا الحقل إلزامي.';
+     errorMsg.textContent = 'اختر مجال الشركة حتى نكمل الصورة.';
     errorMsg.classList.add('show');
     document.getElementById('sectorSelect').focus();
     return;
   }
   if(selectedSector === 'other' && !otherText){
-    errorMsg.textContent = 'يرجى كتابة وصف قصير للقطاع في حقل "أخرى".';
+     errorMsg.textContent = 'اكتب مجال الشركة باختصار.';
     errorMsg.classList.add('show');
     document.getElementById('otherInput').focus();
     return;
   }
   if(!business_description || !goal_90_days || !primary_challenge){
-    errorMsg.textContent = 'أكمل وصف النشاط والهدف والتحدي قبل المتابعة.';
+     errorMsg.textContent = 'اكتب عن نشاطك والنتيجة والشيء الذي يشغلك.';
     errorMsg.classList.add('show');
     return;
   }
@@ -190,13 +190,13 @@ async function submitOnboarding(){
       errorMsg.textContent = json.message || 'تعذّر الحفظ، حاول مرة أخرى.';
       errorMsg.classList.add('show');
       btn.disabled = false;
-      btn.textContent = 'متابعة ←';
+       btn.textContent = 'حفظ ومتابعة';
     }
   } catch(e){
     errorMsg.textContent = 'تعذّر الاتصال بالخادم، حاول مرة أخرى.';
     errorMsg.classList.add('show');
     btn.disabled = false;
-    btn.textContent = 'متابعة ←';
+      btn.textContent = 'حفظ ومتابعة';
   }
 }
 </script>

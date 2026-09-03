@@ -121,14 +121,14 @@
 
 <div class="concept-nav">
   <a href="/">① الدخول</a>
-  <a href="/home">② CEO Home</a>
-  <a href="/case/{{ case_id }}">③ القضية</a>
+  <a href="/home">② اليوم</a>
+  <a href="/case/{{ case_id }}">③ ملف القرار</a>
   <a href="/case/{{ case_id }}/next-step" class="active">④ الخطوة التالية</a>
   <a href="/passport">⑤ جواز الشركة</a>
 </div>
 
 <header>
-  <a href="/case/{{ case_id }}" class="back" id="backLink">← القضية</a>
+  <a href="/case/{{ case_id }}" class="back" id="backLink">← ملف القرار</a>
   <div class="hd-title" id="pageTitle">الخطوة التالية...</div>
   <span class="hd-conf num" id="confBadge"></span>
 </header>
@@ -136,9 +136,9 @@
 <main>
   <div id="intro" style="display:none">
     <div class="intro-band">
-      <div class="eyebrow">الخطوة التالية</div>
+      <div class="eyebrow">وش تسوي الآن؟</div>
       <h1 id="introCaseTitle"></h1>
-      <p class="sub">هذه المسارات مبنية على بيانات قضيتك الحقيقية الآن — لا توقعات، لا أرقام افتراضية.</p>
+      <p class="sub">هذه خياراتك بناءً على ما عرفناه حتى الآن؛ ما يحتاج تأكيدًا يبقى واضحًا.</p>
     </div>
   </div>
 
@@ -147,13 +147,14 @@
   </div>
 
   <div class="foot-nav" id="footNav" style="display:none">
-    <a href="/case/{{ case_id }}" class="foot-link primary">← العودة للقضية</a>
-    <a href="/home" class="foot-link">الرئيسية</a>
+    <a href="/case/{{ case_id }}" class="foot-link primary">← ارجع لملف القرار</a>
+    <a href="/home" class="foot-link">اليوم</a>
   </div>
 </main>
 
 <script>
 const CASE_ID = "{{ case_id }}";
+const clientText = value => String(value ?? '').replaceAll('Evidence Gate','ما نحتاج نتأكد منه').replaceAll('Decision Readiness','جاهزية القرار').replaceAll('Re-analysis','إعادة النظر').replaceAll('Contradiction','معلومة متعارضة').replaceAll('Baseline','نقطة المقارنة').replaceAll('Diagnostic Review','مراجعة الصورة').replaceAll('Impact Review','مراجعة التغيّر').replaceAll('Evidence','معلومة داعمة').replaceAll('Source','مصدر المعلومة').replaceAll('Unknown','غير واضح بعد').replaceAll('Deferred','نؤجله إلى أن نتأكد').replaceAll('N/A','غير متاح');
 
 const TYPE_CSS = {
   understand: 'understand',
@@ -181,7 +182,7 @@ function buildPathCard(path) {
 
   const detailsHTML = path.details.map((d, i) => {
     const isSubItem = d.startsWith('←');
-    return `<li class="${isSubItem ? 'sub-item' : ''}">${d.replace(/^←\s*/, '')}</li>`;
+    return `<li class="${isSubItem ? 'sub-item' : ''}">${clientText(d.replace(/^←\s*/, ''))}</li>`;
   }).join('');
 
   return `
@@ -190,14 +191,14 @@ function buildPathCard(path) {
         <div class="path-icon ${iconCss}">${path.icon}</div>
         <div class="path-meta">
           <div class="path-priority">${prioLbl}</div>
-          <div class="path-label">${path.label}</div>
+          <div class="path-label">${clientText(path.label)}</div>
         </div>
         <div class="prio-badge num">${path.priority}</div>
       </div>
       <div class="path-body">
-        <div class="path-headline">${path.headline}</div>
+        <div class="path-headline">${clientText(path.headline)}</div>
         <ul class="detail-list">${detailsHTML}</ul>
-        <div class="action-row">${path.action}</div>
+        <div class="action-row">${clientText(path.action)}</div>
       </div>
     </div>`;
 }
@@ -216,7 +217,7 @@ async function load() {
   // header
   document.getElementById('pageTitle').textContent = `الخطوة التالية — ${case_title}`;
   if (confidence != null) {
-    document.getElementById('confBadge').textContent = `ثقة التشخيص ${confidence}٪`;
+    document.getElementById('confBadge').textContent = `مدى وضوح الصورة ${confidence}٪`;
     document.getElementById('confBadge').style.display = '';
   }
 

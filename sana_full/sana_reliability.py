@@ -139,6 +139,64 @@ def source_is_fresh(item, *, today=None, max_age_days=395):
     return (today - ended).days <= max_age_days
 
 
+def source_family(item):
+    """Return a stable provenance family so repeated claims do not multiply trust."""
+    category = str(item.get("source_category") or "UNKNOWN").upper().strip()
+    if category in {"SELF_REPORTED", "CASE"}:
+        return category
+    ref = str(item.get("source_ref") or "").strip().lower()
+    if not ref:
+        return category
+    prefix = re.split(r"[:/#]", ref, maxsplit=1)[0].strip()
+    return f"{category}:{prefix or ref}"
+
+
+def _confidence_value(item):
+    try:
+        value = int(item.get("confidence"))
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(100, value))
+
+
+def decision_confidence(sources, conflicts=None):
+    """Conservative confidence from distinct source families, without averaging."""
+    conflicted_ids = {
+        source_id
+        for conflict in (conflicts or [])
+        for source_id in conflict.get("source_ids", [])
+    }
+    families = {}
+    for item in sources:
+        confidence = _confidence_value(item)
+        if (
+            confidence is None
+            or str(item.get("source_category") or "").upper() == "CASE"
+            or item.get("verification_status") in {"CONTRADICTED", "REJECTED", "STALE"}
+            or item.get("source_id") in conflicted_ids
+            or not source_is_fresh(item)
+        ):
+            continue
+        family = source_family(item)
+        families[family] = min(confidence, families.get(family, confidence))
+    score = min(families.values()) if families else None
+    level = (
+        "HIGH" if score is not None and score >= 80
+        else "MEDIUM" if score is not None and score >= 50
+        else "LOW"
+    )
+    return {
+        "score": score,
+        "level": level,
+        "method": "MIN_DISTINCT_SOURCE_FAMILY_CONFIDENCE",
+        "source_family_count": len(families),
+        "source_families": [
+            {"family": family, "confidence": confidence}
+            for family, confidence in sorted(families.items())
+        ],
+    }
+
+
 def diagnostic_quality(sources, conflicts=None):
     conflicts = list(conflicts or [])
     verified = sum(
@@ -169,12 +227,40 @@ def diagnostic_quality(sources, conflicts=None):
     )
     usable = [
         item for item in sources
-        if item.get("verification_status") == "VERIFIED"
+        if item.get("verification_status") not in {"CONTRADICTED", "REJECTED", "STALE"}
         and item.get("information_type") in {"Actual", "Narrative"}
         and source_is_fresh(item)
-        and item.get("source_category") != "SELF_REPORTED"
+        and _confidence_value(item) is not None
     ]
-    categories = {item.get("source_category") for item in usable}
+    families = {source_family(item) for item in usable}
+    independent_families = {
+        family for family in families if family not in {"SELF_REPORTED", "CASE", "UNKNOWN"}
+    }
+    verified_families = {
+        source_family(item) for item in usable
+        if item.get("verification_status") == "VERIFIED"
+    }
+    confidence = decision_confidence(usable, conflicts)
+    verification = (
+        "VERIFIED" if usable and all(
+            item.get("verification_status") == "VERIFIED" for item in usable
+        )
+        else "MIXED" if verified_families
+        else "UNVERIFIED"
+    )
+    independence = (
+        "INDEPENDENT" if independent_families
+        else "SELF_REPORTED_ONLY" if families & {"SELF_REPORTED", "CASE"}
+        else "UNKNOWN"
+    )
+    if conflicts or confidence["score"] is None:
+        reliability = "LOW"
+    elif confidence["score"] >= 80 and verified_families:
+        reliability = "HIGH"
+    elif confidence["score"] >= 50:
+        reliability = "MEDIUM"
+    else:
+        reliability = "LOW"
     return {
         "verified_count": verified,
         "self_reported_count": self_reported,
@@ -182,17 +268,18 @@ def diagnostic_quality(sources, conflicts=None):
         "contradicted_count": contradicted,
         "stale_count": stale,
         "missing_count": missing,
-        "independent_source_count": len(categories - {None, "UNKNOWN"}),
+        "source_family_count": len(families),
+        "independent_source_count": len(independent_families),
+        "source_reliability": confidence["source_families"],
+        "verification_status": verification,
+        "independence": independence,
+        "decision_confidence": confidence,
         "evidence_strength": (
-            "STRONG" if len(categories - {None, "UNKNOWN"}) >= 2 and not conflicts
+            "STRONG" if len(independent_families) >= 2 and not conflicts
             else "MODERATE" if usable and not conflicts
             else "WEAK"
         ),
-        "data_reliability": (
-            "HIGH" if verified >= 2 and not conflicts and not stale and not missing
-            else "MEDIUM" if verified >= 1 and not conflicts
-            else "LOW"
-        ),
+        "data_reliability": reliability,
     }
 
 

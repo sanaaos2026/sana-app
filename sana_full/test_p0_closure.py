@@ -5,13 +5,28 @@ import unittest
 import uuid
 
 import app as sana_app
+import psycopg2
+from sana_decision_room import ensure_schema as ensure_decision_room_schema
 
 
 class P0ClosureAcceptanceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         sana_app.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
-        sana_app.init_db()
+        try:
+            sana_app.init_db()
+        except psycopg2.errors.LockNotAvailable:
+            # A concurrently starting app may own the broad compatibility-DDL lock.
+            # This acceptance test only needs the already-initialized core schema
+            # plus the narrowly scoped decision-room additions.
+            db = sana_app._connect_pg()
+            try:
+                db.rollback()
+                db.execute("SELECT 1 FROM companies LIMIT 1")
+                ensure_decision_room_schema(db)
+                db.commit()
+            finally:
+                db.close()
 
     def setUp(self):
         self.db = sana_app._connect_pg()
@@ -162,13 +177,66 @@ class P0ClosureAcceptanceTest(unittest.TestCase):
         self.assertEqual(self.company_id, task["company_id"])
         self.assertEqual(self.case_id, task["case_id"])
         self.assertEqual(decision["decision_id"], task["decision_id"])
+        client_workspace = self.client.get(f"/case/{self.case_id}")
+        self.assertEqual(200, client_workspace.status_code)
+        client_html = client_workspace.get_data(as_text=True)
+        self.assertIn("submitClientApproval", client_html)
+        self.assertIn("openClientImpact", client_html)
+        self.assertIn("baseline_value", client_html)
+        self.assertIn("/p0-result", client_html)
+
+        invalid_order = self.client.post(
+            f"/api/tasks/{task_id}/p0-result",
+            json={
+                "baseline_value": "12 مهمة", "baseline_numeric": 12,
+                "baseline_source_ref": "BASE",
+                "baseline_evidence_id": self.evidence_id,
+                "baseline_observed_at": "2026-08-31",
+                "target_value": "6 مهام", "target_numeric": 6,
+                "target_source_ref": "TARGET",
+                "target_observed_at": "2026-12-31",
+                "actual_value": "5 مهام", "actual_numeric": 5,
+                "actual_source_ref": "ACTUAL",
+                "actual_evidence_id": self.evidence_id,
+                "actual_observed_at": "2026-07-31",
+                "result_summary": "نتيجة", "result_source_ref": "RESULT",
+                "impact_outcome": "WORSE",
+                "measurement_unit": "مهمة",
+                "kpi_direction": "LOWER_IS_BETTER",
+                "impact_notes": "مقارنة موثقة لكن ترتيب التاريخ غير صالح.",
+            },
+        )
+        self.assertEqual(400, invalid_order.status_code)
+        self.assertEqual(
+            "P0_IMPACT_MEASURE_ORDER_INVALID",
+            invalid_order.get_json()["error"],
+        )
+        self.assertIsNone(self.db.execute(
+            "SELECT review_id FROM p0_impact_reviews WHERE task_id=?", (task_id,)
+        ).fetchone())
 
         result = self.client.post(
             f"/api/tasks/{task_id}/p0-result",
             json={
+                "baseline_value": "12 مهمة متأخرة",
+                "baseline_numeric": 12,
+                "baseline_source_ref": "TEST:P0:BASELINE",
+                "baseline_evidence_id": self.evidence_id,
+                "baseline_observed_at": "2026-08-31",
+                "target_value": "6 مهام متأخرة",
+                "target_numeric": 6,
+                "target_source_ref": "TEST:P0:APPROVED_TARGET",
+                "target_observed_at": "2026-12-31",
+                "actual_value": "5 مهام متأخرة",
+                "actual_numeric": 5,
+                "actual_source_ref": "TEST:P0:ACTUAL",
+                "actual_evidence_id": self.evidence_id,
+                "actual_observed_at": "2026-12-31",
                 "result_summary": "تم تعيين المالك وتطبيق المراجعة الأسبوعية.",
                 "result_source_ref": "TEST:P0:RESULT",
-                "impact_outcome": "IMPROVED",
+                "impact_outcome": "WORSE",
+                "measurement_unit": "مهمة",
+                "kpi_direction": "LOWER_IS_BETTER",
                 "impact_notes": "انخفض عدد المهام المتأخرة في فترة المقارنة.",
             },
         )
@@ -182,6 +250,11 @@ class P0ClosureAcceptanceTest(unittest.TestCase):
         self.assertIsNotNone(task["completed_at"])
         impact = self.db.execute(
             """SELECT company_id,case_id,decision_id,task_id,
+                      baseline_value,baseline_source_ref,baseline_observed_at,
+                      target_value,target_source_ref,target_observed_at,
+                      actual_value,actual_source_ref,actual_observed_at,
+                      baseline_numeric,target_numeric,actual_numeric,
+                      measurement_unit,kpi_direction,
                       impact_outcome,result_source_ref FROM p0_impact_reviews
                WHERE task_id=?""",
             (task_id,),
@@ -191,7 +264,18 @@ class P0ClosureAcceptanceTest(unittest.TestCase):
         self.assertEqual(decision["decision_id"], impact["decision_id"])
         self.assertEqual(task_id, impact["task_id"])
         self.assertEqual("IMPROVED", impact["impact_outcome"])
-        self.assertEqual("TEST:P0:RESULT", impact["result_source_ref"])
+        self.assertEqual("TEST:P0:EVIDENCE", impact["result_source_ref"])
+        self.assertEqual("12 مهمة", impact["baseline_value"])
+        self.assertEqual("TEST:P0:EVIDENCE", impact["baseline_source_ref"])
+        self.assertEqual("6 مهمة", impact["target_value"])
+        self.assertEqual(f"DECISION:{decision['decision_id']}", impact["target_source_ref"])
+        self.assertEqual("5 مهمة", impact["actual_value"])
+        self.assertEqual("TEST:P0:EVIDENCE", impact["actual_source_ref"])
+        self.assertEqual(12, float(impact["baseline_numeric"]))
+        self.assertEqual(6, float(impact["target_numeric"]))
+        self.assertEqual(5, float(impact["actual_numeric"]))
+        self.assertEqual("مهمة", impact["measurement_unit"])
+        self.assertEqual("LOWER_IS_BETTER", impact["kpi_direction"])
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ TASK_REQUIRED_FIELDS = (
     ("due_date", "Deadline"),
     ("kpi", "KPI"),
 )
+IMPACT_OUTCOMES = {"IMPROVED", "UNCHANGED", "WORSE", "INCONCLUSIVE"}
 
 
 def _id(prefix):
@@ -95,6 +96,58 @@ def ensure_schema(db):
     )""")
     db.execute("""CREATE INDEX IF NOT EXISTS idx_task_audit_company
                   ON execution_task_audit(company_id, changed_at DESC)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS p0_impact_reviews (
+        review_id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL REFERENCES companies(company_id),
+        case_id TEXT NOT NULL REFERENCES cases(case_id),
+        decision_id TEXT NOT NULL REFERENCES decisions(decision_id),
+        task_id TEXT NOT NULL UNIQUE REFERENCES tasks(task_id),
+        baseline_snapshot_json TEXT NOT NULL,
+        baseline_value TEXT,
+        baseline_source_ref TEXT,
+        baseline_observed_at DATE,
+        target_value TEXT,
+        target_source_ref TEXT,
+        target_observed_at DATE,
+        actual_value TEXT,
+        actual_source_ref TEXT,
+        actual_observed_at DATE,
+        result_summary TEXT NOT NULL,
+        result_source_ref TEXT NOT NULL,
+        impact_outcome TEXT NOT NULL
+          CHECK (impact_outcome IN ('IMPROVED','UNCHANGED','WORSE','INCONCLUSIVE')),
+        impact_notes TEXT NOT NULL,
+        reviewed_by TEXT NOT NULL,
+        reviewed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""")
+    impact_columns = {
+        row[0] for row in db.execute(
+            """SELECT column_name FROM information_schema.columns
+               WHERE table_schema='public' AND table_name='p0_impact_reviews'"""
+        ).fetchall()
+    }
+    for name, definition in (
+        ("baseline_value", "TEXT"),
+        ("baseline_source_ref", "TEXT"),
+        ("baseline_observed_at", "DATE"),
+        ("target_value", "TEXT"),
+        ("target_source_ref", "TEXT"),
+        ("target_observed_at", "DATE"),
+        ("actual_value", "TEXT"),
+        ("actual_source_ref", "TEXT"),
+        ("actual_observed_at", "DATE"),
+        ("baseline_numeric", "NUMERIC"),
+        ("target_numeric", "NUMERIC"),
+        ("actual_numeric", "NUMERIC"),
+        ("measurement_unit", "TEXT"),
+        ("kpi_direction", "TEXT"),
+        ("baseline_evidence_id", "TEXT"),
+        ("actual_evidence_id", "TEXT"),
+    ):
+        if name not in impact_columns:
+            db.execute(f"ALTER TABLE p0_impact_reviews ADD COLUMN {name} {definition}")
+    db.execute("""CREATE INDEX IF NOT EXISTS idx_p0_impact_reviews_case
+                  ON p0_impact_reviews(company_id,case_id,reviewed_at DESC)""")
     db.execute("""CREATE TABLE IF NOT EXISTS execution_risks (
         risk_id TEXT PRIMARY KEY,
         company_id TEXT NOT NULL REFERENCES companies(company_id),
@@ -390,6 +443,54 @@ def update_task(db, company_id, task_id, payload, actor_id):
          _json(changes), _text(payload.get("source_ref")) or "tasks-board"),
     )
     return changes
+
+
+def decision_execution_loop(db, company_id, decision_id):
+    """Return the one canonical decision → task → impact view for every surface."""
+    decision = db.execute(
+        """SELECT d.*, c.case_title, a.asset_name
+           FROM decisions d
+           LEFT JOIN cases c ON c.case_id=d.case_id AND c.company_id=d.company_id
+           LEFT JOIN assets a ON a.asset_id=d.asset_id AND a.company_id=d.company_id
+           WHERE d.decision_id=? AND d.company_id=?""",
+        (decision_id, company_id),
+    ).fetchone()
+    if not decision:
+        raise LookupError("DECISION_NOT_FOUND")
+    task = db.execute(
+        """SELECT * FROM tasks WHERE decision_id=? AND company_id=?
+           ORDER BY created_at ASC,task_id ASC LIMIT 1""",
+        (decision_id, company_id),
+    ).fetchone()
+    review = None
+    if task:
+        review = db.execute(
+            """SELECT * FROM p0_impact_reviews
+               WHERE company_id=? AND decision_id=? AND task_id=?""",
+            (company_id, decision_id, task["task_id"]),
+        ).fetchone()
+    impact = dict(review) if review else {
+        "status": "WAITING_FOR_MEASUREMENT",
+        "status_label": "بانتظار القياس",
+        "baseline_value": None,
+        "baseline_source_ref": None,
+        "baseline_observed_at": None,
+        "target_value": None,
+        "target_source_ref": None,
+        "target_observed_at": None,
+        "actual_value": None,
+        "actual_source_ref": None,
+        "actual_observed_at": None,
+        "impact_outcome": None,
+    }
+    if review:
+        impact["status"] = "MEASURED"
+        impact["status_label"] = "تم القياس"
+    return {
+        "decision": dict(decision),
+        "task": dict(task) if task else None,
+        "impact_review": impact,
+    }
 
 def approve_decision_with_task(
     db,
@@ -1119,6 +1220,13 @@ def decision_room(db, company_id):
            ORDER BY d.created_at DESC LIMIT 1""",
         (company_id,),
     ).fetchone()
+    case_decision = db.execute(
+        """SELECT d.*,c.case_title FROM decisions d
+           LEFT JOIN cases c ON c.case_id=d.case_id AND c.company_id=d.company_id
+           WHERE d.company_id=? AND d.phase_label='P0' AND d.status='مقترح'
+           ORDER BY d.created_at DESC LIMIT 1""",
+        (company_id,),
+    ).fetchone()
     next_task = db.execute(
         """SELECT * FROM tasks WHERE company_id=? AND status IN ('لم تبدأ','قيد التنفيذ','متوقفة')
            AND BTRIM(COALESCE(owner_user_id,'')) <> ''
@@ -1196,6 +1304,31 @@ def decision_room(db, company_id):
                 for item in missing_evidence[:3]
             ],
             "action": today_action("أكمل الدليل الناقص", target),
+        }
+    elif case_decision:
+        try:
+            evidence_ids = _loads(case_decision["evidence_ids"], [])
+        except Exception:
+            evidence_ids = []
+        today = {
+            "status": "decision_pending",
+            "label": "قرار اليوم",
+            "title": case_decision["title"],
+            "reason": case_decision["reason"],
+            "expected_impact": case_decision["expected_impact"],
+            "decision_id": case_decision["decision_id"],
+            "case_id": case_decision["case_id"],
+            "evidence": [
+                today_evidence("القضية", case_decision["case_title"] or case_decision["case_id"]),
+                today_evidence("الأدلة المعتمدة", f"{len(evidence_ids)} دليل", case_decision["scan_id"]),
+                today_evidence("الأثر المتوقع", case_decision["expected_impact"] or "غير موثق"),
+            ],
+            "action": today_action(
+                "راجع القرار واعتمده",
+                f"/case/{case_decision['case_id']}",
+                kind="link",
+                decision_id=case_decision["decision_id"],
+            ),
         }
     elif experiment_decision:
         decision_evidence_ids = _loads(

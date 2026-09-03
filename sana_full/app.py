@@ -26,7 +26,16 @@ from flask.json.provider import DefaultJSONProvider
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import CSRFProtect
 import resend
-from database_config import acquire_schema_lock, resolve_database_url
+from database_config import (
+    acquire_schema_lock,
+    BILLING_TEST_SCHEMA_PREFIX,
+    build_billing_test_schema_name,
+    has_required_columns,
+    has_required_tables,
+    parse_billing_test_schema_created_at,
+    resolve_database_url,
+    resolve_database_schema,
+)
 # weasyprint يُستورد داخل الدالة فقط لتفادي crash عند غياب libpango وقت التشغيل
 
 # ------------------------------------------------------------------
@@ -305,6 +314,10 @@ def ask_sana_ai(system_prompt, user_prompt):
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE_URL = resolve_database_url()
+DATABASE_SCHEMA = resolve_database_schema()
+_BILLING_TEST_SCHEMA_PREVIOUS = None
+_BILLING_TEST_SCHEMA_PREVIOUS_ENV = None
+_BILLING_TEST_SCHEMA_STATE_SAVED = False
 # Keep scripts/tests that import this module aligned with the effective database.
 os.environ["DATABASE_URL"] = DATABASE_URL
 
@@ -409,6 +422,8 @@ ADMIN_PREVIEW_KEY = os.environ.get("ADMIN_PREVIEW_KEY")
 # وليس فقط عبر صفحات HTML.
 PUBLIC_ENDPOINTS = {
     "entry", "login", "signup", "logout", "api_session",
+    "pricing_page", "billing_offer_api", "billing_quote_api",
+    "billing_success_page", "billing_stripe_webhook",
     "methodology_page", "methodology_detail",
     "system_health", "healthz", "static", "guide_page",
     "sectors_list",   # قائمة القطاعات — عامة بلا مصادقة
@@ -446,6 +461,9 @@ ADMIN_ROLES = {
 }
 SYSTEM_ADMIN_ROLES = {"ADMIN", "SUPER_ADMIN"}
 COMPANY_ROLES = {"COMPANY_OWNER", "COMPANY_MEMBER"}
+SANA_LEADERSHIP_EMAIL = "sanaaos2026@gmail.com"
+TEST_IDENTITY_MARKERS = ("test", "billing", "drive", "example.test")
+TEST_IDENTITY_ARABIC_MARKERS = ("اختبار", "تجربة")
 ADMIN_STATUSES = {"active", "invited", "disabled"}
 ADMIN_PERMISSION_OPTIONS = {
     "manage_companies": "إدارة الشركات",
@@ -460,6 +478,16 @@ COMPANY_CONTEXT_PERMISSIONS = {
     "manage_companies", "edit_company", "run_reports",
     "export_reports", "review_cases", "link_accounts",
 }
+_RUNTIME_HEALTH = {
+    "startup": "not_started",
+    "last_critical_error": None,
+    "workers": {
+        "execution_reminders": "not_started",
+        "knowledge_backup": "not_started",
+        "knowledge_research": "not_started",
+        "billing_notification_retry": "not_started",
+    },
+}
 
 
 def _admin_role():
@@ -468,7 +496,7 @@ def _admin_role():
     if not account:
         return None
     row = get_db().execute(
-        """SELECT admin_role, is_admin, account_status
+        """SELECT email,company_id,admin_role,is_admin,account_status
            FROM user_accounts WHERE account_id=?""",
         (account["account_id"],),
     ).fetchone()
@@ -476,8 +504,58 @@ def _admin_role():
         return None
     role = str(row["admin_role"] or "USER").upper()
     if role == "USER" and row["is_admin"]:
-        return "SUPER_ADMIN"
+        role = "SUPER_ADMIN"
+    if (
+        role == "SUPER_ADMIN"
+        and not app.config.get("TESTING")
+        and (
+            str(row["email"] or "").strip().lower() != SANA_LEADERSHIP_EMAIL
+            or row["company_id"] is not None
+        )
+    ):
+        return None
     return role if role in SYSTEM_ADMIN_ROLES else None
+
+
+def _has_test_identity_marker(*values):
+    text = " ".join(str(value or "").strip().lower() for value in values)
+    return (
+        any(marker in text for marker in TEST_IDENTITY_MARKERS)
+        or any(marker in text for marker in TEST_IDENTITY_ARABIC_MARKERS)
+    )
+
+
+def _admin_account_classification(account):
+    """Separate production identities from explicit fixtures without deleting them."""
+    email = str(account.get("email") or "").strip().lower()
+    role = str(account.get("admin_role") or "USER").upper()
+    if role == "USER" and account.get("is_admin"):
+        role = "SUPER_ADMIN"
+    if role == "SUPER_ADMIN" and email == SANA_LEADERSHIP_EMAIL:
+        return "production"
+    if _has_test_identity_marker(
+        account.get("account_id"),
+        email,
+        account.get("company_id"),
+        account.get("company_name"),
+    ):
+        return "test"
+    if role == "SUPER_ADMIN":
+        return "unclassified"
+    return "production"
+
+
+def _admin_company_classification(company):
+    """Classify a company once so related admin metrics share one scope."""
+    if _has_test_identity_marker(
+        company.get("company_id"),
+        company.get("company_code"),
+        company.get("signup_code"),
+        company.get("name"),
+        company.get("contact_email"),
+    ):
+        return "test"
+    return "production"
 
 
 def _admin_permissions():
@@ -766,10 +844,25 @@ class _PGConn:
     def close(self):
         self._conn.close()
 
-
-def _connect_pg():
-    conn = psycopg2.connect(DATABASE_URL)
+def _quote_schema_identifier(schema):
+    """Quote a validated schema identifier for PostgreSQL DDL/session setup."""
+    schema = str(schema or "").strip().lower()
+    if not re.fullmatch(r"^[a-z_][a-z0-9_]{0,62}$", schema):
+        raise ValueError("DATABASE_SCHEMA_INVALID")
+    return '"' + schema.replace('"', '""') + '"'
+def _connect_pg(database_url=None, schema=None):
+    conn = psycopg2.connect(database_url or DATABASE_URL)
     conn.autocommit = False
+    effective_schema = DATABASE_SCHEMA if schema is None else schema
+    if effective_schema:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"SET search_path TO {_quote_schema_identifier(effective_schema)}"
+            )
+            cursor.execute(
+                "SELECT set_config('application_name', %s, false)",
+                (f"sana-billing-test:{effective_schema}",),
+            )
     return _PGConn(conn)
 
 
@@ -788,7 +881,8 @@ def close_db(exception=None):
 
 def _table_exists(conn, table_name):
     row = conn.execute(
-        "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=?",
+        "SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema=current_schema() AND table_name=?",
         (table_name,)
     ).fetchone()
     return row is not None
@@ -796,7 +890,8 @@ def _table_exists(conn, table_name):
 
 def _columns_of(conn, table_name):
     rows = conn.execute(
-        "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?",
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema=current_schema() AND table_name=?",
         (table_name,)
     ).fetchall()
     return {row[0] for row in rows}
@@ -810,7 +905,11 @@ def init_db(force=False):
         # business transaction from holding the web process indefinitely.
         acquire_schema_lock(conn)
         if force and _table_exists(conn, "companies"):
-            conn.executescript("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+            schema_identifier = _quote_schema_identifier(DATABASE_SCHEMA or "public")
+            conn.executescript(
+                f"DROP SCHEMA {schema_identifier} CASCADE; "
+                f"CREATE SCHEMA {schema_identifier};"
+            )
             conn.commit()
             acquire_schema_lock(conn)
         fresh = not _table_exists(conn, "companies")
@@ -1062,6 +1161,10 @@ def init_db(force=False):
         )""")
         conn.execute("""CREATE INDEX IF NOT EXISTS idx_p0_impact_reviews_case
                         ON p0_impact_reviews(company_id,case_id,reviewed_at DESC)""")
+        from sana_human_review import ensure_schema as ensure_human_review_schema
+        ensure_human_review_schema(conn)
+        from sana_returning_checkin import ensure_schema as ensure_returning_checkin_schema
+        ensure_returning_checkin_schema(conn)
 
         # ── سنع الخبير: نظام اكتشاف وتأهيل الخبراء (مستقل تمامًا عن جداول الشركات) ──
         conn.execute("""CREATE TABLE IF NOT EXISTS experts (
@@ -1142,7 +1245,15 @@ def init_db(force=False):
             conn.execute("ALTER TABLE user_accounts ADD COLUMN last_login_at TIMESTAMPTZ")
         # حساب SUPER_ADMIN العام ليس عضوًا في أي شركة. يبقى NULL ممنوعًا على
         # USER/ADMIN بواسطة القيد التالي، وتظل بيانات الشركات خلف tenant guards.
-        conn.execute("ALTER TABLE user_accounts ALTER COLUMN company_id DROP NOT NULL")
+        company_id_nullable = conn.execute(
+            """SELECT is_nullable FROM information_schema.columns
+               WHERE table_schema=current_schema()
+                 AND table_name='user_accounts' AND column_name='company_id'"""
+        ).fetchone()
+        if company_id_nullable and company_id_nullable["is_nullable"] == "NO":
+            conn.execute(
+                "ALTER TABLE user_accounts ALTER COLUMN company_id DROP NOT NULL"
+            )
         conn.execute(
             """ALTER TABLE user_accounts
                DROP CONSTRAINT IF EXISTS user_accounts_company_or_global_super_admin"""
@@ -1221,11 +1332,40 @@ def init_db(force=False):
             created_by TEXT NOT NULL REFERENCES user_accounts(account_id),
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             sent_at TIMESTAMPTZ,
-            error_code TEXT
+            error_code TEXT,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            last_attempt_at TIMESTAMPTZ,
+            next_attempt_at TIMESTAMPTZ,
+            delivery_lock_token TEXT,
+            delivery_locked_at TIMESTAMPTZ
         )""")
+        conn.execute(
+            "ALTER TABLE admin_notification_outbox "
+            "ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.execute(
+            "ALTER TABLE admin_notification_outbox "
+            "ADD COLUMN IF NOT EXISTS last_attempt_at TIMESTAMPTZ"
+        )
+        conn.execute(
+            "ALTER TABLE admin_notification_outbox "
+            "ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ"
+        )
+        conn.execute(
+            "ALTER TABLE admin_notification_outbox "
+            "ADD COLUMN IF NOT EXISTS delivery_lock_token TEXT"
+        )
+        conn.execute(
+            "ALTER TABLE admin_notification_outbox "
+            "ADD COLUMN IF NOT EXISTS delivery_locked_at TIMESTAMPTZ"
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_admin_notification_outbox_status "
             "ON admin_notification_outbox(status,created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_admin_notification_outbox_retry "
+            "ON admin_notification_outbox(notification_type,status,next_attempt_at,created_at)"
         )
 
         conn.commit()
@@ -1248,6 +1388,8 @@ def init_db(force=False):
         ensure_zubair_schema(conn)
         from drive_index import ensure_schema as ensure_drive_index_schema
         ensure_drive_index_schema(conn)
+        from sana_billing import ensure_schema as ensure_billing_schema
+        ensure_billing_schema(conn)
         conn.commit()
 
         # لكل شركة بلا رمز دعوة (سواء قاعدة بيانات جديدة أو قديمة) — ولّد رمزًا فريدًا
@@ -1261,6 +1403,174 @@ def init_db(force=False):
         raise
     finally:
         conn.close()
+
+def create_billing_test_schema():
+    """Create and select a disposable schema for one billing test run."""
+    global DATABASE_SCHEMA
+    global _BILLING_TEST_SCHEMA_PREVIOUS
+    global _BILLING_TEST_SCHEMA_PREVIOUS_ENV
+    global _BILLING_TEST_SCHEMA_STATE_SAVED
+    if not _BILLING_TEST_SCHEMA_STATE_SAVED:
+        _BILLING_TEST_SCHEMA_PREVIOUS = DATABASE_SCHEMA
+        _BILLING_TEST_SCHEMA_PREVIOUS_ENV = os.environ.get("SANA_DATABASE_SCHEMA")
+        _BILLING_TEST_SCHEMA_STATE_SAVED = True
+    cleanup_stale_billing_test_schemas()
+    schema = build_billing_test_schema_name()
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(f"CREATE SCHEMA {_quote_schema_identifier(schema)}")
+    finally:
+        conn.close()
+    DATABASE_SCHEMA = schema
+    os.environ["SANA_DATABASE_SCHEMA"] = schema
+    return schema
+
+
+def _billing_schema_cleanup_is_allowed():
+    """Only allow orphan cleanup from a non-production process."""
+    environment = os.environ.get("SANA_ENV", "").strip().lower()
+    if environment in {"production", "prod"}:
+        return False
+    if os.environ.get("REPLIT_DEPLOYMENT", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        return False
+    return True
+
+
+def cleanup_stale_billing_test_schemas(max_age_hours=24, now=None):
+    """Drop only old, timestamped, inactive billing-test schemas.
+
+    PostgreSQL does not store a schema creation timestamp.  Therefore only
+    names created by ``build_billing_test_schema_name`` are eligible: legacy
+    prefix-only names are intentionally left untouched because their age
+    cannot be proved safely.
+    """
+    if not _billing_schema_cleanup_is_allowed():
+        return {
+            "status": "skipped_production",
+            "deleted": [],
+            "skipped": [],
+        }
+    try:
+        max_age_seconds = float(max_age_hours) * 60 * 60
+    except (TypeError, ValueError):
+        raise ValueError("BILLING_TEST_SCHEMA_MAX_AGE_INVALID")
+    if max_age_seconds <= 0:
+        raise ValueError("BILLING_TEST_SCHEMA_MAX_AGE_INVALID")
+
+    if now is None:
+        now_epoch = time.time()
+    elif isinstance(now, datetime):
+        now_epoch = now.timestamp()
+    else:
+        now_epoch = float(now)
+
+    deleted = []
+    skipped = []
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT n.nspname,
+                       EXISTS (
+                           SELECT 1
+                           FROM pg_stat_activity a
+                           WHERE a.pid <> pg_backend_pid()
+                             AND a.application_name =
+                                 'sana-billing-test:' || n.nspname
+                       ) AS is_active
+                FROM pg_namespace n
+                WHERE n.nspname LIKE %s
+                ORDER BY n.nspname
+                """,
+                (f"{BILLING_TEST_SCHEMA_PREFIX}%",),
+            )
+            candidates = cursor.fetchall()
+            for schema, is_active in candidates:
+                schema = str(schema)
+                created_at = parse_billing_test_schema_created_at(schema)
+                age_seconds = (
+                    None if created_at is None else now_epoch - created_at
+                )
+                reason = None
+                if schema == DATABASE_SCHEMA:
+                    reason = "active_schema"
+                elif is_active:
+                    reason = "active_connection"
+                elif created_at is None:
+                    reason = "untracked_age"
+                elif age_seconds < 0:
+                    reason = "future_timestamp"
+                elif age_seconds < max_age_seconds:
+                    reason = "too_new"
+                if reason is not None:
+                    skipped.append({"schema": schema, "reason": reason})
+                    continue
+                cursor.execute(
+                    f"DROP SCHEMA IF EXISTS {_quote_schema_identifier(schema)} CASCADE"
+                )
+                deleted.append(schema)
+    finally:
+        conn.close()
+    return {
+        "status": "completed",
+        "deleted": deleted,
+        "skipped": skipped,
+    }
+
+
+def init_billing_test_db():
+    """Prepare billing tables in the currently selected test schema."""
+    conn = _connect_pg()
+    try:
+        core_schema_ready = has_required_tables(
+            conn,
+            (
+                "companies",
+                "user_accounts",
+                "admin_audit_log",
+                "admin_notification_outbox",
+            ),
+        )
+        billing_schema_ready = (
+            core_schema_ready
+            and has_required_tables(
+                conn,
+                (
+                    "sana_billing_settings",
+                    "sana_billing_coupons",
+                    "sana_company_subscriptions",
+                    "sana_billing_events",
+                    "sana_billing_cleanup_runs",
+                    "sana_billing_cleanup_skips",
+                ),
+            )
+            and has_required_columns(
+                conn,
+                {
+                    "sana_company_subscriptions": (
+                        "stripe_checkout_session_created_at",
+                    ),
+                },
+            )
+        )
+        if billing_schema_ready:
+            return False
+        if core_schema_ready:
+            from sana_billing import ensure_schema as ensure_billing_schema
+
+            ensure_billing_schema(conn)
+            return False
+    finally:
+        conn.close()
+
+    init_db()
+    return True
 
 
 def seed_db():
@@ -1780,6 +2090,135 @@ def onboarding():
     return jsonify({"success": True, "data": {"redirect": "/discovery"}})
 
 
+@app.route("/pricing")
+def pricing_page():
+    return render_template("13-pricing.html")
+
+
+@app.route("/api/billing/offer")
+def billing_offer_api():
+    from sana_billing import public_offer
+    account = current_account()
+    company_id = account.get("company_id") if account else None
+    return jsonify({
+        "success": True,
+        "data": public_offer(get_db(), company_id),
+        "authenticated": bool(account and company_id),
+    })
+
+
+@app.route("/api/billing/quote", methods=["POST"])
+def billing_quote_api():
+    from sana_billing import quote
+    body = request.get_json(silent=True) or {}
+    try:
+        result = quote(get_db(), body.get("code"))
+    except ValueError:
+        return jsonify({
+            "success": False,
+            "error": "COUPON_INVALID",
+            "message": "الكود غير صالح أو انتهى استخدامه.",
+        }), 400
+    return jsonify({"success": True, "data": result})
+
+
+@app.route("/api/billing/checkout", methods=["POST"])
+def billing_checkout_api():
+    from sana_billing import activate_free, create_checkout, quote
+    account = current_account()
+    if not account or not account.get("company_id"):
+        return jsonify({
+            "success": False,
+            "error": "LOGIN_REQUIRED",
+            "redirect": "/signup",
+        }), 401
+    body = request.get_json(silent=True) or {}
+    try:
+        checkout_quote = quote(get_db(), body.get("code"))
+    except ValueError:
+        return jsonify({
+            "success": False,
+            "error": "COUPON_INVALID",
+            "message": "الكود غير صالح أو انتهى استخدامه.",
+        }), 400
+    db = get_db()
+    if checkout_quote["amount_now_minor"] == 0:
+        subscription = activate_free(
+            db,
+            account["company_id"],
+            coupon_code=checkout_quote["coupon_code"],
+        )
+        _admin_audit(
+            db, account["account_id"], "billing_free_activation",
+            "company_subscription", subscription["subscription_id"],
+            account["company_id"], "تفعيل مجاني بكود خصم صالح",
+            {"coupon_code": checkout_quote["coupon_code"]},
+        )
+        db.commit()
+        return jsonify({
+            "success": True,
+            "data": {"free": True, "redirect": "/home"},
+        })
+    try:
+        base_url = request.url_root.rstrip("/")
+        checkout = create_checkout(
+            db,
+            company_id=account["company_id"],
+            email=account["email"],
+            amount_minor=checkout_quote["amount_now_minor"],
+            coupon_code=checkout_quote["coupon_code"],
+            base_url=base_url,
+        )
+    except Exception as exc:
+        app.logger.warning("Stripe checkout creation failed: %s", type(exc).__name__)
+        return jsonify({
+            "success": False,
+            "error": "PAYMENT_PROVIDER_UNAVAILABLE",
+            "message": "تعذر فتح الدفع الآن. حاول مرة أخرى بعد قليل.",
+        }), 503
+    return jsonify({"success": True, "data": checkout})
+
+
+@app.route("/billing/success")
+def billing_success_page():
+    from sana_billing import complete_checkout, retrieve_checkout
+    session_id = (request.args.get("session_id") or "").strip()
+    if not session_id:
+        return redirect(url_for("pricing_page"))
+    try:
+        checkout = retrieve_checkout(session_id)
+        complete_checkout(get_db(), checkout)
+    except Exception as exc:
+        app.logger.warning("Stripe checkout verification failed: %s", type(exc).__name__)
+        return redirect(url_for("pricing_page", payment="pending"))
+    return redirect(url_for("ceo_home", payment="success"))
+
+
+@app.route("/api/billing/stripe-webhook", methods=["POST"])
+@csrf.exempt
+def billing_stripe_webhook():
+    from sana_billing import complete_checkout, process_stripe_event, verify_webhook
+    try:
+        event = verify_webhook(
+            request.get_data(cache=False),
+            request.headers.get("Stripe-Signature"),
+        )
+        if event.get("type") == "checkout.session.completed":
+            complete_checkout(get_db(), (event.get("data") or {}).get("object") or {})
+        else:
+            result = process_stripe_event(get_db(), event)
+            notification = result.get("notification")
+            if notification:
+                _send_billing_lifecycle_notification(
+                    get_db(), notification, result["company_id"]
+                )
+                get_db().commit()
+    except Exception as exc:
+        app.logger.warning("Stripe webhook rejected: %s", type(exc).__name__)
+        return jsonify({"success": False}), 400
+    return jsonify({"success": True})
+
+
 @app.route("/api/admin/attach-account", methods=["POST"])
 def admin_attach_account():
     """
@@ -2104,15 +2543,20 @@ def discovery():
     ).fetchone()
     if not company:
         abort(404)
+    full_reassessment = request.args.get("full") == "1"
     if context["admin_preview"]:
-        return render_template("06-sana-discovery.html")
+        return render_template(
+            "06-sana-discovery.html", full_reassessment=full_reassessment
+        )
     account = current_account()
     start = _company_start_redirect(account)
     if start == url_for("onboarding"):
         return redirect(start)
-    if start == url_for("ceo_home"):
+    if start == url_for("ceo_home") and not full_reassessment:
         return redirect(start)
-    return render_template("06-sana-discovery.html")
+    return render_template(
+        "06-sana-discovery.html", full_reassessment=full_reassessment
+    )
 
 
 @app.route("/api/discovery/save", methods=["POST"])
@@ -2124,13 +2568,15 @@ def discovery_save():
 
     company_id = context["company_id"]
     db = get_db()
+    body = request.get_json(silent=True) or {}
+    full_reassessment = body.get("full_reassessment") is True
 
     # ضمان عدم التكرار — فقط إذا اكتملت الجلسة وحُفظت البيانات فعليًا (main_goal غير فارغ)
     # إذا كان sds_done=1 لكن main_goal فارغ: نسمح بإعادة الحفظ لأن البيانات ضاعت
     company = db.execute(
         "SELECT sds_done, main_goal FROM companies WHERE company_id=?", (company_id,)
     ).fetchone()
-    if company and company["sds_done"] and company["main_goal"]:
+    if company and company["sds_done"] and company["main_goal"] and not full_reassessment:
         case = db.execute(
             "SELECT case_id FROM cases WHERE company_id=? ORDER BY opened_at ASC LIMIT 1",
             (company_id,)
@@ -2140,7 +2586,6 @@ def discovery_save():
             "already_done": True
         }})
 
-    body = request.get_json(silent=True) or {}
     q1    = (body.get("q1")      or "").strip()
     q2    = (body.get("q2")      or "").strip()
     q3    = (body.get("q3")      or "").strip()
@@ -2336,14 +2781,15 @@ def discovery_save():
             raise ValueError("فترة الأساس مطلوبة.")
         comparison_start = baseline_payload.get("comparison_start") or None
         comparison_end = baseline_payload.get("comparison_end") or None
-        if not comparison_start or not comparison_end:
-            raise ValueError("فترة المقارنة مطلوبة حتى لا تُقرأ الأرقام خارج سياقها.")
-        comparison = validate_context({
-            "information_type": "Narrative",
-            "period_start": comparison_start,
-            "period_end": comparison_end,
-        })
-        comparison_start, comparison_end = comparison["period_start"], comparison["period_end"]
+        if bool(comparison_start) != bool(comparison_end):
+            raise ValueError("حدد بداية الفترة السابقة ونهايتها، أو اتركهما فارغتين.")
+        if comparison_start and comparison_end:
+            comparison = validate_context({
+                "information_type": "Narrative",
+                "period_start": comparison_start,
+                "period_end": comparison_end,
+            })
+            comparison_start, comparison_end = comparison["period_start"], comparison["period_end"]
     except ValueError as exc:
         db.rollback()
         return jsonify({
@@ -2390,6 +2836,74 @@ def discovery_save():
     }})
 
 
+@app.route("/check-in")
+def returning_checkin_page():
+    context = request_company_context()
+    if not context:
+        return redirect(url_for("login"))
+    company = get_db().execute(
+        "SELECT sds_done,main_goal FROM companies WHERE company_id=?",
+        (context["company_id"],),
+    ).fetchone()
+    if not company or not company["sds_done"] or not company["main_goal"]:
+        return redirect(url_for("discovery"))
+    return render_template("24-returning-checkin.html")
+
+
+@app.route("/api/returning-checkin", methods=["POST"])
+def returning_checkin_start():
+    context = request_company_context()
+    if not context:
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+    from sana_returning_checkin import start_checkin
+    db = get_db()
+    try:
+        result = start_checkin(
+            db, context["company_id"], (current_account() or {}).get("account_id")
+        )
+        db.commit()
+        return jsonify({"success": True, "data": result}), 201
+    except (ValueError, LookupError) as exc:
+        db.rollback()
+        return jsonify({
+            "success": False, "error": str(exc),
+            "message": "أكمل جلسة الاكتشاف الأولى قبل المراجعة السريعة.",
+        }), 409
+
+
+@app.route("/api/returning-checkin/<checkin_id>", methods=["POST"])
+def returning_checkin_complete(checkin_id):
+    context = request_company_context()
+    if not context:
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+    from sana_returning_checkin import complete_checkin
+    db = get_db()
+    row = db.execute(
+        """SELECT * FROM returning_checkins
+           WHERE checkin_id=? AND company_id=? FOR UPDATE""",
+        (checkin_id, context["company_id"]),
+    ).fetchone()
+    if not row:
+        return jsonify({"success": False, "error": "CHECKIN_NOT_FOUND"}), 404
+    if row["status"] == "COMPLETED":
+        return jsonify({
+            "success": True, "data": json.loads(row["summary_json"] or "{}")
+        })
+    answers = (request.get_json(silent=True) or {}).get("answers") or []
+    if not isinstance(answers, list):
+        return jsonify({"success": False, "error": "INVALID_ANSWERS"}), 400
+    try:
+        summary = complete_checkin(db, row, answers)
+        db.commit()
+        return jsonify({"success": True, "data": summary})
+    except (ValueError, RuntimeError) as exc:
+        db.rollback()
+        return jsonify({
+            "success": False, "error": str(exc),
+            "message": "تأكد من اكتمال الإجابات وفترة القياس.",
+        }), 400
+
+
 @app.route("/logout", methods=["GET", "POST"])
 def logout():
     session.clear()
@@ -2425,7 +2939,6 @@ def api_session():
 ADMIN_COMPANY_STATUSES = {
     "Registered", "Internal Managed", "Active", "Trial", "Suspended", "Archived"
 }
-SANA_LEADERSHIP_EMAIL = "sanaaos2026@gmail.com"
 
 
 def _valid_email(value):
@@ -2471,17 +2984,37 @@ def _create_company_default_assets(db, company_id):
         )
 
 
+_BILLING_NOTIFICATION_TYPES = {
+    "billing_subscription_past_due",
+    "billing_subscription_canceled",
+}
+_BILLING_NOTIFICATION_MAX_ATTEMPTS = 5
+_BILLING_NOTIFICATION_RETRY_BASE_SECONDS = 60
+_BILLING_NOTIFICATION_RETRY_MAX_SECONDS = 3600
+_BILLING_NOTIFICATION_LOCK_SECONDS = 600
+
+
+def _billing_retry_delay_seconds(attempt_count):
+    """Return a bounded exponential delay after an unsuccessful attempt."""
+    exponent = max(0, int(attempt_count) - 1)
+    return min(
+        _BILLING_NOTIFICATION_RETRY_BASE_SECONDS * (2 ** exponent),
+        _BILLING_NOTIFICATION_RETRY_MAX_SECONDS,
+    )
 def _admin_send_email(db, *, notification_type, recipient_email, subject,
                       html_body, actor_id, company_id=None, payload=None):
     notification_id = "NTF-" + secrets.token_hex(8).upper()
+    initial_attempt_count = 1 if RESEND_API_KEY else 0
     db.execute(
         """INSERT INTO admin_notification_outbox
            (notification_id,notification_type,recipient_email,company_id,status,
-            payload_json,created_by)
-           VALUES (?,?,?,?,?,?,?)""",
+            payload_json,created_by,attempt_count,last_attempt_at)
+           VALUES (?,?,?,?,?,?,?,?,CASE WHEN ? > 0 THEN now() ELSE NULL END)""",
         (
             notification_id, notification_type, recipient_email, company_id,
             "queued", json.dumps(payload or {}, ensure_ascii=False), actor_id,
+            initial_attempt_count,
+            initial_attempt_count,
         ),
     )
     if not RESEND_API_KEY:
@@ -2495,17 +3028,159 @@ def _admin_send_email(db, *, notification_type, recipient_email, subject,
         })
         db.execute(
             """UPDATE admin_notification_outbox
-               SET status='sent',sent_at=now() WHERE notification_id=?""",
+               SET status='sent',sent_at=now(),error_code=NULL,
+                   next_attempt_at=NULL,delivery_lock_token=NULL,
+                   delivery_locked_at=NULL
+               WHERE notification_id=?""",
             (notification_id,),
         )
         return {"notification_id": notification_id, "status": "sent"}
     except Exception as exc:
+        attempt_count = initial_attempt_count
         db.execute(
             """UPDATE admin_notification_outbox
-               SET status='failed',error_code=? WHERE notification_id=?""",
-            (type(exc).__name__[:80], notification_id),
+               SET status='failed',error_code=?,
+                   next_attempt_at=CASE
+                     WHEN ? < ? THEN now() + (? * INTERVAL '1 second')
+                     ELSE NULL
+                   END
+               WHERE notification_id=?""",
+            (
+                type(exc).__name__[:80],
+                attempt_count,
+                _BILLING_NOTIFICATION_MAX_ATTEMPTS,
+                _billing_retry_delay_seconds(attempt_count),
+                notification_id,
+            ),
         )
         return {"notification_id": notification_id, "status": "failed"}
+
+def _claim_billing_notification_for_retry(db, notification_id=None):
+    """Claim one due billing message, committing before the network call."""
+    notification_filter = ""
+    params = [
+        "billing_subscription_past_due",
+        "billing_subscription_canceled",
+        _BILLING_NOTIFICATION_MAX_ATTEMPTS,
+        _BILLING_NOTIFICATION_LOCK_SECONDS,
+    ]
+    if notification_id:
+        notification_filter = " AND notification_id=?"
+        params.append(notification_id)
+    row = db.execute(
+        f"""SELECT *
+           FROM admin_notification_outbox
+           WHERE notification_type IN (?,?)
+             AND status IN ('queued','failed')
+             AND attempt_count < ?
+             AND COALESCE(next_attempt_at,now()) <= now()
+             AND (
+               delivery_locked_at IS NULL
+               OR delivery_locked_at < now() - (? * INTERVAL '1 second')
+             )
+             {notification_filter}
+           ORDER BY created_at,notification_id
+           FOR UPDATE SKIP LOCKED
+           LIMIT 1""",
+        tuple(params),
+    ).fetchone()
+    if not row:
+        db.commit()
+        return None
+    lock_token = uuid.uuid4().hex
+    claimed = db.execute(
+        """UPDATE admin_notification_outbox
+           SET delivery_lock_token=?,delivery_locked_at=now(),
+               attempt_count=attempt_count+1,last_attempt_at=now()
+           WHERE notification_id=?
+           RETURNING *""",
+        (lock_token, row["notification_id"]),
+    ).fetchone()
+    db.commit()
+    if not claimed:
+        return None
+    result = dict(claimed)
+    result["delivery_lock_token"] = lock_token
+    return result
+def _send_billing_lifecycle_notification(db, notification, company_id):
+    """Notify the company's owner after a Stripe state transition.
+
+    The Stripe event ledger decides whether a transition is new. This helper
+    only delivers the resulting notification and records its delivery outcome
+    in the shared admin notification outbox. The recovery URL deliberately
+    contains no Stripe identifiers or payment details.
+    """
+    status = notification.get("status")
+    if status not in {"past_due", "canceled"}:
+        return {"status": "ignored"}
+
+    owners = db.execute(
+        """SELECT account_id,email
+           FROM user_accounts
+           WHERE company_id=? AND account_status='active'
+             AND admin_role='COMPANY_OWNER'
+           ORDER BY created_at, account_id""",
+        (company_id,),
+    ).fetchall()
+    owners = [owner for owner in owners if _valid_email(owner["email"])]
+    if not owners:
+        app.logger.error(
+            "Billing notification owner unavailable for company %s", company_id
+        )
+        return {"status": "failed", "error": "BILLING_OWNER_EMAIL_UNAVAILABLE"}
+
+    if status == "past_due":
+        action = "update_payment"
+        subject = "تعثر دفع اشتراك سنع — مطلوب تحديث وسيلة الدفع"
+        heading = "تعثر دفع اشتراك سنع"
+        explanation = (
+            "تعذر تحصيل دفعة الاشتراك الأخيرة. حدّث وسيلة الدفع أو راجع "
+            "الاشتراك حتى تعود الخدمة للعمل."
+        )
+        link_label = "تحديث وسيلة الدفع أو مراجعة الاشتراك"
+    else:
+        action = "restart_subscription"
+        subject = "تم إلغاء اشتراك سنع — ابدأ اشتراكًا جديدًا"
+        heading = "تم إلغاء اشتراك سنع"
+        explanation = (
+            "تم إلغاء الاشتراك، ولذلك توقفت الخدمة. يمكنك بدء اشتراك جديد "
+            "من صفحة الأسعار."
+        )
+        link_label = "بدء اشتراك جديد"
+
+    recovery_url = (
+        f"{APP_BASE_URL}/pricing?"
+        f"{urlencode({'billing_action': action})}"
+    )
+    deliveries = []
+    for owner in owners:
+        deliveries.append(_admin_send_email(
+            db,
+            notification_type=f"billing_subscription_{status}",
+            recipient_email=owner["email"],
+            subject=subject,
+            html_body=(
+                "<div dir='rtl'>"
+                f"<h2>{html.escape(heading)}</h2>"
+                f"<p>{html.escape(explanation)}</p>"
+                f"<p><a href='{html.escape(recovery_url)}'>"
+                f"{html.escape(link_label)}</a></p>"
+                "</div>"
+            ),
+            actor_id=owner["account_id"],
+            company_id=company_id,
+            payload={
+                "event_id": notification.get("event_id"),
+                "status": status,
+                "recovery_action": action,
+                "recovery_url": recovery_url,
+            },
+        ))
+    return {
+        "status": "delivered",
+        "recipient_count": len(deliveries),
+        "deliveries": deliveries,
+    }
 
 
 def _issue_admin_password_reset(db, account, actor_id, reason):
@@ -2675,6 +3350,27 @@ def _admin_company_snapshot(db, company):
     evidence_count = db.execute(
         "SELECT COUNT(*) AS c FROM evidence WHERE company_id=?", (company_id,)
     ).fetchone()["c"]
+    verified_evidence_count = db.execute(
+        """SELECT COUNT(*) AS c FROM evidence
+           WHERE company_id=? AND verification_status='VERIFIED'""",
+        (company_id,),
+    ).fetchone()["c"]
+    pending_review_count = db.execute(
+        """SELECT COUNT(*) AS c FROM scan_findings
+           WHERE company_id=? AND review_status='Pending Review'""",
+        (company_id,),
+    ).fetchone()["c"]
+    contradiction_count = db.execute(
+        """SELECT COUNT(*) AS c
+           FROM evidence_relations r
+           JOIN evidence e ON e.evidence_id=r.from_evidence_id
+           WHERE e.company_id=? AND r.status='OPEN'""",
+        (company_id,),
+    ).fetchone()["c"]
+    subscription = db.execute(
+        "SELECT status FROM sana_company_subscriptions WHERE company_id=?",
+        (company_id,),
+    ).fetchone()
     missing_evidence = (
         not latest_scan
         or latest_scan["status"] == "INCOMPLETE"
@@ -2723,99 +3419,90 @@ def _admin_company_snapshot(db, company):
         } if latest_scan else None,
         "top_bottleneck": bottleneck.get("statement"),
         "latest_decision": dict(p0_decision) if p0_decision else None,
+        "latest_task": dict(p0_task) if p0_task else None,
         "open_tasks": open_tasks,
         "overdue_tasks": overdue_tasks,
         "latest_impact_review": dict(last_review) if last_review else None,
+        "classification": _admin_company_classification(company),
+        "progress": {
+            "discovery": bool(company.get("sds_done")),
+            "evidence_ready": not missing_evidence,
+            "scan_complete": bool(
+                latest_scan and latest_scan["status"] == "COMPLETE"
+            ),
+            "decision": bool(p0_decision),
+            "task": bool(p0_task),
+            "result": bool(p0_task and p0_task["status"] == "منجزة"),
+            "impact": bool(last_review),
+        },
         "evidence_readiness": {
             "status": "NOT_READY" if missing_evidence else "READY",
             "evidence_count": evidence_count,
+            "verified_count": verified_evidence_count,
+            "pending_review_count": pending_review_count,
+            "contradiction_count": contradiction_count,
             "scan_status": latest_scan["status"] if latest_scan else "NOT_RUN",
         },
+        "subscription_status": subscription["status"] if subscription else None,
     }
 
 
-def _admin_companies(db):
+def _admin_companies(db, mode="production"):
+    mode = mode if mode in {"production", "qa"} else "production"
+    expected = "test" if mode == "qa" else "production"
     return [
         _admin_company_snapshot(db, row)
         for row in db.execute(
             "SELECT * FROM companies ORDER BY created_at DESC, company_id"
         ).fetchall()
+        if _admin_company_classification(row) == expected
     ]
 
 
-def _admin_ops_queue(db):
+def _admin_ops_queue(db, mode="production"):
     items = []
-    today = date.today()
-    companies = db.execute("SELECT company_id,name FROM companies").fetchall()
-    for company in companies:
+    for company in _admin_companies(db, mode):
         cid = company["company_id"]
-        latest_scan = db.execute(
-            """SELECT scan_id,status,result FROM scan_runs
-               WHERE company_id=? ORDER BY created_at DESC LIMIT 1""", (cid,)
-        ).fetchone()
-        scan_payload = _admin_scan_payload(latest_scan)
-        latest_case = db.execute(
-            """SELECT case_id,case_title FROM cases
-               WHERE company_id=? AND case_status NOT IN ('Closed','Completed','مكتملة')
-               ORDER BY opened_at DESC LIMIT 1""", (cid,)
-        ).fetchone()
-        if latest_case and (
-            not latest_scan
-            or latest_scan["status"] == "INCOMPLETE"
-            or scan_payload.get("missing_evidence")
-        ):
+        progress = company["progress"]
+        if company["evidence_readiness"]["status"] == "NOT_READY":
             items.append({
                 "priority": "HIGH",
                 "type": "evidence",
                 "company_id": cid,
-                "entity_id": latest_case["case_id"],
-                "title": f"{company['name']} · Evidence Gate",
+                "entity_id": (
+                    (company.get("latest_case") or {}).get("case_id") or cid
+                ),
+                "title": f"{company['name']} · Evidence ناقص",
                 "reason": "الأدلة غير كافية أو لم يكتمل Sana Scan.",
             })
-
-        for decision in db.execute(
-            """SELECT decision_id,title,case_id FROM decisions
-               WHERE company_id=? AND status IN ('مقترح','قيد المراجعة')
-               ORDER BY created_at DESC LIMIT 5""", (cid,)
-        ).fetchall():
+        if progress["decision"] and not progress["task"]:
+            decision = company["latest_decision"]
             items.append({
-                "priority": "HIGH" if decision["case_id"] else "NORMAL",
+                "priority": "HIGH",
                 "type": "decision",
                 "company_id": cid,
                 "entity_id": decision["decision_id"],
-                "title": f"{company['name']} · قرار غير معتمد",
+                "title": f"{company['name']} · قرار بلا مهمة",
                 "reason": decision["title"],
             })
-
-        for task in db.execute(
-            """SELECT task_id,title,due_date,decision_id FROM tasks
-               WHERE company_id=? AND status!='منجزة'""", (cid,)
-        ).fetchall():
-            due = _admin_date(task["due_date"])
-            if due and due < today:
-                items.append({
-                    "priority": "CRITICAL",
-                    "type": "task",
-                    "company_id": cid,
-                    "entity_id": task["task_id"],
-                    "title": f"{company['name']} · مهمة متأخرة",
-                    "reason": f"{task['title']} · الموعد {task['due_date']}",
-                })
-
-        for task in db.execute(
-            """SELECT t.task_id,t.title,d.case_id FROM tasks t
-               JOIN decisions d ON d.decision_id=t.decision_id
-               WHERE t.company_id=? AND d.phase_label='P0' AND t.status='منجزة'
-                 AND NOT EXISTS (
-                   SELECT 1 FROM p0_impact_reviews r WHERE r.task_id=t.task_id
-                 )""", (cid,)
-        ).fetchall():
+        if progress["task"] and not progress["result"]:
+            task = company["latest_task"]
+            items.append({
+                "priority": "HIGH",
+                "type": "task",
+                "company_id": cid,
+                "entity_id": task["task_id"],
+                "title": f"{company['name']} · مهمة بلا نتيجة",
+                "reason": task["title"],
+            })
+        if progress["result"] and not progress["impact"]:
+            task = company["latest_task"]
             items.append({
                 "priority": "HIGH",
                 "type": "impact",
                 "company_id": cid,
                 "entity_id": task["task_id"],
-                "title": f"{company['name']} · Impact Review ناقص",
+                "title": f"{company['name']} · نتيجة بلا Impact",
                 "reason": task["title"],
             })
     order = {"CRITICAL": 0, "HIGH": 1, "NORMAL": 2}
@@ -2824,10 +3511,282 @@ def _admin_ops_queue(db):
 
 @app.route("/admin")
 def admin_dashboard_page():
-    _role, failure = _admin_guard(json_response=False)
+    role, failure = _admin_guard(json_response=False)
     if failure:
         return failure
-    return render_template("admin-dashboard.html")
+    return render_template(
+        "admin-dashboard.html",
+        admin_bootstrap={
+            "role": role,
+            "permissions": sorted(_admin_permissions()),
+            "permission_options": ADMIN_PERMISSION_OPTIONS,
+        },
+    )
+
+
+@app.route("/api/admin/billing", methods=["GET", "PATCH"])
+def admin_billing():
+    from sana_billing import (
+        billing_cleanup_health,
+        latest_billing_cleanup_run,
+        latest_billing_cleanup_skip,
+        public_offer,
+    )
+    _role, failure = _admin_guard(permission="manage_companies")
+    if failure:
+        return failure
+    db = get_db()
+    if request.method == "PATCH":
+        body = request.get_json(silent=True) or {}
+        reason = (body.get("reason") or "").strip()
+        if not reason:
+            return jsonify({"success": False, "error": "AUDIT_REASON_REQUIRED"}), 400
+        try:
+            base_price = int(body.get("base_price_minor"))
+            sale_price = int(body.get("sale_price_minor"))
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "PRICE_INVALID"}), 400
+        if base_price < 0 or sale_price < 0 or sale_price > base_price:
+            return jsonify({"success": False, "error": "PRICE_INVALID"}), 400
+        plan_name = (body.get("plan_name") or "سنع").strip()
+        sale_label = (body.get("sale_label") or "عرض الإطلاق").strip()
+        if not plan_name or not sale_label:
+            return jsonify({"success": False, "error": "BILLING_COPY_INVALID"}), 400
+        db.execute(
+            """UPDATE sana_billing_settings
+               SET plan_name=?,base_price_minor=?,sale_price_minor=?,
+                   sale_label=?,updated_by=?,updated_at=now()
+               WHERE plan_id='SANA-P0'""",
+            (
+                plan_name, base_price, sale_price, sale_label,
+                current_account()["account_id"],
+            ),
+        )
+        _admin_audit(
+            db, current_account()["account_id"], "billing_offer_updated",
+            "billing_offer", "SANA-P0", None, reason,
+            {"base_price_minor": base_price, "sale_price_minor": sale_price},
+        )
+        db.commit()
+
+    coupons = [
+        dict(row) for row in db.execute(
+            """SELECT * FROM sana_billing_coupons
+               ORDER BY created_at DESC LIMIT 100"""
+        ).fetchall()
+    ]
+    subscriptions = [
+        dict(row) for row in db.execute(
+            """SELECT c.company_id,c.name AS company_name,
+                      (s.subscription_id IS NOT NULL) AS has_subscription,
+                      s.status,s.amount_minor,s.coupon_code,
+                      s.current_period_end,s.updated_at
+               FROM companies c
+               LEFT JOIN sana_company_subscriptions s ON s.company_id=c.company_id
+               ORDER BY c.created_at DESC LIMIT 300"""
+        ).fetchall()
+    ]
+    return jsonify({"success": True, "data": {
+        "offer": public_offer(db),
+        "coupons": coupons,
+        "subscriptions": subscriptions,
+        "cleanup_run": latest_billing_cleanup_run(db),
+        "cleanup_skip": latest_billing_cleanup_skip(db),
+        "cleanup_health": billing_cleanup_health(db),
+    }})
+
+
+@app.route("/api/admin/billing/checkout-sessions/cleanup", methods=["POST"])
+def admin_billing_checkout_cleanup():
+    from sana_billing import (
+        STALE_CHECKOUT_MIN_AGE_HOURS,
+        expire_stale_checkouts,
+    )
+    _role, failure = _admin_guard(permission="manage_companies")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        return jsonify({"success": False, "error": "AUDIT_REASON_REQUIRED"}), 400
+    try:
+        min_age_hours = int(
+            body.get("min_age_hours", STALE_CHECKOUT_MIN_AGE_HOURS)
+        )
+        limit = int(body.get("limit", 50))
+        if min_age_hours < STALE_CHECKOUT_MIN_AGE_HOURS or limit < 1 or limit > 100:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({
+            "success": False,
+            "error": "CHECKOUT_CLEANUP_ARGUMENTS_INVALID",
+        }), 400
+
+    db = get_db()
+    result = expire_stale_checkouts(
+        db, min_age_hours=min_age_hours, limit=limit
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "billing_checkout_cleanup",
+        "billing_checkout_cleanup", None, None, reason,
+        {"min_age_hours": min_age_hours, "limit": limit, **result},
+    )
+    db.commit()
+    app.logger.info(
+        "Stripe checkout cleanup completed: scanned=%d expired=%d "
+        "already_completed=%d already_expired=%d failed=%d",
+        result["scanned"], result["expired"], result["already_completed"],
+        result["already_expired"], result["failed"],
+    )
+    return jsonify({"success": True, "data": result})
+
+
+@app.route("/api/admin/billing/coupons", methods=["POST"])
+def admin_billing_coupon_create():
+    from sana_billing import normalize_coupon_code
+    _role, failure = _admin_guard(permission="manage_companies")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "").strip()
+    code = normalize_coupon_code(body.get("code"))
+    discount_type = (body.get("discount_type") or "").strip()
+    try:
+        discount_value = int(body.get("discount_value"))
+        max_redemptions = (
+            int(body["max_redemptions"])
+            if body.get("max_redemptions") not in (None, "") else None
+        )
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "COUPON_INVALID"}), 400
+    expires_at = (body.get("expires_at") or "").strip() or None
+    if (
+        not re.fullmatch(r"[A-Z0-9_-]{3,32}", code)
+        or discount_type not in {"percent", "amount"}
+        or discount_value <= 0
+        or (discount_type == "percent" and discount_value > 100)
+        or (max_redemptions is not None and max_redemptions <= 0)
+        or not reason
+    ):
+        return jsonify({"success": False, "error": "COUPON_INVALID"}), 400
+    if expires_at:
+        try:
+            date.fromisoformat(expires_at)
+        except ValueError:
+            return jsonify({"success": False, "error": "COUPON_EXPIRY_INVALID"}), 400
+    db = get_db()
+    coupon_id = "CPN-" + secrets.token_hex(8).upper()
+    try:
+        db.execute(
+            """INSERT INTO sana_billing_coupons
+               (coupon_id,code,discount_type,discount_value,max_redemptions,
+                expires_at,created_by)
+               VALUES (?,?,?,?,?,?,?)""",
+            (
+                coupon_id, code, discount_type, discount_value,
+                max_redemptions, expires_at, current_account()["account_id"],
+            ),
+        )
+    except psycopg2.errors.UniqueViolation:
+        db.rollback()
+        return jsonify({"success": False, "error": "COUPON_EXISTS"}), 409
+    _admin_audit(
+        db, current_account()["account_id"], "billing_coupon_created",
+        "billing_coupon", coupon_id, None, reason,
+        {
+            "code": code,
+            "discount_type": discount_type,
+            "max_redemptions": max_redemptions,
+            "expires_at": expires_at,
+        },
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"coupon_id": coupon_id, "code": code}}), 201
+
+
+@app.route("/api/admin/billing/subscriptions/<company_id>/free", methods=["POST"])
+def admin_billing_grant_free(company_id):
+    from sana_billing import activate_free
+    _role, failure = _admin_guard(permission="manage_companies")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "").strip()
+    try:
+        period_days = int(body.get("period_days") or 30)
+    except (TypeError, ValueError):
+        period_days = 0
+    if not reason or period_days < 1 or period_days > 730:
+        return jsonify({"success": False, "error": "FREE_GRANT_INVALID"}), 400
+    db = get_db()
+    company = db.execute(
+        "SELECT company_id FROM companies WHERE company_id=?", (company_id,)
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    subscription = activate_free(db, company_id, period_days=period_days)
+    _admin_audit(
+        db, current_account()["account_id"], "billing_free_granted",
+        "company_subscription", subscription["subscription_id"], company_id,
+        reason, {"period_days": period_days},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": subscription})
+
+
+@app.route("/api/admin/billing/subscriptions/<company_id>", methods=["PATCH"])
+def admin_billing_subscription_update(company_id):
+    _role, failure = _admin_guard(permission="manage_companies")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "").strip()
+    reason = (body.get("reason") or "").strip()
+    if action not in {"extend", "pause", "resume", "cancel"} or not reason:
+        return jsonify({"success": False, "error": "SUBSCRIPTION_ACTION_INVALID"}), 400
+    db = get_db()
+    subscription = db.execute(
+        "SELECT * FROM sana_company_subscriptions WHERE company_id=?",
+        (company_id,),
+    ).fetchone()
+    if not subscription:
+        return jsonify({"success": False, "error": "SUBSCRIPTION_NOT_FOUND"}), 404
+    metadata = {"action": action}
+    if action == "extend":
+        try:
+            days = int(body.get("days") or 30)
+        except (TypeError, ValueError):
+            days = 0
+        if days < 1 or days > 730:
+            return jsonify({"success": False, "error": "EXTENSION_INVALID"}), 400
+        db.execute(
+            """UPDATE sana_company_subscriptions
+               SET current_period_end=GREATEST(
+                    COALESCE(current_period_end,now()),now()
+                   ) + (? * INTERVAL '1 day'),
+                   updated_at=now()
+               WHERE company_id=?""",
+            (days, company_id),
+        )
+        metadata["days"] = days
+    else:
+        status = {"pause": "paused", "resume": "active", "cancel": "canceled"}[action]
+        db.execute(
+            """UPDATE sana_company_subscriptions
+               SET status=?,updated_at=now() WHERE company_id=?""",
+            (status, company_id),
+        )
+    _admin_audit(
+        db, current_account()["account_id"], f"billing_subscription_{action}",
+        "company_subscription", subscription["subscription_id"], company_id,
+        reason, metadata,
+    )
+    db.commit()
+    updated = db.execute(
+        "SELECT * FROM sana_company_subscriptions WHERE company_id=?",
+        (company_id,),
+    ).fetchone()
+    return jsonify({"success": True, "data": dict(updated)})
 
 
 @app.route("/api/admin/overview")
@@ -2836,66 +3795,159 @@ def admin_overview():
     if failure:
         return failure
     db = get_db()
-    companies = _admin_companies(db)
-    active_users = db.execute(
-        "SELECT COUNT(*) AS c FROM user_accounts WHERE account_status='active'"
-    ).fetchone()["c"]
-    open_cases = db.execute(
-        "SELECT COUNT(*) AS c FROM cases WHERE case_status NOT IN ('Closed','Completed','مكتملة')"
-    ).fetchone()["c"]
-    completed_cases = db.execute(
-        "SELECT COUNT(*) AS c FROM cases WHERE case_status IN ('Closed','Completed','مكتملة')"
-    ).fetchone()["c"]
-    scans = db.execute("SELECT COUNT(*) AS c FROM scan_runs").fetchone()["c"]
-    diagnostic_reviews = db.execute(
-        "SELECT COUNT(*) AS c FROM scan_runs WHERE status IN ('REVIEW_REQUIRED','COMPLETE')"
-    ).fetchone()["c"]
-    open_decisions = db.execute(
-        "SELECT COUNT(*) AS c FROM decisions WHERE status IN ('مقترح','قيد المراجعة')"
-    ).fetchone()["c"]
-    open_tasks = db.execute(
-        "SELECT COUNT(*) AS c FROM tasks WHERE status!='منجزة'"
-    ).fetchone()["c"]
-    impact_reviews = db.execute(
-        "SELECT COUNT(*) AS c FROM p0_impact_reviews"
-    ).fetchone()["c"]
-    evidence_gaps = sum(
-        1 for company in companies
-        if company["evidence_readiness"]["status"] == "NOT_READY"
+    mode = request.args.get("mode", "production").strip().lower()
+    if mode not in {"production", "qa"}:
+        return jsonify({
+            "success": False,
+            "error": "ADMIN_MODE_INVALID",
+        }), 400
+    companies = _admin_companies(db, mode)
+    account_rows = db.execute(
+        """SELECT a.account_id,a.email,a.company_id,a.is_admin,a.admin_role,
+                  a.account_status,c.name AS company_name
+           FROM user_accounts a
+           LEFT JOIN companies c ON c.company_id=a.company_id"""
+    ).fetchall()
+    classified_accounts = [
+        (row, _admin_account_classification(row))
+        for row in account_rows
+    ]
+    active_users = sum(
+        1 for row, classification in classified_accounts
+        if row["account_status"] == "active" and classification == "production"
     )
-    queue = _admin_ops_queue(db)
+    test_users = sum(
+        1 for _row, classification in classified_accounts
+        if classification == "test"
+    )
+    production_super_admins = sum(
+        1 for row, classification in classified_accounts
+        if classification == "production"
+        and row["account_status"] == "active"
+        and str(row["admin_role"] or "").upper() == "SUPER_ADMIN"
+    )
+    test_super_admins = sum(
+        1 for row, classification in classified_accounts
+        if classification == "test"
+        and str(row["admin_role"] or "").upper() == "SUPER_ADMIN"
+    )
+    unclassified_super_admins = sum(
+        1 for row, classification in classified_accounts
+        if classification == "unclassified"
+        and str(row["admin_role"] or "").upper() == "SUPER_ADMIN"
+    )
+    phase_order = (
+        "Not started", "Discovery", "Evidence Gate", "Diagnostic Review",
+        "Decision", "Task", "Result", "Impact Review",
+    )
+    company_phases = {phase: 0 for phase in phase_order}
+    funnel = {
+        "discovery": 0,
+        "evidence_ready": 0,
+        "scan_complete": 0,
+        "decision": 0,
+        "task": 0,
+        "result": 0,
+        "impact": 0,
+    }
+    evidence_total = 0
+    evidence_verified = 0
+    contradictions = 0
+    pending_review = 0
+    subscriptions = {
+        "active": 0, "free": 0, "pending": 0,
+        "paused": 0, "past_due": 0, "canceled": 0,
+        "none": 0,
+    }
+    for company in companies:
+        company_phases[company["p0_phase"]] = (
+            company_phases.get(company["p0_phase"], 0) + 1
+        )
+        for step in funnel:
+            funnel[step] += int(bool(company["progress"][step]))
+        readiness = company["evidence_readiness"]
+        evidence_total += readiness["evidence_count"]
+        evidence_verified += readiness["verified_count"]
+        contradictions += readiness["contradiction_count"]
+        pending_review += readiness["pending_review_count"]
+        subscription_status = company.get("subscription_status") or "none"
+        subscriptions[subscription_status] = (
+            subscriptions.get(subscription_status, 0) + 1
+        )
+    queue = _admin_ops_queue(db, mode)
+    attention = {
+        "decision_without_task": sum(
+            1 for item in queue if item["type"] == "decision"
+        ),
+        "task_without_result": sum(
+            1 for item in queue if item["type"] == "task"
+        ),
+        "result_without_impact": sum(
+            1 for item in queue if item["type"] == "impact"
+        ),
+        "evidence_missing": sum(
+            1 for item in queue if item["type"] == "evidence"
+        ),
+    }
+    try:
+        db.execute("SELECT 1").fetchone()
+        database_health = "ok"
+    except Exception as exc:
+        database_health = "unavailable"
+        _RUNTIME_HEALTH["last_critical_error"] = type(exc).__name__
+    from sana_billing import billing_cleanup_health
+    cleanup_health = billing_cleanup_health(db)
+    deployment_commit = (
+        os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+        or os.environ.get("REPLIT_DEPLOYMENT_SHA")
+        or os.environ.get("REPLIT_GIT_SHA")
+        or "unknown"
+    )
     return jsonify({
         "success": True,
         "data": {
             "role": role,
             "permissions": sorted(_admin_permissions()),
             "permission_options": ADMIN_PERMISSION_OPTIONS,
+            "mode": mode,
+            "company_phases": company_phases,
+            "funnel": funnel,
+            "evidence_quality": {
+                "verified_percent": (
+                    round((evidence_verified / evidence_total) * 100, 1)
+                    if evidence_total else 0
+                ),
+                "not_ready": sum(
+                    1 for company in companies
+                    if company["evidence_readiness"]["status"] == "NOT_READY"
+                ),
+                "contradictions": contradictions,
+                "pending_review": pending_review,
+            },
+            "attention": attention,
             "metrics": {
                 "companies": len(companies),
                 "active_users": active_users,
-                "open_cases": open_cases,
-                "completed_cases": completed_cases,
-                "scans": scans,
-                "diagnostic_reviews": diagnostic_reviews,
-                "open_decisions": open_decisions,
-                "open_tasks": open_tasks,
-                "impact_reviews": impact_reviews,
-                "evidence_gaps": evidence_gaps,
+                "test_users": test_users,
+                "production_super_admins": production_super_admins,
+                "test_super_admins": test_super_admins,
+                "unclassified_super_admins": unclassified_super_admins,
                 "needs_attention": len(queue),
             },
             "queue_preview": queue[:8],
             "system": {
                 "app": "ok",
-                "database": "ok",
+                "database": database_health,
                 "supabase": "configured_database",
-                "railway": "available" if IS_RAILWAY else "not_detected",
-                "last_deployment": "not_available_in_app",
-                "last_critical_error": "not_persisted",
-                "schedulers": {
-                    "execution_reminders": os.environ.get("SANA_REMINDER_SCHEDULER_ENABLED", "0"),
-                    "knowledge_backup": os.environ.get("SANA_KNOWLEDGE_BACKUP_SCHEDULER_ENABLED", "0"),
-                    "research": os.environ.get("SANA_RESEARCH_SCHEDULER_ENABLED", "0"),
-                },
+                "deployment": "railway" if IS_RAILWAY else "replit",
+                "deployment_commit": deployment_commit,
+                "last_critical_error": (
+                    _RUNTIME_HEALTH["last_critical_error"] or "none"
+                ),
+                "startup": _RUNTIME_HEALTH["startup"],
+                "workers": dict(_RUNTIME_HEALTH["workers"]),
+                "billing_cleanup": cleanup_health["status"],
+                "subscriptions": subscriptions,
             },
         },
     })
@@ -2968,7 +4020,16 @@ def admin_companies():
     _role, failure = _admin_guard(any_permissions=COMPANY_CONTEXT_PERMISSIONS)
     if failure:
         return failure
-    return jsonify({"success": True, "data": _admin_companies(get_db())})
+    mode = request.args.get("mode", "production").strip().lower()
+    if mode not in {"production", "qa"}:
+        return jsonify({
+            "success": False,
+            "error": "ADMIN_MODE_INVALID",
+        }), 400
+    return jsonify({
+        "success": True,
+        "data": _admin_companies(get_db(), mode),
+    })
 
 
 @app.route("/api/admin/companies/<company_id>")
@@ -3048,6 +4109,7 @@ def admin_users():
                 "SUPER_ADMIN" if row["is_admin"] and row["admin_role"] == "USER"
                 else row["admin_role"]
             ),
+            "account_classification": _admin_account_classification(row),
         }
         for row in rows
     ]})
@@ -3365,7 +4427,170 @@ def admin_ops_queue():
     _role, failure = _admin_guard(permission="review_cases")
     if failure:
         return failure
-    return jsonify({"success": True, "data": _admin_ops_queue(get_db())})
+    mode = request.args.get("mode", "production").strip().lower()
+    if mode not in {"production", "qa"}:
+        return jsonify({
+            "success": False,
+            "error": "ADMIN_MODE_INVALID",
+        }), 400
+    return jsonify({
+        "success": True,
+        "data": _admin_ops_queue(get_db(), mode),
+    })
+
+
+@app.route("/api/admin/human-reviews")
+def admin_human_reviews():
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    db = get_db()
+    rows = db.execute(
+        """SELECT r.review_id,r.company_id,r.case_id,r.decision_id,r.reason_label,
+                  r.status,r.scheduled_at,r.requested_at,r.decision_changed,
+                  c.name AS company_name,ca.case_title,d.title AS decision_title,
+                  d.confidence_score,d.success_metric,
+                  r.before_snapshot_json,r.final_decision,r.approved_kpi,
+                  r.next_action,r.reviewer_note
+           FROM case_human_reviews r
+           JOIN companies c ON c.company_id=r.company_id
+           JOIN cases ca ON ca.case_id=r.case_id
+           LEFT JOIN decisions d ON d.decision_id=r.decision_id
+           ORDER BY CASE r.status WHEN 'SCHEDULED' THEN 0 WHEN 'REQUESTED' THEN 1 ELSE 2 END,
+                    r.scheduled_at,r.requested_at DESC LIMIT 200"""
+    ).fetchall()
+    totals = db.execute(
+        """SELECT COUNT(*) AS requested,
+                  COUNT(*) FILTER (WHERE status='COMPLETED') AS completed,
+                  COUNT(*) FILTER (WHERE decision_changed=true) AS changed
+           FROM case_human_reviews"""
+    ).fetchone()
+    return jsonify({"success": True, "data": {
+        "reviews": [dict(row) for row in rows],
+        "metrics": dict(totals),
+    }})
+
+
+@app.route("/api/admin/human-review-slots", methods=["POST"])
+def admin_create_human_review_slot():
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    starts_at = (body.get("starts_at") or "").strip()
+    duration = int(body.get("duration_minutes") or 30)
+    if not starts_at or duration < 10 or duration > 180:
+        return jsonify({"success": False, "message": "حدد موعدًا ومدة بين 10 و180 دقيقة."}), 400
+    db = get_db()
+    slot_id = "HRS-" + uuid.uuid4().hex[:12].upper()
+    db.execute(
+        """INSERT INTO human_review_slots
+           (slot_id,starts_at,duration_minutes,reviewer_account_id)
+           VALUES (?,?,?,?)""",
+        (slot_id, starts_at, duration, current_account()["account_id"]),
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "human_review_slot_created",
+        "human_review_slot", slot_id, reason="إتاحة موعد لمراجعة قرار",
+        metadata={"starts_at": starts_at, "duration_minutes": duration},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"slot_id": slot_id}}), 201
+
+
+@app.route("/api/admin/human-review-settings", methods=["PATCH"])
+def admin_update_human_review_settings():
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    from sana_human_review import OFFER_MODES
+    body = request.get_json(silent=True) or {}
+    mode = str(body.get("offer_mode") or "").upper()
+    if mode not in OFFER_MODES:
+        return jsonify({"success": False, "message": "اختر INCLUDED أو FREE أو PAID."}), 400
+    duration = int(body.get("duration_minutes") or 30)
+    price_minor = body.get("price_minor")
+    paid_enabled = bool(body.get("paid_enabled", False))
+    if mode == "PAID" and paid_enabled:
+        return jsonify({
+            "success": False,
+            "message": "المراجعة المدفوعة غير مفعّلة قبل وجود مسار دفع جاهز.",
+        }), 409
+    db = get_db()
+    db.execute(
+        """UPDATE human_review_settings SET offer_mode=?,offer_name=?,price_minor=?,
+                  duration_minutes=?,free_first_case=?,client_copy=?,paid_enabled=false,
+                  updated_at=now() WHERE singleton_key='default'""",
+        (
+            mode, (body.get("offer_name") or "مراجعة القرار مع خبير سنع").strip(),
+            int(price_minor) if price_minor not in (None, "") else None,
+            duration, bool(body.get("free_first_case", True)),
+            (body.get("client_copy") or "جلسة قصيرة لمراجعة النتيجة قبل التنفيذ").strip(),
+        ),
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "human_review_settings_updated",
+        "human_review_settings", "default", reason="تحديث عرض مراجعة القرار",
+        metadata={"offer_mode": mode, "duration_minutes": duration},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"offer_mode": mode}})
+
+
+@app.route("/api/admin/human-reviews/<review_id>/complete", methods=["POST"])
+def admin_complete_human_review(review_id):
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    from sana_human_review import add_event
+    body = request.get_json(silent=True) or {}
+    required = ("decision_changed", "final_decision", "approved_kpi", "next_action")
+    if any(key not in body or body.get(key) in (None, "") for key in required):
+        return jsonify({"success": False, "message": "أكمل القرار النهائي ومقياسه والخطوة التالية."}), 400
+    changed = bool(body["decision_changed"])
+    change_reason = (body.get("change_reason") or "").strip()
+    if changed and not change_reason:
+        return jsonify({"success": False, "message": "اذكر سبب تعديل القرار."}), 400
+    db = get_db()
+    review = db.execute(
+        "SELECT * FROM case_human_reviews WHERE review_id=? FOR UPDATE", (review_id,)
+    ).fetchone()
+    if not review:
+        return jsonify({"success": False, "error": "REVIEW_NOT_FOUND"}), 404
+    if review["status"] not in {"REQUESTED", "SCHEDULED"}:
+        return jsonify({"success": False, "message": "هذه المراجعة مغلقة بالفعل."}), 409
+    after = {
+        "decision_changed": changed,
+        "final_decision": body["final_decision"].strip(),
+        "change_reason": change_reason or None,
+        "approved_kpi": body["approved_kpi"].strip(),
+        "next_action": body["next_action"].strip(),
+        "reviewer_note": (body.get("reviewer_note") or "").strip() or None,
+    }
+    db.execute(
+        """UPDATE case_human_reviews SET status='COMPLETED',decision_changed=?,
+                  final_decision=?,change_reason=?,approved_kpi=?,next_action=?,
+                  reviewer_note=?,after_snapshot_json=?,reviewer_account_id=?,
+                  completed_at=now(),started_at=COALESCE(started_at,now())
+           WHERE review_id=?""",
+        (
+            changed, after["final_decision"], after["change_reason"],
+            after["approved_kpi"], after["next_action"], after["reviewer_note"],
+            json.dumps(after, ensure_ascii=False), current_account()["account_id"], review_id,
+        ),
+    )
+    add_event(
+        db, review_id, review["company_id"], review["status"], "COMPLETED",
+        current_account()["account_id"], {"decision_changed": changed},
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "human_review_completed",
+        "case_human_review", review_id, review["company_id"],
+        reason="تسجيل نتيجة مراجعة قرار",
+        metadata={"case_id": review["case_id"], "decision_changed": changed},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": after})
 
 
 @app.route("/api/admin/system-health")
@@ -4295,16 +5520,44 @@ def case_diagnostic_baseline(case_id):
             "period_start": body.get("baseline_start"),
             "period_end": body.get("baseline_end"),
         })
-        comparison = validate_context({
-            "information_type": "Narrative",
-            "period_start": body.get("comparison_start"),
-            "period_end": body.get("comparison_end"),
-        })
-        if not all((
-            baseline["period_start"], baseline["period_end"],
-            comparison["period_start"], comparison["period_end"],
-        )):
-            raise ValueError("فترتا الأساس والمقارنة مطلوبتان.")
+        if not all((baseline["period_start"], baseline["period_end"])):
+            raise ValueError("حدد الفترة اللي عندك عنها بيانات فعلية.")
+        today = date.today().isoformat()
+        if baseline["period_start"] > today:
+            return jsonify({
+                "success": False,
+                "error": "FUTURE_DIAGNOSTIC_PERIOD",
+                "classification": "TARGET",
+                "message": "هذه فترة مستهدفة، وليست نتيجة فعلية بعد",
+            }), 400
+        if baseline["period_end"] > today:
+            return jsonify({
+                "success": False,
+                "error": "FUTURE_DIAGNOSTIC_PERIOD",
+                "classification": "FORECAST",
+                "message": "هذه فترة مستهدفة، وليست نتيجة فعلية بعد",
+            }), 400
+
+        comparison_start = body.get("comparison_start") or None
+        comparison_end = body.get("comparison_end") or None
+        if bool(comparison_start) != bool(comparison_end):
+            raise ValueError("حدد بداية الفترة السابقة ونهايتها، أو اختر ما عندي مقارنة الآن.")
+        comparison = {"period_start": None, "period_end": None}
+        if comparison_start and comparison_end:
+            comparison = validate_context({
+                "information_type": "Narrative",
+                "period_start": comparison_start,
+                "period_end": comparison_end,
+            })
+            if comparison["period_end"] > today:
+                raise ValueError("المقارنة تحتاج فترة انتهت فعليًا")
+            if (
+                comparison["period_start"] == baseline["period_start"]
+                and comparison["period_end"] == baseline["period_end"]
+            ):
+                raise ValueError("الفترة السابقة لازم تكون مختلفة عن الفترة الحالية.")
+            if comparison["period_end"] >= baseline["period_start"]:
+                raise ValueError("الفترة السابقة لازم تنتهي قبل بداية الفترة الحالية.")
     except ValueError as exc:
         return jsonify({
             "success": False,
@@ -4390,15 +5643,20 @@ def company_summary(company_id):
     active_tasks = [t for t in tasks if t["status"] != "منجزة"]
 
     avg_score = round(sum(a["current_score"] for a in assets) / len(assets)) if assets else 0
+    client_assets = [_client_asset_view(asset) for asset in assets]
 
     return jsonify({
         "success": True,
         "data": {
             "company": dict(company),
             "quality_score": avg_score,
-            "assets": [dict(a) for a in assets],
-            "weakest_asset": dict(weakest_asset) if weakest_asset else None,
-            "strongest_asset": dict(strongest_asset) if strongest_asset else None,
+            "assets": client_assets,
+            "weakest_asset": (
+                _client_asset_view(weakest_asset) if weakest_asset else None
+            ),
+            "strongest_asset": (
+                _client_asset_view(strongest_asset) if strongest_asset else None
+            ),
             "cases": [dict(c) for c in cases],
             "decisions": [dict(d) for d in decisions],
             "open_decisions_count": len(open_decisions),
@@ -5137,6 +6395,15 @@ def case_detail(case_id):
     review_context = _build_scan_report_context(case["company_id"], case_id=case_id) or {}
     scan = review_context.get("scan") or {}
     reference_knowledge = review_context.get("reference_knowledge") or _reference_knowledge_fallback()
+    from sana_decision_room import decision_execution_loop
+    loops = []
+    for decision in decisions:
+        try:
+            loops.append(decision_execution_loop(
+                db, case["company_id"], decision["decision_id"]
+            ))
+        except LookupError:
+            pass
     return jsonify({
         "success": True,
         "data": {
@@ -5146,7 +6413,10 @@ def case_detail(case_id):
             "decisions":       [dict(d) for d in decisions],
             "tasks":           [dict(t) for t in tasks],
             "p0_impact_reviews": [dict(r) for r in p0_impact_reviews],
-            "affected_assets": [dict(a) for a in affected_assets],
+            "decision_execution_loops": loops,
+            "affected_assets": [
+                _client_asset_view(asset) for asset in affected_assets
+            ],
             "sop_docs":        sop_docs,
             "reports":         [],  # لا توجد جداول تقارير مرتبطة بالقضية حالياً
             "scan":             scan,
@@ -5286,7 +6556,7 @@ def _scan_journey_details(
         },
         "COMPLETE": {
             "label": "اكتملت المراجعة — التقرير جاهز",
-            "message": "اكتملت المراجعة البشرية لهذا snapshot. أي دليل ناقص ودرجة غير مكتملة يبقيان N/A — Deferred.",
+            "message": "اكتملت المراجعة البشرية لهذه النتيجة. أي معلومة ناقصة أو درجة غير مكتملة تبقى غير متاحة.",
             "action_label": "افتح التقرير التنفيذي",
             "action_url": report_url,
             "tone": "complete",
@@ -5300,6 +6570,35 @@ def _scan_journey_details(
         "assessment_url": assessment_url,
         "case_url": case_url,
     }
+
+def _client_confidence_label(score):
+    """صياغة ثقة مفهومة للعميل، مع الحفاظ على الصفر كقيمة حقيقية."""
+    if score is None:
+        return "غير متاحة بعد"
+    try:
+        score = int(score)
+    except (TypeError, ValueError):
+        return "غير متاحة بعد"
+    if score >= 80:
+        return "مرتفعة"
+    if score >= 50:
+        return "متوسطة"
+    return "محدودة"
+
+
+def _client_asset_view(asset):
+    """إضافة اسم أصل عربي للمخرجات العميلية دون تغيير بيانات الأصل الأصلية."""
+    from sana_scan import ASSET_LABELS
+
+    view = dict(asset)
+    client_asset_name = ASSET_LABELS.get(view.get("asset_type"))
+    if not client_asset_name:
+        client_asset_name = view.get("client_asset_name") or "أصل غير مصنّف"
+    view["asset_name"] = client_asset_name
+    view["client_asset_name"] = client_asset_name
+    return view
+
+
 @app.route("/api/companies/<company_id>/passport")
 def passport_summary(company_id):
     guard = enforce_entity_company_scope(company_id)
@@ -5350,12 +6649,17 @@ def passport_summary(company_id):
     )
 
     financial_value = financial_value_gate()
+    client_scan = dict(scan)
+    client_scan["asset_scores"] = [
+        _client_asset_view(asset) for asset in scan_scores
+    ]
+    client_assets = [_client_asset_view(asset) for asset in assets]
     return jsonify({
         "success": True,
         "data": {
             "company": dict(company),
             "journey": journey,
-            "scan": scan,
+            "scan": client_scan,
             "diagnostic_review": (scan_context or {}).get("diagnostic_review"),
             "reference_knowledge": (scan_context or {}).get("reference_knowledge")
                 or _reference_knowledge_fallback(),
@@ -5365,16 +6669,16 @@ def passport_summary(company_id):
                 "complete": len(complete_scores),
                 "total": len(scan_scores),
             },
-            "scan_asset_scores": scan_scores,
+            "scan_asset_scores": client_scan["asset_scores"],
             # Legacy keys remain for clients that still deserialize them, but
             # financial valuation is intentionally unavailable.
             "quality_score": operational_score,
             "current_value": None,
             "potential_value": None,
             "value_gap": None,
-            "assets": [dict(a) for a in assets],
-            "weakest_asset": dict(weakest) if weakest else None,
-            "strongest_asset": dict(strongest) if strongest else None,
+            "assets": client_assets,
+            "weakest_asset": _client_asset_view(weakest) if weakest else None,
+            "strongest_asset": _client_asset_view(strongest) if strongest else None,
             "weakest_asset_case_id": weakest_case["case_id"] if weakest_case else None,
             "score_ready": score_ready,
             "score_missing_reason": score_missing_reason,
@@ -5457,6 +6761,7 @@ def sds_question(company_id):
     # COUNT مباشر من evidence لكل أصل — بلا عمود confidence جديد
     evidence_per_asset = {}
     for a in assets:
+        client_asset = _client_asset_view(a)
         cnt = db.execute(
             "SELECT COUNT(*) as cnt FROM evidence WHERE company_id=? AND asset_id=?",
             (company_id, a["asset_id"])
@@ -5464,7 +6769,8 @@ def sds_question(company_id):
         evidence_per_asset[a["asset_type"]] = {
             "count":      cnt,
             "asset_id":   a["asset_id"],
-            "asset_name": a["asset_name"],
+            "asset_name": client_asset["asset_name"],
+            "client_asset_name": client_asset["client_asset_name"],
         }
 
     # اختر الأصل صاحب أقل عدد أدلة — عشوائيًا عند التساوي
@@ -5483,6 +6789,7 @@ def sds_question(company_id):
             "asset_type":       chosen,
             "asset_id":         evidence_per_asset[chosen]["asset_id"],
             "asset_name":       evidence_per_asset[chosen]["asset_name"],
+            "client_asset_name": evidence_per_asset[chosen]["client_asset_name"],
             "question":         q["text"],
             "options":          q["options"],
             "suggestions":      q["suggestions"],
@@ -5710,13 +7017,15 @@ def create_p0_case_decision(case_id):
             proposed.get("title") or "قرار مقترح للمراجعة",
             proposed.get("statement"),
             bottleneck.get("statement"),
-            70,
+            ((scan.get("decision_confidence") or {}).get("score")),
             (scan.get("opportunity") or {}).get("statement"),
             "مقترح",
             "P0",
             json.dumps({
                 "bottleneck": bottleneck,
                 "proposed_decision": proposed,
+                "decision_readiness": scan.get("decision_readiness"),
+                "decision_confidence": scan.get("decision_confidence"),
             }, ensure_ascii=False),
             scan["scan_id"],
             json.dumps(evidence_ids, ensure_ascii=False),
@@ -5756,6 +7065,7 @@ def passport_report_text(company_id):
     inference = review.get("inference")
     opportunity = review.get("opportunity")
     gate = review["evidence_gate"]
+    confidence = review.get("client_confidence") or {}
 
     lines = [
         "══════════════════════════════════════════",
@@ -5763,63 +7073,84 @@ def passport_report_text(company_id):
         "══════════════════════════════════════════",
         "",
         f"تاريخ التصدير: {context['export_date']}",
-        f"company_id: {company['company_id']}",
-        f"company_code: {company.get('company_code') or 'N/A'}",
-        f"Snapshot: {review['snapshot']['scan_id'] or 'NOT_RUN'}",
         "",
         "❶  حالة Sana Scan",
-        f"   الحالة: {journey['status']} — {journey['label']}",
+        f"   الحالة: {journey['label']}",
+        f"   التوضيح: {journey['message']}",
         f"   الإجراء التالي: {journey['action_label']}",
         (
             f"   Sana Score التشغيلي: {context['operational_score']}/100"
             if context["operational_score"] is not None
-            else "   Sana Score التشغيلي: N/A — Deferred حتى تكتمل المحاور وتُراجع بشريًا."
+            else "   Sana Score التشغيلي: غير متاح حتى تكتمل المحاور وتُراجع بشريًا."
         ),
-        "   التقييم المالي: N/A — Deferred — لا توجد منهجية وأدلة مالية معتمدة.",
+        "   التقييم المالي: غير معروض — لا توجد معلومات مالية معتمدة.",
         "",
-        "❷  المشكلة والسؤال الحقيقي",
-        f"   المشكلة: {problem.get('statement') or 'غير محددة بعد'}",
-        f"   السؤال الحقيقي: {problem.get('real_question') or 'يُحدد بعد اكتمال Discovery'}",
-        f"   المصدر: {problem.get('source_id') or 'غير متاح'} · {problem.get('source_type') or 'Discovery'} · {problem.get('source_date') or 'تاريخ غير متاح'}",
-        "",
-        "❸  التشخيص والفرصة",
+        "❷  الثقة عبر مراحل القرار",
     ]
+    for stage in confidence.get("stages") or []:
+        stage_view = stage["view"]
+        score = (
+            f" · {stage_view['score']}٪"
+            if stage_view.get("score") is not None
+            else ""
+        )
+        lines.extend([
+            f"   {stage['title']}: {stage_view['label']}{score}",
+            f"      {stage_view['message']}",
+        ])
+    lines.extend([
+        "",
+        "❸  المشكلة والسؤال الحقيقي",
+        f"   المشكلة: {problem.get('statement') or 'غير محددة بعد'}",
+        f"   السؤال الحقيقي: {problem.get('real_question') or 'يُحدد بعد اكتمال جمع المعلومات'}",
+        "",
+        "❹  التشخيص والفرصة",
+    ])
     lines.append(f"   الفرضية: {(hypothesis or {}).get('statement') or 'لا توجد فرضية بعد'}")
-    lines.append(f"   الاستنتاج: {(inference or {}).get('statement') or 'N/A — Deferred حتى يصل دليل مستقل'}")
-    lines.append(f"   الفرصة: {(opportunity or {}).get('statement') or 'N/A — Deferred'}")
-    lines.extend(["", "❹  بوابة الأدلة"])
+    lines.append(f"   الاستنتاج: {(inference or {}).get('statement') or 'غير متاح حتى يصل دليل مستقل'}")
+    lines.append(f"   الفرصة: {(opportunity or {}).get('statement') or 'غير متاحة حتى تكتمل الأدلة'}")
+    lines.extend(["", "❺  المعلومات المطلوبة قبل التنفيذ"])
     if gate["missing_evidence"]:
-        lines.extend(f"   • {item}" for item in gate["missing_evidence"])
+        lines.extend(
+            f"   • {item}"
+            for item in context.get("scan_client_missing_evidence") or []
+        )
     else:
-        lines.append("   لا توجد بنود ناقصة في snapshot الحالي؛ المراجعة البشرية تبقى مطلوبة.")
-    lines.extend(["", "❺  مصادر العميل"])
+        lines.append("   لا توجد بنود ناقصة في النتيجة الحالية؛ تبقى المراجعة البشرية مطلوبة.")
+    lines.extend(["", "❻  المعلومات المستخدمة"])
     if review["client_evidence"]:
         for source in review["client_evidence"]:
             lines.append(
-                f"   {source['source_id']} · {source['classification']} · "
-                f"{source['source_type']} · {source.get('source_date') or 'تاريخ غير متاح'}"
+                f"   {source['client_classification']} · "
+                f"{source['client_source_label']} · "
+                f"{source.get('source_date') or 'تاريخ غير متاح'}"
             )
-            lines.append(f"      {source['statement']} — {source['source_ref']}")
+            confidence_text = (
+                f"{source['confidence']}٪ ({source['client_confidence_label']})"
+                if source.get("confidence") is not None
+                else "غير متاحة بعد"
+            )
+            lines.append(
+                f"      {source['statement']} · درجة الثقة: {confidence_text}"
+            )
     else:
-        lines.append("   لا توجد أدلة عميل مرتبطة بالـ snapshot.")
-    lines.extend(["", "❻  المعرفة المرجعية — ليست Evidence"])
+        lines.append("   لا توجد معلومات مرتبطة بالنتيجة الحالية.")
+    lines.extend(["", "❼  معلومات عامة مرتبطة"])
     references = review["reference_knowledge"].get("references") or []
     if references:
         for ref in references:
-            lines.append(
-                f"   • {ref.get('title')} · {ref.get('source_version') or ref.get('version') or 'دون إصدار'}"
-            )
+            lines.append(f"   • {ref.get('title')}")
             lines.append(
                 f"      سبب المطابقة: {' · '.join(ref.get('match_reasons') or []) or 'مرجع عام'}"
             )
             lines.append(
-                f"      الدليل المطلوب: {ref.get('required_client_evidence') or 'Fact أو Evidence خاص بالشركة'}"
+                f"      المعلومات المطلوبة: {ref.get('required_client_evidence') or 'معلومة خاصة بالشركة'}"
             )
     else:
         lines.append(f"   {review['reference_knowledge'].get('knowledge_gap')}")
 
     lines.append("══════════════════════════════════════════")
-    lines.append("أُنشئت بواسطة سنع — نتيجة حتمية قابلة للتتبع وليست تقييمًا ماليًا.")
+    lines.append("أُنشئت بواسطة سنع — نتيجة قابلة للتتبع وليست تقييمًا ماليًا.")
     lines.append("══════════════════════════════════════════")
 
     return jsonify({"success": True, "data": {"report_text": "\n".join(lines)}})
@@ -5940,6 +7271,13 @@ def _build_scan_report_context(company_id, case_id=None):
             "period_start": source.get("period_start"),
             "period_end": source.get("period_end"),
             "unit": source.get("unit"),
+            "client_classification": _client_source_classification(
+                source.get("classification")
+            ),
+            "client_source_label": _client_source_label(source.get("source_type")),
+            "client_confidence_label": _client_confidence_label(
+                source.get("confidence")
+            ),
         })
 
     findings = [dict(item) for item in (scan.get("findings") or [])]
@@ -5973,6 +7311,16 @@ def _build_scan_report_context(company_id, case_id=None):
         case_id=scan.get("case_id") or canonical_case_id,
         missing_evidence=scan.get("missing_evidence") or [],
     )
+    if scan.get("journey_outcome") == "UNKNOWN":
+        scan_journey.update({
+            "label": "المعلومة غير متاحة الآن",
+            "message": "سجّلنا أن المعلومة غير متاحة الآن؛ لن نعيد طلبها في هذه الدورة.",
+            "action_label": "راجع ما نعرفه",
+            "tone": "neutral",
+            "outcome": "UNKNOWN",
+        })
+    else:
+        scan_journey["outcome"] = scan.get("journey_outcome")
 
     evidence_citations = [
         item for item in citations
@@ -6029,6 +7377,22 @@ def _build_scan_report_context(company_id, case_id=None):
             (company_id, decision["decision_id"]),
         ).fetchone()
         task = dict(task) if task else {}
+        impact_review = {}
+        if task:
+            row = db.execute(
+                """SELECT * FROM p0_impact_reviews
+                   WHERE company_id=? AND decision_id=? AND task_id=?""",
+                (company_id, decision["decision_id"], task["task_id"]),
+            ).fetchone()
+            if row:
+                impact_review = dict(row)
+                impact_review.update(status="MEASURED", status_label="تم القياس")
+        if not impact_review:
+            impact_review = {
+                "status": "WAITING_FOR_MEASUREMENT",
+                "status_label": "بانتظار القياس",
+                "actual_value": None,
+            }
         impact = decision.get("expected_impact") or ""
         baseline, target = _number_pair(impact)
         phase = _phase(decision.get("phase_label"))
@@ -6078,6 +7442,7 @@ def _build_scan_report_context(company_id, case_id=None):
             ),
             "baseline": baseline or "غير موثق",
             "target": target or "غير موثق",
+            "impact_review": impact_review,
             "evidence": linked_evidence,
             "impact": impact or "لم يُسجل أثر متوقع بعد",
             "status": decision.get("status") or "مقترح",
@@ -6127,18 +7492,18 @@ def _build_scan_report_context(company_id, case_id=None):
     elif status == "REVIEW_REQUIRED" and bottleneck:
         executive_answer = bottleneck.get("statement") or "يوجد اختناق مرشح يحتاج اعتمادًا بشريًا."
     elif status == "INCOMPLETE":
-        executive_answer = "لا يمكن اعتماد اختناق بعد؛ نحتاج Fact أو Evidence مستقلًا قبل القرار."
+        executive_answer = "لا يمكن اعتماد اختناق بعد؛ نحتاج معلومة مستقلة قبل القرار."
     else:
         executive_answer = "لم يُنتج التقرير اختناقًا قابلًا للاعتماد بعد."
 
     what_not_do = [
         "لا نبدأ توسعًا أو حملة جديدة قبل اعتماد الاختناق ومقياس نجاحه.",
-        "لا نعامل Hypothesis أو Assumption كحقيقة تنفيذية.",
+        "لا نعامل الاحتمال أو الافتراض كحقيقة تنفيذية.",
         "لا نعد بأثر مالي غير موثق؛ نثبت الأثر عبر KPI قبل وبعد.",
     ]
     if scan.get("missing_evidence"):
         what_not_do.insert(
-            0, "لا نغلق بوابة الأدلة: البنود الناقصة أدناه تظل N/A — Deferred حتى تصل مصادرها."
+            0, "لا نغلق بوابة الأدلة: البنود الناقصة تبقى غير متاحة حتى تصل مصادرها."
         )
 
     reference_knowledge = _safe_contextual_reference_knowledge(
@@ -6162,6 +7527,26 @@ def _build_scan_report_context(company_id, case_id=None):
         }
     hypothesis = hypotheses[0] if hypotheses else None
     inference = inferences[0] if inferences else None
+    impact_review = None
+    if scan.get("case_id"):
+        impact_row = db.execute(
+            """SELECT impact_outcome, result_summary, reviewed_at
+               FROM p0_impact_reviews
+               WHERE company_id=? AND case_id=?
+               ORDER BY reviewed_at DESC, review_id DESC LIMIT 1""",
+            (company_id, scan["case_id"]),
+        ).fetchone()
+        impact_review = dict(impact_row) if impact_row else None
+    client_confidence = _build_client_confidence_view(
+        scan,
+        status,
+        has_run=bool(latest_scan_row),
+        baseline_valid=bool(scan.get("diagnostic_baseline_valid")),
+        impact_review=impact_review,
+    )
+    client_missing_evidence = _client_missing_evidence(
+        scan.get("missing_evidence") or []
+    )
     diagnostic_review = {
         "contract_version": "SANA-DIAGNOSTIC-REVIEW-v1",
         "snapshot": {
@@ -6172,6 +7557,8 @@ def _build_scan_report_context(company_id, case_id=None):
             "methodology_version": scan.get("methodology_version"),
         },
         "journey": scan_journey,
+        "journey_outcome": scan.get("journey_outcome"),
+        "evidence_request_cycle": dict(scan.get("evidence_request_cycle") or {}),
         "problem": problem,
         "hypothesis": hypothesis,
         "inference": inference,
@@ -6183,6 +7570,7 @@ def _build_scan_report_context(company_id, case_id=None):
         "evidence_gate": {
             "open": status in {"NOT_RUN", "INCOMPLETE"},
             "missing_evidence": list(scan.get("missing_evidence") or []),
+            "requests": list(scan.get("evidence_requests") or []),
             "next_required": scan_journey["action_label"],
             "decision_allowed": status in {"REVIEW_REQUIRED", "COMPLETE"},
             "final_score_allowed": status in {"REVIEW_REQUIRED", "COMPLETE"}
@@ -6206,6 +7594,7 @@ def _build_scan_report_context(company_id, case_id=None):
             "ai_used": bool(scan.get("ai_used")),
             "reference_knowledge_available": reference_knowledge.get("available", True),
         },
+        "client_confidence": client_confidence,
     }
 
     return {
@@ -6220,6 +7609,10 @@ def _build_scan_report_context(company_id, case_id=None):
         "scan_opportunity": opportunity,
         "scan_proposed_decision": proposed_decision,
         "scan_missing_evidence": list(scan.get("missing_evidence") or []),
+        "scan_evidence_requests": list(scan.get("evidence_requests") or []),
+        "scan_evidence_request_cycle": dict(scan.get("evidence_request_cycle") or {}),
+        "scan_journey_outcome": scan.get("journey_outcome"),
+        "scan_client_missing_evidence": client_missing_evidence,
         "scan_diagnostic_quality": dict(scan.get("diagnostic_quality") or {}),
         "scan_diagnostic_baseline": scan.get("diagnostic_baseline"),
         "scan_open_conflicts": list(scan.get("open_conflicts") or []),
@@ -6258,6 +7651,7 @@ def _build_scan_report_context(company_id, case_id=None):
             else None
         ),
         "scan_review_note": scan_journey["message"],
+        "scan_client_confidence": client_confidence,
         "reference_knowledge": reference_knowledge,
         "diagnostic_review": diagnostic_review,
     }
@@ -6330,10 +7724,27 @@ def _build_passport_context(company_id):
         "complete": 0,
         "total": 0,
     }
+    context["assets_sorted"] = [
+        _client_asset_view(asset) for asset in context["assets_sorted"]
+    ]
+    context["scan"] = dict(context.get("scan") or {})
+    context["scan"]["asset_scores"] = [
+        _client_asset_view(asset)
+        for asset in context["scan"].get("asset_scores") or []
+    ]
+    context["weakest_asset"] = (
+        _client_asset_view(weakest) if weakest else None
+    )
     context["score_ready"] = context["operational_score"] is not None
     context["reference_knowledge"] = context.get(
         "reference_knowledge", _reference_knowledge_fallback()
     )
+    case_id = (context.get("scan_case") or {}).get("case_id")
+    if case_id:
+        from sana_human_review import client_payload
+        context["human_review"] = client_payload(db, company_id, case_id)
+    else:
+        context["human_review"] = None
     return context
 
 @app.route("/company/<company_id>/scan-report")
@@ -6348,7 +7759,112 @@ def scan_report_html(company_id):
     if guard:
         return guard
     ctx = _build_passport_context(company_id)
+    from flask_wtf.csrf import generate_csrf
+    ctx["csrf_value"] = generate_csrf()
     return render_template("14-passport-report.html", **ctx)
+
+
+@app.route("/api/cases/<case_id>/human-review", methods=["GET", "POST", "DELETE"])
+def case_human_review(case_id):
+    from sana_human_review import (
+        REVIEW_REASONS, add_event, client_payload, snapshot_for_case,
+    )
+    db = get_db()
+    case = db.execute(
+        "SELECT company_id FROM cases WHERE case_id=?", (case_id,)
+    ).fetchone()
+    if not case:
+        return jsonify({"success": False, "error": "CASE_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(case["company_id"])
+    if guard:
+        return guard
+    if request.method == "GET":
+        return jsonify({"success": True, "data": client_payload(db, case["company_id"], case_id)})
+    if request.method == "DELETE":
+        review = db.execute(
+            """SELECT * FROM case_human_reviews
+               WHERE company_id=? AND case_id=? AND status IN ('REQUESTED','SCHEDULED')
+               ORDER BY requested_at DESC LIMIT 1 FOR UPDATE""",
+            (case["company_id"], case_id),
+        ).fetchone()
+        if not review:
+            return jsonify({"success": False, "message": "لا يوجد طلب مفتوح لإلغائه."}), 404
+        db.execute(
+            """UPDATE case_human_reviews SET status='CANCELLED',cancelled_at=now()
+               WHERE review_id=?""", (review["review_id"],)
+        )
+        add_event(
+            db, review["review_id"], case["company_id"], review["status"],
+            "CANCELLED", current_account()["account_id"],
+        )
+        db.commit()
+        return jsonify({"success": True, "data": client_payload(
+            db, case["company_id"], case_id
+        )})
+    body = request.get_json(silent=True) or {}
+    reason_code = (body.get("reason_code") or "").strip()
+    slot_id = (body.get("slot_id") or "").strip()
+    if reason_code not in REVIEW_REASONS or not slot_id:
+        return jsonify({"success": False, "message": "اختر سبب المراجعة وموعدًا متاحًا."}), 400
+    payload = client_payload(db, case["company_id"], case_id)
+    if not payload["settings"]["available"]:
+        return jsonify({"success": False, "message": "الحجز المدفوع غير مفعّل حاليًا."}), 409
+    active = payload.get("review")
+    if active and active["status"] in {"REQUESTED", "SCHEDULED"}:
+        return jsonify({"success": False, "message": "يوجد طلب مراجعة مفتوح لهذه القضية."}), 409
+    slot = db.execute(
+        """SELECT * FROM human_review_slots
+           WHERE slot_id=? AND is_active=true AND starts_at>now() FOR UPDATE""",
+        (slot_id,),
+    ).fetchone()
+    if not slot:
+        return jsonify({"success": False, "message": "هذا الموعد لم يعد متاحًا."}), 409
+    taken = db.execute(
+        """SELECT 1 FROM case_human_reviews WHERE slot_id=?
+           AND status IN ('REQUESTED','SCHEDULED')""", (slot_id,)
+    ).fetchone()
+    if taken:
+        return jsonify({"success": False, "message": "حُجز هذا الموعد للتو. اختر موعدًا آخر."}), 409
+    account = current_account()
+    snapshot = snapshot_for_case(db, case["company_id"], case_id)
+    decision = snapshot.get("decision") or {}
+    review_id = "HRV-" + uuid.uuid4().hex[:12].upper()
+    db.execute(
+        """INSERT INTO case_human_reviews
+           (review_id,company_id,case_id,decision_id,requested_by,
+            reviewer_account_id,reason_code,reason_label,status,slot_id,
+            scheduled_at,before_snapshot_json)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            review_id, case["company_id"], case_id, decision.get("decision_id"),
+            account["account_id"], slot["reviewer_account_id"], reason_code,
+            REVIEW_REASONS[reason_code], "SCHEDULED", slot_id, slot["starts_at"],
+            json.dumps(snapshot, ensure_ascii=False, default=str),
+        ),
+    )
+    add_event(db, review_id, case["company_id"], None, "REQUESTED", account["account_id"])
+    add_event(
+        db, review_id, case["company_id"], "REQUESTED", "SCHEDULED",
+        account["account_id"], {"slot_id": slot_id, "scheduled_at": str(slot["starts_at"])},
+    )
+    reviewer = db.execute(
+        """SELECT account_id,email FROM user_accounts
+           WHERE account_id=? AND account_status='active'""",
+        (slot["reviewer_account_id"],),
+    ).fetchone()
+    if reviewer:
+        _admin_send_email(
+            db, notification_type="human_review_requested",
+            recipient_email=reviewer["email"],
+            subject="طلب مراجعة قرار جديد في سنع",
+            html_body="<p>يوجد طلب مراجعة قرار جديد في قائمة المراجعات الداخلية.</p>",
+            actor_id=account["account_id"], company_id=case["company_id"],
+            payload={"review_id": review_id, "case_id": case_id},
+        )
+    db.commit()
+    return jsonify({"success": True, "data": client_payload(
+        db, case["company_id"], case_id
+    )}), 201
 @app.route("/api/companies/<company_id>/scan/report-pdf")
 @app.route("/api/companies/<company_id>/passport/report-pdf")
 def passport_report_pdf(company_id):
@@ -6659,8 +8175,12 @@ def create_case(company_id):
 @app.route("/api/companies/<company_id>/evidence", methods=["POST"])
 def add_evidence(company_id):
     from sana_evidence import save_evidence as _save_evidence
+    from sana_scan import latest_scan, run_scan
     body = request.get_json(force=True)
     db = get_db()
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
 
     case_id     = body.get("case_id")
     asset_id    = body.get("asset_id")
@@ -6669,6 +8189,100 @@ def add_evidence(company_id):
     confidence  = int(body.get("confidence", 50))
     evidence_type = (body.get("evidence_type") or "Evidence").strip()
     source_ref = (body.get("source_ref") or "").strip()
+    request_key = (body.get("request_key") or "").strip()
+    request_fingerprint = (body.get("request_fingerprint") or "").strip()
+    is_unknown_response = (
+        body.get("unknown") is True
+        or str(body.get("response") or "").upper() == "UNKNOWN"
+        or str(body.get("outcome") or "").upper() == "UNKNOWN"
+        or str(body.get("answer") or "").upper() == "UNKNOWN"
+        or str(body.get("answer") or "").strip() in {
+            "ما عندي الآن",
+            "لا أملك هذه المعلومة الآن",
+        }
+    )
+    evidence_response = None
+    if is_unknown_response:
+        if not case_id:
+            return jsonify({
+                "success": False,
+                "error": "CASE_REQUIRED_FOR_UNKNOWN_EVIDENCE",
+                "message": "حدد القضية قبل تسجيل عدم توفر المعلومة.",
+            }), 400
+        case = db.execute(
+            "SELECT company_id FROM cases WHERE case_id=?", (case_id,)
+        ).fetchone()
+        if not case or case["company_id"] != company_id:
+            return jsonify({
+                "success": False,
+                "error": "CASE_NOT_FOUND",
+                "message": "تعذر العثور على ملف القرار ضمن شركتك.",
+            }), 404
+        scan = latest_scan(db, case_id) or {}
+        cycle = scan.get("evidence_request_cycle") or {}
+        pending = cycle.get("pending_requests") or []
+        selected = next(
+            (
+                item for item in pending
+                if item.get("fingerprint") == request_fingerprint
+                or item.get("request_key") == request_fingerprint
+            ),
+            None,
+        ) if request_fingerprint else (pending[0] if pending else None)
+        if not selected:
+            return jsonify({
+                "success": False,
+                "error": "EVIDENCE_REQUEST_NOT_AVAILABLE",
+                "message": "لا يوجد طلب دليل حرج مفتوح يمكن إغلاقه بهذه الإجابة.",
+            }), 409
+        request_fingerprint = selected["fingerprint"]
+        request_key = selected.get("request_key") or request_fingerprint
+        title = title or f"لا أملك هذه المعلومة الآن: {selected['question']}"
+        source_type = "CLIENT_UNKNOWN"
+        source_ref = "CLIENT_UNKNOWN"
+        evidence_type = "Evidence"
+        asset_id = asset_id or (
+            db.execute(
+                "SELECT related_asset_id FROM cases WHERE case_id=? AND company_id=?",
+                (case_id, company_id),
+            ).fetchone() or {}
+        ).get("related_asset_id")
+        evidence_response = {
+            "fingerprint": request_fingerprint,
+            "request_key": request_key,
+            "outcome": "UNKNOWN",
+        }
+    if request_key:
+        case = db.execute(
+            "SELECT company_id FROM cases WHERE case_id=?", (case_id,)
+        ).fetchone()
+        if not case or case["company_id"] != company_id:
+            return jsonify({
+                "success": False,
+                "error": "CASE_NOT_FOUND",
+                "message": "تعذر العثور على ملف القرار ضمن شركتك.",
+            }), 404
+        scan = latest_scan(db, case_id) or {}
+        matching_request = next(
+            (
+                item for item in (scan.get("evidence_requests") or [])
+                if item.get("request_key") == request_key
+            ),
+            None,
+        )
+        if not matching_request:
+            return jsonify({
+                "success": False,
+                "error": "EVIDENCE_REQUEST_NOT_FOUND",
+                "message": "هذا الطلب لم يعد مفتوحًا. حدّث الصفحة واختر الطلب الظاهر.",
+            }), 409
+        if matching_request.get("status") not in {"OPEN", "PENDING"}:
+            return jsonify({
+                "success": False,
+                "error": "EVIDENCE_REQUEST_ALREADY_SUBMITTED",
+                "message": "أرسلت معلومة لهذا الطلب بالفعل. انتقل إلى الطلب التالي.",
+            }), 409
+        asset_id = matching_request.get("asset_id") or asset_id
     if evidence_type not in {"Fact", "Evidence"}:
         return jsonify({
             "success": False,
@@ -6708,6 +8322,9 @@ def add_evidence(company_id):
         calibrated["verification_status"] = "UNVERIFIED"
         calibrated["source_category"] = "SELF_REPORTED"
         evidence_type = "Evidence"
+    if is_unknown_response:
+        calibrated["verification_status"] = "UNVERIFIED"
+        calibrated["source_category"] = "UNKNOWN"
 
     # حماية من الحفظ المزدوج: إن وُجد دليل مطابق تمامًا لا يُنشأ سجل جديد.
     existing = db.execute(
@@ -6751,6 +8368,15 @@ def add_evidence(company_id):
     if not result["success"]:
         return jsonify({"success": False, "error": result["error"]}), 400
 
+    reevaluated_scan = run_scan(
+        db,
+        case_id,
+        evidence_response={
+            "fingerprint": request_fingerprint,
+            "request_key": request_key,
+            "outcome": "UNKNOWN" if is_unknown_response else "ANSWERED",
+        } if case_id else None,
+    ) if case_id else None
     return jsonify({
         "success": True,
         "data": {
@@ -6758,8 +8384,14 @@ def add_evidence(company_id):
             "asset_id":    result.get("asset_id"),
             "asset_name":  result.get("asset_name"),
             "new_score":   result.get("new_score"),
+            "scan": reevaluated_scan,
+            "journey_outcome": (reevaluated_scan or {}).get("journey_outcome"),
         },
-        "meta": {"duplicate": False}
+        "meta": {
+            "duplicate": False,
+            "request_key": request_key or None,
+            "reevaluated": bool(reevaluated_scan),
+        }
     }), 201
 
 
@@ -7165,14 +8797,113 @@ def record_p0_task_result(task_id):
     result_source_ref = (body.get("result_source_ref") or "").strip()
     impact_outcome = (body.get("impact_outcome") or "").strip().upper()
     impact_notes = (body.get("impact_notes") or "").strip()
-    if not all((result_summary, result_source_ref, impact_outcome, impact_notes)):
+    baseline_value = (body.get("baseline_value") or "").strip()
+    baseline_source_ref = (body.get("baseline_source_ref") or "").strip()
+    baseline_observed_at = (body.get("baseline_observed_at") or "").strip()
+    target_value = (body.get("target_value") or "").strip()
+    target_source_ref = (body.get("target_source_ref") or "").strip()
+    target_observed_at = (body.get("target_observed_at") or "").strip()
+    actual_value = (body.get("actual_value") or "").strip()
+    actual_source_ref = (body.get("actual_source_ref") or result_source_ref).strip()
+    actual_observed_at = (body.get("actual_observed_at") or "").strip()
+    measurement_unit = (body.get("measurement_unit") or "").strip()
+    kpi_direction = (body.get("kpi_direction") or "").strip().upper()
+    baseline_evidence_id = (body.get("baseline_evidence_id") or "").strip()
+    actual_evidence_id = (body.get("actual_evidence_id") or "").strip()
+    if not all((result_summary, result_source_ref, impact_notes)):
         return jsonify({
             "success": False,
             "error": "P0_RESULT_FIELDS_REQUIRED",
             "message": "يلزم وصف النتيجة ومرجعها وحكم الأثر وملاحظات المراجعة.",
         }), 400
-    if impact_outcome not in {"IMPROVED", "UNCHANGED", "WORSE", "INCONCLUSIVE"}:
+    if impact_outcome and impact_outcome not in {
+        "IMPROVED", "UNCHANGED", "WORSE", "INCONCLUSIVE"
+    }:
         return jsonify({"success": False, "error": "P0_IMPACT_OUTCOME_INVALID"}), 400
+    if not all((
+        baseline_value, baseline_source_ref, baseline_observed_at,
+        target_value, target_source_ref, target_observed_at,
+        actual_value, actual_source_ref, actual_observed_at,
+    )):
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_MEASURE_FIELDS_REQUIRED",
+            "message": "يلزم baseline وtarget وactual مع مصدر وتاريخ لكل قياس.",
+        }), 400
+    try:
+        baseline_date = date.fromisoformat(baseline_observed_at)
+        target_date = date.fromisoformat(target_observed_at)
+        actual_date = date.fromisoformat(actual_observed_at)
+    except ValueError:
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_MEASURE_DATE_INVALID",
+            "message": "تواريخ القياس يجب أن تكون بصيغة YYYY-MM-DD.",
+        }), 400
+    if target_date < baseline_date or actual_date < baseline_date:
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_MEASURE_ORDER_INVALID",
+            "message": "لا يمكن أن يسبق تاريخ الهدف أو القياس الفعلي تاريخ الـBaseline.",
+        }), 400
+    if len(impact_notes) < 10:
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_COMPARISON_RATIONALE_REQUIRED",
+            "message": "اشرح بوضوح كيف قورنت النتيجة الفعلية بالـBaseline والهدف.",
+        }), 400
+    try:
+        baseline_numeric = float(body.get("baseline_numeric"))
+        target_numeric = float(body.get("target_numeric"))
+        actual_numeric = float(body.get("actual_numeric"))
+    except (TypeError, ValueError):
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_NUMERIC_VALUES_REQUIRED",
+            "message": "Baseline وTarget وActual يجب أن تكون قيمًا رقمية قابلة للمقارنة.",
+        }), 400
+    if not measurement_unit or kpi_direction not in {
+        "HIGHER_IS_BETTER", "LOWER_IS_BETTER"
+    }:
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_KPI_DEFINITION_REQUIRED",
+            "message": "يلزم تحديد وحدة واحدة واتجاه KPI قبل المقارنة.",
+        }), 400
+    measure_evidence = {}
+    for role, evidence_id in (
+        ("baseline", baseline_evidence_id), ("actual", actual_evidence_id)
+    ):
+        evidence = db.execute(
+            """SELECT evidence_id,source_ref FROM evidence
+               WHERE evidence_id=? AND company_id=? AND case_id=?
+                 AND evidence_type IN ('Fact','Evidence')
+                 AND BTRIM(COALESCE(source_ref,'')) <> ''""",
+            (evidence_id, task["company_id"], task["case_id"]),
+        ).fetchone()
+        if not evidence:
+            return jsonify({
+                "success": False,
+                "error": "P0_IMPACT_EVIDENCE_INVALID",
+                "message": f"مصدر {role} يجب أن يكون دليلًا محفوظًا ومؤهلًا لنفس الشركة والقضية.",
+            }), 400
+        measure_evidence[role] = evidence
+    baseline_source_ref = measure_evidence["baseline"]["source_ref"]
+    actual_source_ref = measure_evidence["actual"]["source_ref"]
+    result_source_ref = actual_source_ref
+    target_source_ref = f"DECISION:{task['decision_id']}"
+    baseline_value = f"{baseline_numeric:g} {measurement_unit}"
+    target_value = f"{target_numeric:g} {measurement_unit}"
+    actual_value = f"{actual_numeric:g} {measurement_unit}"
+    if actual_numeric == baseline_numeric:
+        impact_outcome = "UNCHANGED"
+    elif (
+        (kpi_direction == "HIGHER_IS_BETTER" and actual_numeric > baseline_numeric)
+        or (kpi_direction == "LOWER_IS_BETTER" and actual_numeric < baseline_numeric)
+    ):
+        impact_outcome = "IMPROVED"
+    else:
+        impact_outcome = "WORSE"
 
     account = current_account()
     reviewed_by = account["account_id"] if account else None
@@ -7201,12 +8932,23 @@ def record_p0_task_result(task_id):
         db.execute(
             """INSERT INTO p0_impact_reviews
                (review_id,company_id,case_id,decision_id,task_id,
+                baseline_value,baseline_source_ref,baseline_observed_at,
+                target_value,target_source_ref,target_observed_at,
+                actual_value,actual_source_ref,actual_observed_at,
+                baseline_numeric,target_numeric,actual_numeric,measurement_unit,
+                kpi_direction,baseline_evidence_id,actual_evidence_id,
                 baseline_snapshot_json,result_summary,result_source_ref,
                 impact_outcome,impact_notes,reviewed_by)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 review_id, task["company_id"], task["case_id"], task["decision_id"],
-                task_id, json.dumps(baseline_snapshot, ensure_ascii=False),
+                task_id,
+                baseline_value, baseline_source_ref, baseline_observed_at,
+                target_value, target_source_ref, target_observed_at,
+                actual_value, actual_source_ref, actual_observed_at,
+                baseline_numeric, target_numeric, actual_numeric, measurement_unit,
+                kpi_direction, baseline_evidence_id, actual_evidence_id,
+                json.dumps(baseline_snapshot, ensure_ascii=False),
                 result_summary, result_source_ref, impact_outcome, impact_notes,
                 reviewed_by,
             ),
@@ -7218,6 +8960,18 @@ def record_p0_task_result(task_id):
                    value_note=?, updated_at=now()
                WHERE task_id=?""",
             (result_summary, task_id),
+        )
+        db.execute(
+            """INSERT INTO execution_task_audit
+               (audit_id,company_id,task_id,actor_id,from_status,to_status,
+                change_json,source_ref) VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                "TA-" + secrets.token_hex(8).upper(), task["company_id"], task_id,
+                reviewed_by, task["status"], "منجزة",
+                json.dumps({"status": "منجزة", "impact_review": review_id},
+                           ensure_ascii=False),
+                "p0-impact-review",
+            ),
         )
         db.commit()
     except Exception:
@@ -7622,8 +9376,13 @@ def score_explanation(company_id):
         (company_id,)
     ).fetchall()
     recent_changes = [
-        {"asset_name": r["asset_name"], "title": r["title"],
-         "impact": r["score_impact"], "completed_at": r["completed_at"]}
+        {
+            "asset_name": _client_asset_view(r)["asset_name"],
+            "client_asset_name": _client_asset_view(r)["client_asset_name"],
+            "title": r["title"],
+            "impact": r["score_impact"],
+            "completed_at": r["completed_at"],
+        }
         for r in recent_rows
     ]
 
@@ -7642,7 +9401,13 @@ def score_explanation(company_id):
     pending_list = []
     for r in pending_rows:
         pending_by_asset[r["asset_id"]] = pending_by_asset.get(r["asset_id"], 0) + r["score_impact"]
-        pending_list.append({"asset_name": r["asset_name"], "title": r["title"], "impact": r["score_impact"]})
+        client_asset = _client_asset_view(r)
+        pending_list.append({
+            "asset_name": client_asset["asset_name"],
+            "client_asset_name": client_asset["client_asset_name"],
+            "title": r["title"],
+            "impact": r["score_impact"],
+        })
 
     projected_scores = []
     for a in assets:
@@ -9107,6 +10872,7 @@ def get_expert(expert_id):
 
 def _initialize_and_start_schedulers():
     """هيّئ قاعدة البيانات مرة واحدة دون حجب فتح منفذ الويب."""
+    _RUNTIME_HEALTH["startup"] = "initializing"
     try:
         retry_count = int(os.environ.get("SANA_SCHEMA_INIT_RETRIES", "10"))
     except (TypeError, ValueError):
@@ -9128,6 +10894,8 @@ def _initialize_and_start_schedulers():
                     f"{retry_count} attempts: {exc}",
                     flush=True,
                 )
+                _RUNTIME_HEALTH["startup"] = "failed"
+                _RUNTIME_HEALTH["last_critical_error"] = type(exc).__name__
                 return
             delay = min(2 ** attempt, 5)
             print(
@@ -9138,6 +10906,8 @@ def _initialize_and_start_schedulers():
             time.sleep(delay)
         except Exception as exc:
             print(f"[startup] database initialization failed: {exc}", flush=True)
+            _RUNTIME_HEALTH["startup"] = "failed"
+            _RUNTIME_HEALTH["last_critical_error"] = type(exc).__name__
             return
 
     try:
@@ -9146,10 +10916,15 @@ def _initialize_and_start_schedulers():
         seed_knowledge_db()
     except Exception as exc:
         print(f"[startup] database seeding failed: {exc}", flush=True)
+        _RUNTIME_HEALTH["last_critical_error"] = type(exc).__name__
+    else:
+        _RUNTIME_HEALTH["startup"] = "ok"
 
     # Railway's production web service is web-only. Scheduler ownership must
     # live in one explicit external runner, never in every Gunicorn worker.
     if os.environ.get("SANA_ENV", "").strip().lower() in {"production", "prod"}:
+        for worker in _RUNTIME_HEALTH["workers"]:
+            _RUNTIME_HEALTH["workers"][worker] = "external_required"
         print("[schedulers] disabled in production web runtime", flush=True)
         return
 
@@ -9159,6 +10934,7 @@ def _initialize_and_start_schedulers():
     if reminder_scheduler_enabled:
         from sana_decision_room import start_reminder_scheduler
         start_reminder_scheduler(_connect_pg)
+        _RUNTIME_HEALTH["workers"]["execution_reminders"] = "running"
         print("[execution-reminders] scheduler: every 15 minutes", flush=True)
 
     scheduler_enabled = os.environ.get(
@@ -9167,6 +10943,7 @@ def _initialize_and_start_schedulers():
     if scheduler_enabled:
         from knowledge_backup import start_daily_scheduler
         start_daily_scheduler(_connect_pg)
+        _RUNTIME_HEALTH["workers"]["knowledge_backup"] = "running"
         print(
             "[knowledge-backup] scheduler: reconcile now, then 00:00 Asia/Riyadh",
             flush=True,
@@ -9178,7 +10955,19 @@ def _initialize_and_start_schedulers():
     if research_scheduler_enabled:
         from sana_research_cycle import start_scheduler
         start_scheduler(_connect_pg)
+        _RUNTIME_HEALTH["workers"]["knowledge_research"] = "running"
         print("[knowledge-research] scheduler: checks every 15 minutes", flush=True)
+
+    billing_retry_scheduler_enabled = os.environ.get(
+        "ENABLE_BILLING_NOTIFICATION_RETRY_SCHEDULER", "1"
+    ) == "1"
+    if billing_retry_scheduler_enabled:
+        start_billing_notification_retry_scheduler(_connect_pg)
+        _RUNTIME_HEALTH["workers"]["billing_notification_retry"] = "running"
+        print(
+            "[billing-notification-retry] scheduler: checks every 60 seconds",
+            flush=True,
+        )
 
 
 _startup_thread_started = False
@@ -9434,6 +11223,9 @@ def _enforce_web_process_invariants():
         "ENABLE_EXECUTION_REMINDER_SCHEDULER",
         "ENABLE_KNOWLEDGE_BACKUP_SCHEDULER",
         "ENABLE_KNOWLEDGE_RESEARCH_SCHEDULER",
+        "SANA_BILLING_CLEANUP_WORKER",
+        "ENABLE_BILLING_NOTIFICATION_RETRY_SCHEDULER",
+        "SANA_BILLING_NOTIFICATION_RETRY_WORKER",
     }
     # الغياب يعني 0: عدم ضبط المتغير لا يفتح scheduler بالخطأ.
     enabled = [name for name in scheduler_flags if os.environ.get(name, "0") == "1"]
@@ -9454,6 +11246,339 @@ def _safe_contextual_reference_knowledge(db, company, case, bottleneck):
     except Exception:
         db.rollback()
         return _reference_knowledge_fallback()
+
+
+def _client_source_classification(value):
+    return {
+        "Fact": "حقيقة موثقة",
+        "Evidence": "دليل داعم",
+        "Hypothesis": "احتمال يحتاج تحققًا",
+        "Inference": "استنتاج من المعلومات",
+        "Recommendation": "خطوة مقترحة",
+    }.get(value, "معلومة تحتاج مراجعة")
+
+def _client_source_label(source_type):
+    return {
+        "اكتشاف_ذاتي": "معلومة مقدمة من الشركة",
+        "Discovery / Case": "وصف الشركة لحالتها",
+        "Case": "وصف الحالة",
+        "سجل تشغيل": "سجل تشغيلي",
+    }.get(source_type, "مصدر معلومات")
+
+def _client_missing_evidence(items):
+    """يعرض المطلوب من العميل دون نسخ رموز المصادر الداخلية."""
+    safe_items = []
+    for item in items or []:
+        text = str(item)
+        text = text.replace(
+            "Fact أو Evidence مستقل يدعم فرضية الاختناق قبل إصدار استنتاج أو توصية أو قرار",
+            "معلومة مستقلة تدعم فرضية الاختناق قبل إصدار استنتاج أو توصية أو قرار",
+        )
+        text = text.replace(
+            "تحديث البيانات القديمة قبل الاستنتاج:",
+            "تحديث البيانات القديمة قبل الاستنتاج.",
+        )
+        text = (
+            text.replace("Evidence", "معلومة")
+            .replace("Fact", "معلومة")
+            .replace("Discovery", "جلسة التعريف")
+            .replace("Actual", "بيانات فعلية")
+            .replace("SDS-001", "جلسة التعريف")
+        )
+        text = text.replace("معلومة مستقل", "معلومة مستقلة")
+        text = text.replace("بيانات فعلية موثّق", "بيانات فعلية موثقة")
+        text = re.sub(
+            r"^(Knowledge|Operations|Brand|Data|Independence):",
+            "المحور:",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            r"(?<![\w])(?:CASE|SCAN|EVIDENCE|ER|DEC|IMP|TSK)[A-Z0-9:_-]+",
+            "المصدر المرتبط",
+            text,
+            flags=re.IGNORECASE,
+        )
+        safe_items.append(text)
+    return list(dict.fromkeys(safe_items))
+
+def _client_readiness_view(status, *, score=None, message=None):
+    """يرسم حالات القرار الداخلية بلغة التقرير التي يفهمها العميل."""
+    status = status if status in {"READY", "CONDITIONAL", "NOT_READY"} else "NOT_READY"
+    labels = {
+        "READY": "جاهز",
+        "CONDITIONAL": "مشروط",
+        "NOT_READY": "غير جاهز",
+    }
+    default_messages = {
+        "READY": "المعلومات الحالية كافية للانتقال إلى الخطوة التالية بعد المراجعة.",
+        "CONDITIONAL": "يمكن البدء بخطوة محدودة قابلة للقياس، لكن لا نعتمد قرارًا كبيرًا بعد.",
+        "NOT_READY": "نحتاج معلومات إضافية قبل اعتماد خطوة تنفيذية.",
+    }
+    return {
+        "status": status,
+        "label": labels[status],
+        "message": message or default_messages[status],
+        "score": score,
+        "score_label": _client_confidence_label(score),
+    }
+
+def _build_client_confidence_view(
+    scan,
+    scan_status,
+    *,
+    has_run=False,
+    baseline_valid=False,
+    impact_review=None,
+):
+    """يبني عرض الثقة العام دون كشف provenance أو رموز قاعدة البيانات."""
+    quality = scan.get("diagnostic_quality") or {}
+    decision_confidence = scan.get("decision_confidence") or {}
+    readiness = scan.get("decision_readiness") or "NOT_READY"
+    score = decision_confidence.get("score")
+
+    if not has_run or scan_status in {"NOT_RUN", "INCOMPLETE"}:
+        pre_status = "NOT_READY"
+        pre_message = "لم تكتمل المعلومات اللازمة بعد؛ لا نعتمد نتيجة قبل استكمالها."
+    elif readiness == "READY" and quality.get("evidence_strength") == "STRONG":
+        pre_status = "READY"
+        pre_message = "المعلومات كافية لبناء قرار قابل للمراجعة."
+    elif readiness in {"READY", "CONDITIONAL"}:
+        pre_status = "CONDITIONAL"
+        pre_message = "الصورة مفيدة لخطوة محدودة، وتحتاج تحققًا إضافيًا قبل قرار كبير."
+    else:
+        pre_status = "NOT_READY"
+        pre_message = "المعلومات الحالية لا تكفي لاعتماد قرار تنفيذي."
+
+    if scan_status == "COMPLETE":
+        decision_status = "READY"
+        decision_message = "تمت مراجعة القرار واعتماده لهذه النتيجة."
+    elif readiness in {"READY", "CONDITIONAL"}:
+        decision_status = "CONDITIONAL"
+        decision_message = "يوجد اتجاه عملي، لكنه ينتظر المراجعة والاعتماد قبل التنفيذ."
+    else:
+        decision_status = "NOT_READY"
+        decision_message = "لا يوجد قرار تنفيذي معتمد بعد."
+
+    impact_status = "NOT_READY"
+    impact_message = "لم يُقَس الأثر بعد؛ لا نعرض فترة مرجعية أو نتيجة غير موثقة."
+    if impact_review:
+        outcome = impact_review.get("impact_outcome")
+        if outcome == "INCONCLUSIVE":
+            impact_status = "CONDITIONAL"
+            impact_message = "بدأ القياس، لكن النتيجة الحالية لا تكفي لإثبات الأثر."
+        elif baseline_valid:
+            impact_status = "READY"
+            impact_message = "يوجد قياس موثق للنتيجة يمكن مراجعته مقابل الفترة السابقة."
+        else:
+            impact_status = "CONDITIONAL"
+            impact_message = "توجد نتيجة مسجلة، لكن فترة المقارنة الكاملة غير متاحة بعد."
+
+    return {
+        "stages": [
+            {
+                "key": "pre_decision",
+                "title": "قبل القرار",
+                "view": _client_readiness_view(
+                    pre_status, message=pre_message
+                ),
+            },
+            {
+                "key": "decision",
+                "title": "القرار",
+                "view": _client_readiness_view(
+                    decision_status, score=score, message=decision_message
+                ),
+            },
+            {
+                "key": "impact",
+                "title": "قياس الأثر",
+                "view": _client_readiness_view(
+                    impact_status, message=impact_message
+                ),
+            },
+        ],
+        "decision_score": score,
+        "decision_label": _client_confidence_label(score),
+        "quality_label": _client_quality_label(
+            quality.get("evidence_strength")
+        ),
+        "data_label": _client_quality_label(
+            quality.get("data_reliability")
+        ),
+    }
+
+def _client_quality_label(value):
+    return {
+        "STRONG": "قوية",
+        "MODERATE": "متوسطة",
+        "WEAK": "محدودة",
+        "HIGH": "مرتفعة",
+        "MEDIUM": "متوسطة",
+        "LOW": "محدودة",
+    }.get(value, "غير مكتملة")
+
+def reset_database_schema():
+    """Restore the default schema selection after an isolated test run."""
+    global DATABASE_SCHEMA
+    global _BILLING_TEST_SCHEMA_PREVIOUS
+    global _BILLING_TEST_SCHEMA_PREVIOUS_ENV
+    global _BILLING_TEST_SCHEMA_STATE_SAVED
+    if _BILLING_TEST_SCHEMA_STATE_SAVED:
+        DATABASE_SCHEMA = _BILLING_TEST_SCHEMA_PREVIOUS
+        if _BILLING_TEST_SCHEMA_PREVIOUS_ENV is None:
+            os.environ.pop("SANA_DATABASE_SCHEMA", None)
+        else:
+            os.environ["SANA_DATABASE_SCHEMA"] = _BILLING_TEST_SCHEMA_PREVIOUS_ENV
+        _BILLING_TEST_SCHEMA_PREVIOUS = None
+        _BILLING_TEST_SCHEMA_PREVIOUS_ENV = None
+        _BILLING_TEST_SCHEMA_STATE_SAVED = False
+    else:
+        DATABASE_SCHEMA = None
+        os.environ.pop("SANA_DATABASE_SCHEMA", None)
+
+def drop_billing_test_schema(schema):
+    """Drop only a schema created for a billing test run."""
+    if not schema or not str(schema).startswith("sana_billing_test_"):
+        raise ValueError("BILLING_TEST_SCHEMA_INVALID")
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"DROP SCHEMA IF EXISTS {_quote_schema_identifier(schema)} CASCADE"
+            )
+    finally:
+        conn.close()
+
+def start_billing_notification_retry_scheduler(connect_db, interval_seconds=60):
+    """Start the in-process development scheduler; production uses an external runner."""
+    def loop():
+        while True:
+            try:
+                run_billing_notification_retry_cycle(connect_db)
+            except Exception as exc:
+                print(f"[billing-notification-retry] failed: {exc}", flush=True)
+            time.sleep(interval_seconds)
+
+    thread = _threading.Thread(
+        target=loop, name="sana-billing-notification-retry", daemon=True
+    )
+    thread.start()
+    return thread
+
+def _billing_notification_content(notification_type, payload):
+    """Rebuild billing email content from the non-sensitive outbox payload."""
+    if notification_type not in _BILLING_NOTIFICATION_TYPES:
+        raise ValueError("BILLING_NOTIFICATION_TYPE_INVALID")
+    status = "past_due" if notification_type.endswith("past_due") else "canceled"
+    if status == "past_due":
+        subject = "تعثر دفع اشتراك سنع — مطلوب تحديث وسيلة الدفع"
+        heading = "تعثر دفع اشتراك سنع"
+        explanation = (
+            "تعذر تحصيل دفعة الاشتراك الأخيرة. حدّث وسيلة الدفع أو راجع "
+            "الاشتراك حتى تعود الخدمة للعمل."
+        )
+        link_label = "تحديث وسيلة الدفع أو مراجعة الاشتراك"
+    else:
+        subject = "تم إلغاء اشتراك سنع — ابدأ اشتراكًا جديدًا"
+        heading = "تم إلغاء اشتراك سنع"
+        explanation = (
+            "تم إلغاء الاشتراك، ولذلك توقفت الخدمة. يمكنك بدء اشتراك جديد "
+            "من صفحة الأسعار."
+        )
+        link_label = "بدء اشتراك جديد"
+    recovery_url = str(payload.get("recovery_url") or "").strip()
+    if not recovery_url:
+        raise ValueError("BILLING_RECOVERY_URL_MISSING")
+    html_body = (
+        "<div dir='rtl'>"
+        f"<h2>{html.escape(heading)}</h2>"
+        f"<p>{html.escape(explanation)}</p>"
+        f"<p><a href='{html.escape(recovery_url)}'>"
+        f"{html.escape(link_label)}</a></p>"
+        "</div>"
+    )
+    return subject, html_body
+
+def process_billing_notification_retries(db, batch_size=25):
+    """Send due billing outbox rows; claims make concurrent workers safe."""
+    if not RESEND_API_KEY:
+        return {"status": "disabled", "processed": 0, "sent": 0, "failed": 0}
+    try:
+        batch_size = max(1, min(int(batch_size), 100))
+    except (TypeError, ValueError):
+        batch_size = 25
+    result = {"status": "processed", "processed": 0, "sent": 0, "failed": 0}
+    for _ in range(batch_size):
+        row = _claim_billing_notification_for_retry(db)
+        if not row:
+            break
+        result["processed"] += 1
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+            subject, html_body = _billing_notification_content(
+                row["notification_type"], payload
+            )
+            resend.Emails.send({
+                "from": "سنع <noreply@sanaclarity.com>",
+                "to": [row["recipient_email"]],
+                "subject": subject,
+                "html": html_body,
+            })
+        except Exception as exc:
+            _finish_billing_notification_retry(
+                db, row, sent=False, error_code=type(exc).__name__,
+            )
+            result["failed"] += 1
+        else:
+            _finish_billing_notification_retry(db, row, sent=True)
+            result["sent"] += 1
+    return result
+
+def run_billing_notification_retry_cycle(connect_db, batch_size=25):
+    """Run one isolated retry cycle for a cron job or scheduler."""
+    db = connect_db()
+    try:
+        return process_billing_notification_retries(db, batch_size=batch_size)
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+def _finish_billing_notification_retry(db, row, *, sent, error_code=None):
+    """Release a claim only if it still belongs to this worker."""
+    if sent:
+        db.execute(
+            """UPDATE admin_notification_outbox
+               SET status='sent',sent_at=now(),error_code=NULL,
+                   next_attempt_at=NULL,delivery_lock_token=NULL,
+                   delivery_locked_at=NULL
+               WHERE notification_id=? AND delivery_lock_token=?""",
+            (row["notification_id"], row["delivery_lock_token"]),
+        )
+    else:
+        attempt_count = int(row["attempt_count"])
+        db.execute(
+            """UPDATE admin_notification_outbox
+               SET status='failed',error_code=?,
+                   next_attempt_at=CASE
+                     WHEN ? < ? THEN now() + (? * INTERVAL '1 second')
+                     ELSE NULL
+                   END,
+                   delivery_lock_token=NULL,delivery_locked_at=NULL
+               WHERE notification_id=? AND delivery_lock_token=?""",
+            (
+                (error_code or "RESEND_SEND_FAILED")[:80],
+                attempt_count,
+                _BILLING_NOTIFICATION_MAX_ATTEMPTS,
+                _billing_retry_delay_seconds(attempt_count),
+                row["notification_id"],
+                row["delivery_lock_token"],
+            ),
+        )
+    db.commit()
 
 
 if __name__ == "__main__":

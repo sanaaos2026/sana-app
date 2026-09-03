@@ -46,7 +46,7 @@
   #stage {
     width: 100%; max-width: 480px;
     flex: 1; display: flex; align-items: center; justify-content: center;
-    padding: 80px 20px 100px; position: relative;
+    padding: 64px 20px 72px; position: relative;
   }
 
   /* ── Screen ── */
@@ -70,7 +70,7 @@
   }
   .q-sub {
     font-size: 14px; color: var(--muted); text-align: center;
-    margin-bottom: 26px; line-height: 1.6;
+    margin-bottom: 20px; line-height: 1.6;
   }
 
   /* ── Choice grid ── */
@@ -154,7 +154,7 @@
   }
   .welcome-sub {
     font-size: 15px; color: var(--muted); text-align: center;
-    margin-bottom: 36px; line-height: 1.7; max-width: 340px;
+    margin-bottom: 28px; line-height: 1.7; max-width: 340px;
   }
   .start-btn {
     background: var(--gold); color: var(--navy);
@@ -246,6 +246,7 @@ const PREVIEW_QUERY = (() => {
   if (!adminKey || !companyId) return '';
   return `?${new URLSearchParams({admin_key: adminKey, company_id: companyId}).toString()}`;
 })();
+const FULL_REASSESSMENT = {{ (full_reassessment|default(false))|tojson }};
 
 // ────────────────────────────────────────────────
 // SANA LOGO SVG
@@ -328,8 +329,8 @@ const Q = [
   // Q1 — الوجهة
   {
     id: 'q1', icon: ICONS.q1,
-    title: '🎯 لماذا جئت لسنع اليوم؟',
-    sub: 'ما النتيجة الأهم اللي تبيها خلال 12 شهر؟',
+     title: 'وش النتيجة الأهم لك الآن؟',
+     sub: 'خلال 12 شهر، وش تبي يتغير؟',
     type: 'single',
     key: 'q1',
     motivation: '🎯 تمام، صار عندنا وجهة واضحة.',
@@ -349,8 +350,8 @@ const Q = [
   // Q2 — التحدي (لا "القرار")
   {
     id: 'q2', icon: ICONS.q2,
-    title: 'لو قدرت تعالج تحديًا واحدًا الآن…',
-    sub: 'ما الأكثر تأثيرًا على شركتك؟',
+     title: 'وش أكثر شيء مأثر على الشغل حاليًا؟',
+     sub: 'اختر الأقرب.',
     type: 'single',
     key: 'q2',
     motivation: '🧠 وضّحت لنا أهم تحدٍّ نبدأ فيه.',
@@ -369,7 +370,7 @@ const Q = [
   // Q3 — الأصل الأهم (5 خيارات مطابقة للأصول + ما أعرف)
   {
     id: 'q3', icon: ICONS.q3,
-    title: '⭐ أكثر شيء تعتمد عليه شركتك اليوم؟',
+     title: 'أكثر شيء تعتمد عليه شركتك اليوم؟',
     sub: 'اختر الأقرب.',
     type: 'single',
     key: 'q3',
@@ -387,10 +388,10 @@ const Q = [
   // Q4 — مصدر العملاء + هشاشته
   {
     id: 'q4', icon: ICONS.q4,
-    title: '🤝 من وين يجيك أغلب عملائك اليوم؟',
+     title: 'من وين يجيكم أغلب العملاء؟',
     type: 'single+followup-choice',
     key: 'q4', fuKey: 'q4_fu',
-    fuLabel: 'لو توقف هذا المصدر شهرًا كاملًا، هل تتأثر مبيعاتك؟',
+     fuLabel: 'لو توقف هذا المصدر شهرًا، وش يصير؟',
     motivation: '🤝 وهذا يكشف مستوى الهشاشة الحقيقي بمصدر عملائك.',
     choices: [
       '🌟 الإحالات',
@@ -414,11 +415,11 @@ const Q = [
   // Q5 — الاعتماد على المؤسس
   {
     id: 'q5', icon: ICONS.q5,
-    title: '🏖️ تخيّل إنك سافرت شهرًا كاملًا بدون أي تواصل مع الشركة…',
-    sub: 'ماذا تتوقع أن يحدث؟',
+     title: 'إذا غبت عن الشركة شهرًا، وش يصير؟',
+     sub: 'وش تتوقع يحدث؟',
     type: 'single+text',
     key: 'q5', textKey: 'q5_text',
-    textLabel: 'ما أكثر شيء سيتعطل؟ (اختياري)',
+     textLabel: 'وش أكثر شيء ممكن يتعطل؟ (اختياري)',
     hideFollowupFor: ['😎 العمل يستمر طبيعيًا'],
     motivation: '🏖️ سؤال يكشف الكثير — شكرًا على صراحتك.',
     choices: [
@@ -433,8 +434,8 @@ const Q = [
   // Q6 — أسلوب اتخاذ القرار
   {
     id: 'q6', icon: ICONS.q6,
-    title: '📊 لما تواجه قرارًا مهمًا…',
-    sub: 'غالبًا على شنو تعتمد؟',
+     title: 'إذا جاء قرار مهم، على وش تعتمد؟',
+     sub: 'وش يصير غالبًا؟',
     type: 'single',
     key: 'q6',
     motivation: '📈 صار عندنا فكرة عن أسلوبك بالقرار.',
@@ -451,11 +452,11 @@ const Q = [
   // Q7 — معايير النجاح (multi، max 3) — يُحفظ في success_criteria
   {
     id: 'q7', icon: ICONS.q7,
-    title: '🚀 بعد 12 شهرًا من اليوم…',
-    sub: 'ما النتائج الثلاث اللي بتخليك تقول "سنع صنعت فرقًا"؟ اختر ثلاثة.',
+     title: 'بعد سنة من اليوم، وش يخليك تقول إن سنع صنع فرقًا؟',
+     sub: 'اختر حتى 3 نتائج.',
     type: 'multi',
     key: 'q7', maxSelect: 3,
-    motivation: '🚀 آخر سؤال، وأهمه — تخيّلنا المستقبل معك.',
+     motivation: 'آخر نقطة ونكمل الصورة.',
     choices: [
       '📈 مبيعات أعلى',
       '💰 أرباح وسيولة أفضل',
@@ -534,52 +535,11 @@ function renderWelcome() {
   $screen.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; gap:0; width:100%; max-width:420px;">
       <div class="welcome-logo">${LOGO_LG}</div>
-      <div class="welcome-title" style="margin-bottom:20px;">مرحبًا في سنع</div>
-
-      <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.10);
-                  border-radius:14px; padding:22px 22px; text-align:right; margin-bottom:24px;
-                  display:flex; flex-direction:column; gap:14px;">
-        <p style="color:#fff; font-size:15px; font-weight:600; line-height:1.6; margin:0;">
-          سنع ليس CRM، وليس ERP.
-        </p>
-        <p style="color:rgba(255,255,255,0.65); font-size:13.5px; line-height:1.75; margin:0;">
-          سنع هو نظام الوضوح الإداري لشركتك — يساعدك تشوف شركتك من الداخل بعيون موضوعية،
-          وتعرف أين القوة الحقيقية، وأين الخطر قبل ما يكبر.
-        </p>
-        <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:14px;
-                    display:flex; flex-direction:column; gap:8px;">
-          <div style="display:flex; gap:10px; align-items:flex-start; color:rgba(255,255,255,0.7); font-size:13px;">
-            <span>📌</span><span>تشخيص واضح لأكبر تحدٍّ تواجهه اليوم</span>
-          </div>
-          <div style="display:flex; gap:10px; align-items:flex-start; color:rgba(255,255,255,0.7); font-size:13px;">
-            <span>📌</span><span>خريطة أصول شركتك الخمسة</span>
-          </div>
-          <div style="display:flex; gap:10px; align-items:flex-start; color:rgba(255,255,255,0.7); font-size:13px;">
-            <span>📌</span><span>أول توصية قابلة للتنفيذ هذا الأسبوع</span>
-          </div>
-        </div>
-      </div>
-
-      <div style="display:flex; align-items:center; gap:14px; width:100%;">
-        <button class="start-btn" style="flex:1; margin:0;" onclick="skipWelcome()">
-          ابدأ الجلسة ←
-        </button>
-        <div style="display:flex; flex-direction:column; align-items:center; gap:2px; min-width:44px;">
-          <div id="welcome-count" style="font-family:'IBM Plex Mono',monospace; font-size:20px;
-               font-weight:600; color:var(--gold);">30</div>
-          <div style="font-size:10px; color:var(--muted);">ثانية</div>
-        </div>
-      </div>
+      <div class="welcome-title">وش اللي ما تشوفه في شركتك؟</div>
+      <div class="welcome-sub">أدخل واقع شركتك كما هو، وسنع يرتب الصورة ويحدد أين يستحق تركيزك الآن.</div>
+      <button class="start-btn" style="width:100%;" onclick="skipWelcome()">ابدأ</button>
+      <div style="color:var(--muted); font-size:12px; margin-top:12px;">دقائق قليلة · بدون نموذج طويل</div>
     </div>`;
-
-  // عدّاد 30 ثانية — يبدأ فور ظهور الشاشة
-  let count = 30;
-  _welcomeTimer = setInterval(() => {
-    count--;
-    const el = document.getElementById('welcome-count');
-    if (el) el.textContent = count;
-    if (count <= 0) { clearInterval(_welcomeTimer); _welcomeTimer = null; goNext(); }
-  }, 1000);
 }
 
 function skipWelcome() {
@@ -591,27 +551,27 @@ function renderCalibration() {
   const baseline = ans.diagnostic_baseline || {};
   $screen.innerHTML = `
     <div class="outro-wrap" style="align-items:stretch;max-width:520px;">
-      <div class="outro-title">عاير الفترة قبل التشخيص</div>
-      <div class="outro-body">حدد الفترتين اللتين تصفان واقع الشركة. لا يعني ذلك أن أي رقم أصبح مثبتًا؛ سنظل نطلب مصدره ودليله عند إدخاله.</div>
-      <label class="followup-label">فترة الأساس</label>
+      <div class="outro-title">نكمل الصورة</div>
+      <div class="outro-body">نحدد الفترة التي سنقارن بها لاحقًا. الأرقام تظل غير مؤكدة حتى يكون لها مصدر.</div>
+      <label class="followup-label">الفترة التي نبدأ منها</label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <input class="followup-input" type="date" id="baseline-start" value="${escHtml(baseline.baseline_start || '')}">
         <input class="followup-input" type="date" id="baseline-end" value="${escHtml(baseline.baseline_end || '')}">
       </div>
-      <label class="followup-label" style="margin-top:12px;">فترة المقارنة</label>
+      <label class="followup-label" style="margin-top:12px;">فترة سابقة للمقارنة <span style="font-weight:400;opacity:.65">(اختياري)</span></label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <input class="followup-input" type="date" id="comparison-start" value="${escHtml(baseline.comparison_start || '')}">
         <input class="followup-input" type="date" id="comparison-end" value="${escHtml(baseline.comparison_end || '')}">
       </div>
-      <label class="followup-label" style="margin-top:12px;">سياق الموسمية</label>
+      <label class="followup-label" style="margin-top:12px;">هل الفترة عادية أو موسمية؟</label>
       <select class="followup-input" id="seasonality-context">
         <option value="فترة تشغيل اعتيادية">فترة تشغيل اعتيادية</option>
         <option value="موسم مرتفع">موسم مرتفع</option>
         <option value="موسم منخفض">موسم منخفض</option>
-        <option value="غير معروف — يحتاج تحقق">غير معروف — يحتاج تحقق</option>
+        <option value="غير معروف — يحتاج تحقق">لسنا متأكدين بعد — نحتاج نتأكد</option>
       </select>
       <div id="calibration-error" style="color:#ffb4a8;font-size:12px;min-height:20px;margin-top:8px;"></div>
-      <button class="outro-btn" onclick="submitCalibration()">حفظ السياق والمتابعة ←</button>
+      <button class="outro-btn" onclick="submitCalibration()">حفظ السياق وكمّل</button>
       <button class="back-btn" onclick="goBack()">← رجوع للسؤال السابق</button>
     </div>`;
   document.getElementById('seasonality-context').value =
@@ -627,14 +587,17 @@ function submitCalibration() {
     seasonality_context: document.getElementById('seasonality-context').value
   };
   const error = document.getElementById('calibration-error');
-  if (!baseline.baseline_start || !baseline.baseline_end ||
-      !baseline.comparison_start || !baseline.comparison_end) {
-    error.textContent = 'حدد بداية ونهاية فترة الأساس والمقارنة.';
+  if (!baseline.baseline_start || !baseline.baseline_end) {
+    error.textContent = 'حدد بداية ونهاية الفترة التي عندك عنها بيانات.';
+    return;
+  }
+  if (!!baseline.comparison_start !== !!baseline.comparison_end) {
+    error.textContent = 'حدد بداية ونهاية الفترة السابقة، أو اتركهما فارغتين.';
     return;
   }
   if (baseline.baseline_end < baseline.baseline_start ||
       baseline.comparison_end < baseline.comparison_start) {
-    error.textContent = 'نهاية الفترة يجب ألا تسبق بدايتها.';
+    error.textContent = 'تأكد أن نهاية كل فترة بعد بدايتها.';
     return;
   }
   ans.diagnostic_baseline = baseline;
@@ -675,9 +638,9 @@ function renderPassport(data) {
   $screen.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; width:100%; max-width:420px;">
       <div class="outro-logo">${LOGO_LG}</div>
-      <div class="outro-title" style="font-size:17px; margin-bottom:6px;">🏢 جواز شركتك</div>
+      <div class="outro-title" style="font-size:17px; margin-bottom:6px;">هذا ما فهمناه</div>
       <div style="color:rgba(255,255,255,0.45); font-size:12px; margin-bottom:20px;">
-        ملخص ما رصده سنع من جلسة الاكتشاف
+        ملخص ما فهمناه من حديثك
       </div>
       <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10);
                   border-radius:14px; padding:18px 20px; width:100%;
@@ -686,7 +649,7 @@ function renderPassport(data) {
       </div>
       <button class="outro-btn" style="margin-top:22px; width:100%;"
               onclick="location.href='${dest}'">
-        ابدأ أول تشخيص ←
+        شوف أول شيء يستحق انتباهك
       </button>
     </div>`;
 }
@@ -697,7 +660,7 @@ async function saveAndFinish() {
     const res = await fetch(`/api/discovery/save${PREVIEW_QUERY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ans)
+      body: JSON.stringify({...ans, full_reassessment: FULL_REASSESSMENT})
     });
     const json = await res.json();
     if (json.success && json.data) {
@@ -770,7 +733,7 @@ function renderQuestion(q) {
 
   if (q.type === 'multi') {
     const sel = ans[q.key] || [];
-    body += `<div class="multi-count" id="multi-count">مختار ${sel.length}/${q.maxSelect}</div>`;
+    body += `<div class="multi-count" id="multi-count">محدد ${sel.length}/${q.maxSelect}</div>`;
     body += renderChoices(q.choices, q.key, 'multi', sel);
     body += `<button class="next-btn${sel.length > 0 ? ' show' : ''}" id="next-btn"
       onclick="submitMulti()">إنهاء ←</button>`;
@@ -876,7 +839,7 @@ function toggleMulti(value) {
   }
   const cnt = document.getElementById('multi-count');
   const nb  = document.getElementById('next-btn');
-  if (cnt) cnt.textContent = `مختار ${arr.length}/${q.maxSelect}`;
+  if (cnt) cnt.textContent = `محدد ${arr.length}/${q.maxSelect}`;
   if (nb) nb.classList.toggle('show', arr.length > 0);
   const mainCh = document.getElementById('main-choices');
   if (mainCh) {

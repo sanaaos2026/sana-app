@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<title>وش تغير من آخر مرة؟ — سنع</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#0B132B;--gold:#F2B233;--teal:#0EA5A5;--ink:#E8ECF4;--muted:#8B9AB0;--line:rgba(255,255,255,.11)}
+*{box-sizing:border-box}body{margin:0;background:var(--navy);color:var(--ink);font-family:'IBM Plex Sans Arabic',sans-serif;min-height:100vh}
+main{max-width:500px;margin:auto;padding:70px 20px}.kicker{font-size:11px;color:var(--teal);font-weight:700}.title{font:800 28px Cairo;margin:8px 0}.lead{color:var(--muted);line-height:1.8;margin:0 0 28px}
+.card{border:1px solid var(--line);background:rgba(255,255,255,.04);border-radius:15px;padding:20px}.q{font:700 20px Cairo;line-height:1.6;margin-bottom:18px}
+.choices{display:grid;gap:9px}.choice{border:1px solid var(--line);background:rgba(255,255,255,.03);color:var(--ink);padding:13px;border-radius:10px;font:500 14px inherit;text-align:right;cursor:pointer}.choice.selected{border-color:var(--gold);color:var(--gold);background:rgba(242,178,51,.1)}
+input,select,textarea{width:100%;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.06);color:#fff;font:inherit}select option{color:#111}.dates{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{width:100%;border:0;border-radius:11px;background:var(--gold);color:var(--navy);padding:14px;font:800 15px Cairo;margin-top:18px;cursor:pointer}.secondary{display:block;text-align:center;color:var(--muted);font-size:12px;margin-top:16px}
+.progress{height:3px;background:var(--line);border-radius:9px;margin-bottom:26px}.progress span{display:block;height:100%;background:var(--gold);transition:.2s}.meta{font-size:11px;color:var(--muted);margin-bottom:8px}
+.summary-row{padding:10px 0;border-bottom:1px solid var(--line)}.summary-row b{color:var(--gold);display:block;font-size:12px}.summary-message{line-height:1.8;margin:18px 0}
+@media(max-width:520px){main{padding:42px 16px}.title{font-size:24px}.dates{grid-template-columns:1fr}}
+</style></head>
+<body><main><div id="app"><div class="kicker">مراجعة سريعة</div><h1 class="title">وش تغير من آخر مرة؟</h1><p class="lead">سنراجع آخر صورة عندنا ونركز فقط على الجديد.</p><button class="btn" onclick="start()">ابدأ المراجعة</button><a class="secondary" href="/discovery?full=1">أبغى أراجع كل شيء من جديد</a></div></main>
+<script>
+const csrf=document.querySelector('meta[name="csrf-token"]').content,app=document.getElementById('app');let checkin=null,index=0,answers=[];
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(url,options={}){options.headers=Object.assign({'X-CSRFToken':csrf,'Content-Type':'application/json'},options.headers||{});const r=await fetch(url,options),j=await r.json();if(!r.ok||!j.success)throw Error(j.message||j.error);return j.data}
+async function start(){try{checkin=await api('/api/returning-checkin',{method:'POST',body:'{}'});renderQuestion()}catch(e){app.innerHTML=`<div class="card">${esc(e.message)}</div>`}}
+function renderQuestion(){const q=checkin.questions[index],pct=Math.round(index/checkin.questions.length*100);app.innerHTML=`<div class="progress"><span style="width:${pct}%"></span></div><div class="meta">سؤال ${index+1} من ${checkin.questions.length}</div><div class="card"><div class="q">${esc(q.text)}</div>${renderInput(q)}<button class="btn" onclick="next()">التالي</button><div id="error" class="meta"></div></div>`}
+function renderInput(q){if(q.kind==='metric')return `<input id="numeric" type="number" step="any" placeholder="القيمة الحالية (${esc(q.unit||'الوحدة السابقة')})"><div class="dates"><input id="periodStart" type="date" aria-label="بداية الفترة"><input id="periodEnd" type="date" aria-label="نهاية الفترة"></div><select id="season"><option value="">سياق الفترة غير معروف</option><option>فترة تشغيل اعتيادية</option><option>موسم مرتفع</option><option>موسم منخفض</option></select>`;return `<div class="choices">${q.options.map(x=>`<button class="choice" data-value="${esc(x)}" onclick="choose(this)">${esc(x)}</button>`).join('')}</div>${q.followup?`<textarea id="note" rows="2" placeholder="${esc(q.followup)}" hidden></textarea>`:''}`}
+function choose(el){document.querySelectorAll('.choice').forEach(x=>x.classList.remove('selected'));el.classList.add('selected');const note=document.getElementById('note');if(note)note.hidden=!['تغير','نعم','أعدله'].includes(el.dataset.value)}
+function next(){const q=checkin.questions[index],errorBox=document.getElementById('error');let answer={question_id:q.id};if(q.kind==='metric'){answer.numeric_value=document.getElementById('numeric').value;answer.period_start=document.getElementById('periodStart').value;answer.period_end=document.getElementById('periodEnd').value;answer.seasonality_context=document.getElementById('season').value;if(!answer.numeric_value||!answer.period_start||!answer.period_end)return errorBox.textContent='أدخل القيمة وفترتها.'}else{const selected=document.querySelector('.choice.selected');if(!selected)return errorBox.textContent='اختر إجابة.';answer.value=selected.dataset.value;const note=document.getElementById('note');answer.note=note&&!note.hidden?note.value.trim():'';if(note&&!note.hidden&&!answer.note)return errorBox.textContent='اكتب التغير باختصار.'}answers.push(answer);index++;if(index<checkin.questions.length)renderQuestion();else finish()}
+async function finish(){app.innerHTML='<div class="card">نحفظ إجاباتك ونرجع للمسار الأساسي…</div>';try{const s=await api(`/api/returning-checkin/${encodeURIComponent(checkin.checkin_id)}`,{method:'POST',body:JSON.stringify({answers})});location.href=s.next_url||'/home'}catch(e){app.innerHTML=`<div class="card">${esc(e.message)}<button class="btn" onclick="finish()">أعد المحاولة</button></div>`}}
+</script></body></html>

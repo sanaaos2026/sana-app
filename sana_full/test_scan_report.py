@@ -184,21 +184,251 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         ).render(**report)
         for required_text in (
             "تقرير Sana Scan التنفيذي",
-            "الاختناق المرشح",
+            "أهم عائق محتمل",
             "ما لا نفعله الآن",
             "خطة التنفيذ — 90 يومًا",
-            "0–30 يومًا",
-            "31–60 يومًا",
-            "61–90 يومًا",
+            "إصلاح الاختناق الحرج",
+            "بناء النظام والأصل",
+            "التوسع فيما نجح",
             "نسبة العروض المعتمدة دون تدخل المؤسس",
-            "ops-log:test",
-            "المعرفة المرجعية المرتبطة",
-            "لا تصبح Evidence للعميل",
+            "معلومات عامة ذات صلة",
+            "قبل القرار",
+            "القرار",
+            "قياس الأثر",
+            "مشروط",
+            "غير جاهز",
         ):
             self.assertIn(required_text, html)
+        for client_asset_name in (
+            "المعرفة",
+            "التشغيل",
+            "البراند",
+            "البيانات",
+            "الاستقلال",
+        ):
+            self.assertIn(client_asset_name, html)
+        for internal_asset_name in (
+            "Knowledge",
+            "Operations",
+            "Brand",
+            "Data",
+            "Independence",
+        ):
+            self.assertNotIn(internal_asset_name, html)
+        for private_text in (
+            "SELF_REPORTED",
+            "UNVERIFIED",
+            "ops-log:test",
+            self.company_id,
+            self.case_id,
+            scan["scan_id"],
+            decision_id,
+            *evidence_ids,
+            "Evidence",
+            "Fact",
+        ):
+            self.assertNotIn(private_text, html)
         pdf = weasyprint.HTML(string=html, base_url="http://localhost/").write_pdf()
         self.assertTrue(pdf.startswith(b"%PDF"))
         self.assertGreater(len(pdf), 10000)
+        self.assertEqual(8, len(weasyprint.HTML(
+            string=html, base_url="http://localhost/"
+        ).render().pages))
+
+    def test_asset_map_keeps_a_real_zero_score_while_translating_names(self):
+        report = sana_app._build_passport_context(self.company_id)
+        report["scan"]["asset_scores"] = [
+            sana_app._client_asset_view({
+                "asset_type": asset_type,
+                "asset_name": asset_type,
+                "score": score,
+                "status": "COMPLETE",
+            })
+            for asset_type, score in (
+                ("Knowledge", 0),
+                ("Operations", 42),
+                ("Brand", 100),
+            )
+        ]
+
+        html = sana_app.app.jinja_env.get_template(
+            "14-passport-report.html"
+        ).render(**report)
+
+        self.assertIn("المعرفة", html)
+        self.assertIn("التشغيل", html)
+        self.assertIn("البراند", html)
+        self.assertIn("0/100", html)
+        self.assertIn("42/100", html)
+        self.assertIn("100/100", html)
+        for internal_asset_name in ("Knowledge", "Operations", "Brand"):
+            self.assertNotIn(internal_asset_name, html)
+
+    def test_all_client_asset_outputs_translate_database_names_without_changing_scores(self):
+        scores = {
+            "Knowledge": 0,
+            "Operations": 42,
+            "Brand": 100,
+            "Data": 7,
+            "Independence": 88,
+        }
+        for asset_type, score in scores.items():
+            self.db.execute(
+                """UPDATE assets SET asset_name=?, current_score=?
+                   WHERE company_id=? AND asset_type=?""",
+                (asset_type, score, self.company_id, asset_type),
+            )
+        scan_result = {
+            "status": "COMPLETE",
+            "case_id": self.case_id,
+            "asset_scores": [
+                {
+                    "asset_type": asset_type,
+                    "asset_name": asset_type,
+                    "score": score,
+                    "status": "COMPLETE",
+                }
+                for asset_type, score in scores.items()
+            ],
+            "findings": [],
+            "missing_evidence": [],
+        }
+        self.db.execute(
+            """INSERT INTO scan_runs
+               (scan_id,case_id,company_id,status,result,methodology_version)
+               VALUES (?,?,?,?,?,?)""",
+            (
+                f"CLIENT{self.company_id.removeprefix('RPT')}",
+                self.case_id,
+                self.company_id,
+                "COMPLETE",
+                json.dumps(scan_result, ensure_ascii=False),
+                "client-output-test",
+            ),
+        )
+        self.db.commit()
+
+        expected_names = {
+            "Knowledge": "المعرفة",
+            "Operations": "التشغيل",
+            "Brand": "البراند",
+            "Data": "البيانات",
+            "Independence": "الاستقلال",
+        }
+        with sana_app.app.test_request_context():
+            summary = sana_app.company_summary(self.company_id).get_json()["data"]
+            with patch.object(
+                sana_app, "enforce_entity_company_scope", return_value=None
+            ):
+                passport = sana_app.passport_summary(
+                    self.company_id
+                ).get_json()["data"]
+                question = sana_app.sds_question(
+                    self.company_id
+                ).get_json()["data"]
+                text = sana_app.passport_report_text(
+                    self.company_id
+                ).get_json()["data"]["report_text"]
+
+        for output in (summary["assets"], passport["assets"]):
+            self.assertEqual(
+                expected_names,
+                {item["asset_type"]: item["client_asset_name"] for item in output},
+            )
+            self.assertEqual(
+                scores,
+                {item["asset_type"]: item["current_score"] for item in output},
+            )
+            self.assertEqual(
+                expected_names,
+                {item["asset_type"]: item["asset_name"] for item in output},
+            )
+
+        self.assertEqual(
+            scores,
+            {
+                item["asset_type"]: item["score"]
+                for item in passport["scan_asset_scores"]
+            },
+        )
+        self.assertEqual(
+            expected_names,
+            {
+                item["asset_type"]: item["client_asset_name"]
+                for item in passport["scan_asset_scores"]
+            },
+        )
+        self.assertIn(question["client_asset_name"], expected_names.values())
+        self.assertEqual(question["client_asset_name"], question["asset_name"])
+        self.assertEqual(0, summary["assets"][0]["current_score"])
+        self.assertEqual(0, passport["scan_asset_scores"][0]["score"])
+
+        for internal_asset_name in expected_names:
+            self.assertNotIn(internal_asset_name, text)
+
+        passport_template = sana_app.app.jinja_env.loader.get_source(
+            sana_app.app.jinja_env, "03-business-passport.html"
+        )[0]
+        new_case_template = sana_app.app.jinja_env.loader.get_source(
+            sana_app.app.jinja_env, "04-new-case-client.html"
+        )[0]
+        self.assertIn("${a.client_asset_name}", passport_template)
+        self.assertIn("${sds.client_asset_name}", passport_template)
+        self.assertNotIn("${a.asset_name}", passport_template)
+        self.assertIn("new Option(a.client_asset_name,a.asset_id)", new_case_template)
+        self.assertNotIn("new Option(a.asset_name,a.asset_id)", new_case_template)
+
+    def test_two_sourced_submissions_close_distinct_requests_and_unlock_conditional_review(self):
+        suffix = self.company_id.removeprefix("RPT")
+        self.db.execute(
+            "DELETE FROM evidence WHERE evidence_id=?",
+            (f"E2{suffix}",),
+        )
+        self.db.execute(
+            """INSERT INTO evidence
+               (evidence_id,company_id,case_id,asset_id,title,source_type,confidence,
+                evidence_type,source_ref,information_type,verification_status,
+                source_category)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                f"DISCOPS{suffix}", self.company_id, self.case_id,
+                self.asset_ids["Operations"], "التحدي المعلن: التشغيل",
+                "اكتشاف_ذاتي", 50, "Evidence", "SDS-001 Q2",
+                "Narrative", "UNVERIFIED", "SELF_REPORTED",
+            ),
+        )
+        first = run_scan(self.db, self.case_id)
+        open_requests = [
+            item for item in first["evidence_requests"] if item["status"] == "OPEN"
+        ]
+        self.assertGreaterEqual(len(open_requests), 2)
+
+        for index, request in enumerate(open_requests[:2], start=1):
+            self.db.execute(
+                """INSERT INTO evidence
+                   (evidence_id,company_id,case_id,asset_id,title,source_type,confidence,
+                    evidence_type,source_ref,information_type,verification_status,
+                    source_category)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    f"CLIENT{index}{suffix}", self.company_id, self.case_id,
+                    request["asset_id"], f"معلومة عميل للمحور {index}",
+                    "معلومة عميل بمصدر", 70, "Evidence", f"REPORT:{index}",
+                    "Narrative", "UNVERIFIED", "SELF_REPORTED",
+                ),
+            )
+        self.db.commit()
+
+        second = run_scan(self.db, self.case_id)
+        self.assertEqual(2, second["evidence_progress"]["completed"])
+        submitted = [
+            item for item in second["evidence_requests"]
+            if item["status"] == "SUBMITTED"
+        ]
+        self.assertEqual(2, len(submitted))
+        self.assertEqual("CONDITIONAL", second["decision_readiness"])
+        self.assertEqual("REVIEW_REQUIRED", second["status"])
+        self.assertFalse(second["proposed_decision"]["causal_claim"])
 
     def test_report_does_not_mix_newer_case_or_unrelated_decisions(self):
         run_scan(self.db, self.case_id)
@@ -250,7 +480,7 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         html = sana_app.app.jinja_env.get_template(
             "14-passport-report.html"
         ).render(**report)
-        executive_report = html.split("APPENDIX · BUSINESS PASSPORT", 1)[0]
+        executive_report = html.split("<!-- ملحق جواز الشركة", 1)[0]
         self.assertNotIn("قضية أحدث غير مفحوصة", executive_report)
         self.assertNotIn("مشكلة أحدث", executive_report)
         self.assertNotIn("قرار لا يخص Scan", executive_report)
@@ -441,10 +671,22 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
             response = sana_app.passport_report_text(self.company_id)
             payload = response.get_json()
         text = payload["data"]["report_text"]
-        self.assertIn(scan["scan_id"], text)
         self.assertIn(review["journey"]["action_label"], text)
-        self.assertIn("المعرفة المرجعية — ليست Evidence", text)
-        self.assertIn("N/A — Deferred", text)
+        self.assertIn("الثقة عبر مراحل القرار", text)
+        self.assertIn("قبل القرار: مشروط", text)
+        self.assertIn("قياس الأثر: غير جاهز", text)
+        for private_text in (
+            "SELF_REPORTED",
+            "UNVERIFIED",
+            scan["scan_id"],
+            self.company_id,
+            self.case_id,
+            "Evidence",
+            "Fact",
+            "SDS-001",
+            "ops-log:test",
+        ):
+            self.assertNotIn(private_text, text)
 
         with patch(
             "sana_knowledge.contextual_reference_knowledge",
@@ -489,6 +731,50 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         )
         self.assertEqual(second["scan_id"], latest["scan"]["scan_id"])
         self.assertNotEqual(first["scan_id"], second["scan_id"])
+
+    def test_self_reported_capacity_creates_low_risk_conditional_experiment(self):
+        suffix = self.company_id.removeprefix("RPT")
+        self.db.execute(
+            """UPDATE evidence SET title=?, confidence=?, information_type='Actual',
+                      verification_status='UNVERIFIED', source_category='SELF_REPORTED',
+                      period_start=?, period_end=?, normalized_value=?, unit=?,
+                      topic_key=?, source_ref=?
+               WHERE evidence_id=?""",
+            (
+                "عدد الطلاب الحالي 20", 70, "2026-08-01", "2026-08-31",
+                20, "student", "students", "founder:capacity", f"E1{suffix}",
+            ),
+        )
+        self.db.execute(
+            """UPDATE evidence SET title=?, confidence=?, information_type='Target',
+                      verification_status='UNVERIFIED', source_category='SELF_REPORTED',
+                      period_start=?, period_end=?, normalized_value=?, unit=?,
+                      topic_key=?, source_ref=?
+               WHERE evidence_id=?""",
+            (
+                "السعة المتاحة 100 طالب", 70, "2026-08-01", "2026-08-31",
+                100, "student", "capacity", "founder:capacity", f"E2{suffix}",
+            ),
+        )
+        self.db.commit()
+
+        scan = run_scan(self.db, self.case_id)
+
+        self.assertEqual("CONDITIONAL", scan["decision_readiness"])
+        self.assertEqual("REVIEW_REQUIRED", scan["status"])
+        self.assertEqual(70, scan["decision_confidence"]["score"])
+        self.assertEqual(1, scan["decision_confidence"]["source_family_count"])
+        self.assertEqual("SELF_REPORTED_ONLY", scan["diagnostic_quality"]["independence"])
+        self.assertEqual(20.0, scan["proposed_decision"]["kpi"]["baseline"])
+        self.assertFalse(scan["proposed_decision"]["causal_claim"])
+        self.assertIn("7–14", scan["proposed_decision"]["statement"])
+
+        with sana_app.app.test_request_context():
+            response, status_code = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, status_code)
+        decision = response.get_json()["data"]
+        self.assertEqual(70, decision["confidence_score"])
+        self.assertIn("تجربة قياس آمنة", decision["title"])
 
     def test_human_p0_review_transitions_snapshot_to_complete(self):
         scan = run_scan(self.db, self.case_id)
@@ -540,12 +826,6 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         )
         self.assertEqual("COMPLETE", after_review["scan_status"])
         self.assertEqual(second_scan["scan_id"], after_review["scan"]["scan_id"])
-        self.assertTrue(initiatives[f"LINKED{suffix}"]["evidence"])
-        self.assertTrue(initiatives[f"LINKED{suffix}"]["completeness"])
-        self.assertEqual([], initiatives[f"UNLINKED{suffix}"]["evidence"])
-        self.assertFalse(initiatives[f"UNLINKED{suffix}"]["completeness"])
-        self.assertEqual([], initiatives[f"NONFACT{suffix}"]["evidence"])
-        self.assertFalse(initiatives[f"NONFACT{suffix}"]["completeness"])
 
     def test_snapshot_stays_immutable_when_case_changes_and_decisions_are_rescoped(self):
         first_scan = run_scan(self.db, self.case_id)
@@ -581,12 +861,6 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
             "FIRSTDEC",
             {item.get("decision_id") for item in second_context["scan_initiatives"]},
         )
-        self.assertTrue(initiatives[f"LINKED{suffix}"]["evidence"])
-        self.assertTrue(initiatives[f"LINKED{suffix}"]["completeness"])
-        self.assertEqual([], initiatives[f"UNLINKED{suffix}"]["evidence"])
-        self.assertFalse(initiatives[f"UNLINKED{suffix}"]["completeness"])
-        self.assertEqual([], initiatives[f"NONFACT{suffix}"]["evidence"])
-        self.assertFalse(initiatives[f"NONFACT{suffix}"]["completeness"])
 
 @unittest.skipUnless(
     os.environ.get("RUN_SANA_SCAN_BROWSER_TESTS") == "1"

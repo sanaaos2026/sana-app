@@ -17,14 +17,14 @@ input{border:1px solid #d8dde6;margin:10px 0}button{border:0;background:#091126;
 <body>
 <div class="card">
 {% if valid %}
-  <h1>قبول الدعوة</h1>
-  <p>عيّن كلمة مرورك بنفسك. الرابط محدود الصلاحية ويُستخدم مرة واحدة.</p>
+  <h1>أكمل إنشاء حسابك</h1>
+  <p>اختر كلمة مرور لتدخل إلى مساحة الشركة. الرابط يُستخدم مرة واحدة.</p>
   <input id="password" type="password" minlength="8" autocomplete="new-password" placeholder="كلمة مرور جديدة">
-  <button id="submit">تفعيل الحساب</button>
+  <button id="submit">إنشاء الحساب</button>
   <div id="message" class="msg"></div>
 {% else %}
   <h1>الرابط غير صالح</h1>
-  <p>انتهت الدعوة أو استُخدمت أو أُلغيت. اطلب إعادة إرسال دعوة جديدة.</p>
+  <p>انتهت الدعوة أو استُخدمت. اطلب دعوة جديدة.</p>
 {% endif %}
 </div>
 {% if valid %}

@@ -2,6 +2,7 @@ import unittest
 from decimal import Decimal
 
 from sana_reliability import (
+    decision_confidence,
     diagnostic_quality,
     parse_diagnostic_number,
     triangulate_sources,
@@ -95,6 +96,29 @@ class RealityCalibrationContractTest(unittest.TestCase):
         quality = diagnostic_quality(sources, conflicts)
         self.assertEqual("LOW", quality["data_reliability"])
         self.assertEqual(1, quality["open_conflicts_count"])
+
+    def test_self_reported_confidence_is_preserved_without_duplicate_inflation(self):
+        sources = [
+            {
+                "source_id": "interview-1", "source_category": "SELF_REPORTED",
+                "source_ref": "founder:interview:1", "confidence": 70,
+                "verification_status": "UNVERIFIED", "information_type": "Actual",
+                "period_start": "2026-08-01", "period_end": "2026-08-31",
+            },
+            {
+                "source_id": "interview-2", "source_category": "SELF_REPORTED",
+                "source_ref": "founder:interview:2", "confidence": 50,
+                "verification_status": "UNVERIFIED", "information_type": "Actual",
+                "period_start": "2026-08-01", "period_end": "2026-08-31",
+            },
+        ]
+        confidence = decision_confidence(sources)
+        quality = diagnostic_quality(sources)
+        self.assertEqual(50, confidence["score"])
+        self.assertEqual(1, confidence["source_family_count"])
+        self.assertEqual("MEDIUM", quality["data_reliability"])
+        self.assertEqual("UNVERIFIED", quality["verification_status"])
+        self.assertEqual("SELF_REPORTED_ONLY", quality["independence"])
 
 
 if __name__ == "__main__":

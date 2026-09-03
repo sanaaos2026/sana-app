@@ -1,0 +1,16 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "python3 -m pip install -r sana_full/requirements.txt"
+  },
+  "deploy": {
+    "preDeployCommand": [
+      "python3 sana_full/billing_notification_retry_migration.py"
+    ],
+    "startCommand": "SANA_ENV=production SANA_BILLING_NOTIFICATION_RETRY_WORKER=1 python3 sana_full/run_billing_notification_retries.py",
+    "cronSchedule": "*/5 * * * *",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  }
+}

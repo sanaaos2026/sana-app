@@ -20,6 +20,14 @@
 - [Sana periodic research security](sana-periodic-research-security.md) — external discovery uses prequalified domains, pinned public IPs, evidence rechecks, and a strict human review gate.
 - [Sana browser diagnostics](sana-browser-diagnostics.md) — start Playwright tracing after authentication so failure artifacts remain useful without recording login credentials.
 - [Integration capability verification](integration-capability-verification.md) — verify callable tools and a real read-only auth request before relying on an “added” integration.
+- [Stripe connector runtime boundary](stripe-connector-runtime.md) — connector proxy works for agent operations, while app-side credentials require the Replit runtime identity flow.
+- [Stripe runtime setting aliases](stripe-runtime-setting-aliases.md) — normalize current `secret` and legacy `secret_key` connector fields before calling Stripe.
 - [External production DATABASE_URL](external-production-database-url.md) — Replit’s managed-key restriction does not apply to secrets configured on an external production host.
 - [Long-page browser screenshots](long-page-browser-screenshots.md) — isolate full-page screenshot cases in separate browser processes; one Chromium session can stall after several long captures.
 - [Sana database test safety](sana-database-test-safety.md) — never call destructive force-initialization from tests against an environment-bound database; use isolated rows and cleanup.
+- [Stripe lifecycle ordering](stripe-lifecycle-ordering.md) — deduplication alone is insufficient; serialize per subscription and reject stale or conflicting lifecycle events.
+- [Sana confidence calibration](sana-confidence-calibration.md) — confidence, verification, and independence are separate; same-family claims never multiply trust.
+- [Sana case decision review](sana-case-decision-review.md) — expert review stays optional; preserve the original decision and record the reviewed outcome as an auditable before/after.
+- [Sana returning-company check-ins](sana-returning-checkins.md) — returning users review only decision-relevant changes; numeric deltas require comparable periods and stay direction-neutral.
+- [Sana cleanup freshness alerts](sana-cleanup-freshness-alerts.md) — derive dashboard warnings from worker results; never enqueue a notification merely because an admin opened a page.
+- [Billing test schema cleanup](billing-test-schema-cleanup.md) — PostgreSQL has no schema creation timestamp; auto-delete only timestamped Sana test names with no active session.

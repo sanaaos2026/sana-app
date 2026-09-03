@@ -14,13 +14,15 @@
 *{box-sizing:border-box}body{margin:0;background:var(--paper);color:#333940;font-family:'IBM Plex Sans Arabic',sans-serif}
 nav{height:54px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:28px}
 nav a{color:var(--muted);text-decoration:none;font-size:13px;font-weight:600}nav a.active{color:var(--navy);border-bottom:2px solid var(--gold);padding:17px 0}
-main{max-width:760px;margin:38px auto;padding:0 20px 60px}.eyebrow{font-size:11px;letter-spacing:1px;color:var(--teal);font-weight:700}
-h1{font-size:26px;color:var(--navy);margin:8px 0 6px}.lead{color:var(--muted);font-size:14px;margin:0 0 24px}
-section{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:14px}
-h2{font-size:14px;color:var(--navy);margin:0 0 12px}.item{padding:10px 0;border-bottom:1px solid #EEF0F4;font-size:13px;line-height:1.7}.item:last-child{border-bottom:0}
+main{max-width:760px;margin:24px auto;padding:0 16px 40px}.eyebrow{font-size:11px;letter-spacing:1px;color:var(--teal);font-weight:700}
+h1{font-size:26px;color:var(--navy);margin:6px 0 4px}.lead{color:var(--muted);font-size:14px;margin:0 0 16px}
+section{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px}
+h2{font-size:14px;color:var(--navy);margin:0 0 8px}.item{padding:8px 0;border-bottom:1px solid #EEF0F4;font-size:13px;line-height:1.6}.item:last-child{border-bottom:0}
 .meta{font-size:11px;color:var(--muted);margin-top:4px}.empty{color:var(--muted);font-size:13px}
 .next{border-right:4px solid var(--gold)}.btn{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:700;font-size:13px;border:0;font-family:inherit;cursor:pointer}.field{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;margin:6px 0}.error{color:#B23A2E;font-size:12px;min-height:18px;margin-top:7px}
-.state{border-right:4px solid var(--teal)}.state.warning{border-color:var(--gold)}.pill{display:inline-block;padding:3px 9px;border-radius:20px;background:#E4F7F6;color:#087e7d;font-size:10px;font-weight:700}.gate{background:#FFF9EB;border:1px solid #F1D68A;border-radius:9px;padding:12px;color:#765B00;font-size:12px;line-height:1.8}.finding{padding:12px;border:1px solid var(--line);border-radius:9px;margin-top:9px}.finding strong{color:var(--navy)}.sources{margin:7px 0 0;padding-right:18px}.reference{background:#F8F9FB}.reference .meta{color:#765B00}.deferred{background:#F5F6FB;border-radius:8px;padding:10px;color:var(--muted);font-size:12px}
+.state{border-right:4px solid var(--teal)}.state.warning{border-color:var(--gold)}.pill{display:inline-block;padding:3px 9px;border-radius:20px;background:#E4F7F6;color:#087e7d;font-size:10px;font-weight:700}.gate{background:#FFF9EB;border:1px solid #F1D68A;border-radius:9px;padding:12px;color:#765B00;font-size:12px;line-height:1.8}.finding{padding:10px;border:1px solid var(--line);border-radius:9px;margin-top:8px}.finding strong{color:var(--navy)}.sources{margin:7px 0 0;padding-right:18px}.reference{background:#F8F9FB}.reference .meta{color:#765B00}.deferred{background:#F5F6FB;border-radius:8px;padding:10px;color:var(--muted);font-size:12px}.helper{color:var(--muted);font-size:11px;margin-top:4px}
+.period-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.period-choice{padding:11px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#333940;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer}.period-choice.selected{border-color:var(--teal);background:#EAF8F7;color:#087e7d}.period-dates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.period-dates[hidden],.period-compare[hidden],#periodSummary[hidden]{display:none}.period-dates label{font-size:11px;color:var(--muted)}.period-dates input,.period-select{width:100%;margin-top:5px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;font-family:inherit}.period-summary{margin-top:10px;padding:9px 10px;border-radius:8px;background:#EAF8F7;color:#087e7d;font-size:12px}.period-note{min-height:18px;margin-top:7px;color:#765B00;font-size:11.5px}.period-edit{border:0;background:transparent;color:#087e7d;font-family:inherit;font-size:11.5px;font-weight:700;padding:8px 0 0;cursor:pointer}
+@media (max-width:480px){main{margin:18px auto;padding:0 12px 32px}section{padding:14px;margin-bottom:8px}.next .btn{display:block;width:100%;text-align:center}.period-options,.period-dates{grid-template-columns:1fr}.period-choice{width:100%;text-align:right}}
 </style>
 </head>
 <body>
@@ -34,46 +36,197 @@ h2{font-size:14px;color:var(--navy);margin:0 0 12px}.item{padding:10px 0;border-
 <script>
 const CASE_ID={{ case_id|tojson }},COMPANY_ID={{ company_id|tojson }};let caseData=null;
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const humanLabel=v=>({NOT_RUN:'لم نرتب الصورة بعد',INCOMPLETE:'نحتاج معلومة إضافية',REVIEW_REQUIRED:'الصورة جاهزة للمراجعة',COMPLETE:'الصورة مكتملة',Evidence:'معلومة بمصدر',Source:'مصدر المعلومة',Hypothesis:'احتمال يحتاج تأكيدًا',Inference:'استنتاج أولي',Opportunity:'فرصة للتحسين',Unknown:'غير واضح بعد',N_A:'غير متاح',Deferred:'نؤجله إلى أن نتأكد',Actual:'نتيجة فعلية',Fact:'معلومة متحققة'}[String(v)]||v||'—');
+const clientText=v=>String(v??'').replaceAll('SDS-001','جلسة الاكتشاف').replaceAll('Evidence Gate','ما نحتاج نتأكد منه').replaceAll('Decision Readiness','جاهزية القرار').replaceAll('Re-analysis','إعادة النظر').replaceAll('Contradiction','معلومة متعارضة').replaceAll('Baseline','نقطة البداية').replaceAll('Diagnostic Review','مراجعة الصورة').replaceAll('Impact Review','مراجعة التغيّر').replaceAll('Actual','نتيجة فعلية').replaceAll('Fact','معلومة متحققة').replaceAll('Evidence','معلومة بمصدر').replaceAll('Source','مصدر المعلومة').replaceAll('Unknown','غير واضح بعد').replaceAll('Deferred','نؤجله إلى أن نتأكد').replaceAll('N/A','غير متاح');
 function rows(items, render, empty){
   return items&&items.length?items.map(render).join(''):`<p class="empty">${empty}</p>`;
 }
+function periodForm(saved={}){
+  return `<section><h2>نكمل الصورة</h2><p class="lead">وش الفترة اللي عندك عنها بيانات فعلية؟</p>
+    <div class="period-options">
+      <button type="button" class="period-choice" data-period="30">آخر 30 يوم</button>
+      <button type="button" class="period-choice" data-period="3m">آخر 3 أشهر</button>
+      <button type="button" class="period-choice" data-period="month">هذا الشهر</button>
+      <button type="button" class="period-choice" data-period="custom">فترة مخصصة</button>
+    </div>
+    <div class="period-dates" id="periodDates" hidden>
+      <label>من<input id="periodStart" type="date" value="${esc(saved.baseline_start||'')}"></label>
+      <label>إلى<input id="periodEnd" type="date" value="${esc(saved.baseline_end||'')}"></label>
+    </div>
+    <div class="period-summary" id="periodSummary" hidden></div><div class="period-note" id="periodNote"></div>
+    <div id="compareQuestion" hidden>
+      <p class="lead" style="margin-top:14px">تبغى نقارنها بفترة سابقة؟</p>
+      <div class="period-options">
+        <button type="button" class="period-choice" data-compare="yes">نعم</button>
+        <button type="button" class="period-choice" data-compare="no">لا، نخليها نقطة بداية</button>
+      </div>
+      <div class="period-compare" id="compareWrap" hidden>
+        <div class="period-summary" id="compareSummary"></div>
+        <button type="button" class="period-edit" id="compareEdit">تعديل الفترة السابقة يدويًا</button>
+        <div class="period-dates" id="compareDates" hidden>
+          <label>من<input id="compareStart" type="date" value="${esc(saved.comparison_start||'')}"></label>
+          <label>إلى<input id="compareEnd" type="date" value="${esc(saved.comparison_end||'')}"></label>
+        </div>
+        <div class="period-note" id="compareNote"></div>
+      </div>
+    </div>
+    <label style="display:block;margin-top:14px;font-size:12px;font-weight:600">هل هذه الفترة مختلفة عن المعتاد؟
+      <select class="period-select" id="periodSeason">
+        <option value="فترة تشغيل اعتيادية">عادية</option>
+        <option value="موسم أو حملة أو عرض خاص">موسم/حملة/عرض خاص</option>
+        <option value="غير معروف — يحتاج تحقق">غير متأكد</option>
+      </select>
+    </label>
+    <button class="btn" id="periodSave" onclick="savePeriod()" style="margin-top:12px">احفظ وكمل</button>
+    <div id="periodError" class="error"></div>
+  </section>`;
+}
+function periodSummary(saved={}){
+  if(!saved.baseline_start||!saved.baseline_end)return '';
+  const comparison=saved.comparison_start&&saved.comparison_end?`<div class="meta">مقارنة بالفترة ${esc(saved.comparison_start)} إلى ${esc(saved.comparison_end)}</div>`:'<div class="meta">هذه نقطة البداية، ولا توجد فترة سابقة للمقارنة الآن.</div>';
+  return `<section><h2>الفترة المعتمدة</h2><div class="item"><strong>${esc(saved.baseline_start)} إلى ${esc(saved.baseline_end)}</strong>${comparison}<div class="meta">${esc(saved.seasonality_context||'')}</div></div><button type="button" class="period-edit" onclick="showPeriodEditor()">تعديل الفترة</button><div id="periodEditor" hidden>${periodForm(saved)}</div></section>`;
+}
+function showPeriodEditor(){document.getElementById('periodEditor').hidden=false}
+function clientApprovalForm(decision){
+  return `<div class="finding"><strong>قرار مقترح: ${esc(clientText(decision.title))}</strong>
+    <div>${esc(clientText(decision.reason||decision.recommended_action||''))}</div>
+    <div class="meta">الأثر المتوقع: ${esc(clientText(decision.expected_impact||'غير موثق'))}</div>
+    <input id="clientOwner" class="field" placeholder="Owner — المسؤول عن التنفيذ">
+    <input id="clientDue" class="field" type="date" aria-label="Deadline">
+    <input id="clientKpi" class="field" placeholder="KPI — مقياس النجاح">
+    <input id="clientNext" class="field" placeholder="Next Action — الخطوة التالية">
+    <button class="btn" onclick="submitClientApproval('${decision.decision_id}')">اعتمد وأنشئ المهمة</button>
+    <div id="clientActionError" class="error"></div></div>`;
+}
+async function submitClientApproval(id){
+  const box=document.getElementById('clientActionError');
+  const body={owner_name:document.getElementById('clientOwner').value.trim(),due_date:document.getElementById('clientDue').value,success_metric:document.getElementById('clientKpi').value.trim(),next_action:document.getElementById('clientNext').value.trim()};
+  if(Object.values(body).some(v=>!v)){box.textContent='أكمل Owner وApprover وDeadline وKPI وNext Action.';return}
+  try{const r=await fetch(`/api/decisions/${id}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(!r.ok||!j.success)throw Error(j.message||'تعذر الاعتماد');location.reload()}catch(e){box.textContent=e.message}}
+function openClientImpact(taskId){
+  const old=document.getElementById('clientImpactModal');if(old)old.remove();
+  const evidenceOptions=(caseData.evidence||[]).filter(x=>x.source_ref).map(x=>`<option value="${esc(x.evidence_id)}">${esc(clientText(x.title||x.source_ref))}</option>`).join('');
+  const modal=document.createElement('div');modal.id='clientImpactModal';modal.style.cssText='position:fixed;inset:0;background:#0B132B99;z-index:5;padding:18px;overflow:auto';
+  modal.innerHTML=`<section style="max-width:560px;margin:20px auto;background:#fff">
+    <h2>مراجعة الأثر الفعلي</h2><div class="helper">الأثر المتوقع ليس نتيجة متحققة. أدخل القياسات الثلاثة مع مصدر وتاريخ كل منها.</div>
+    <input id="cUnit" class="field" placeholder="وحدة KPI، مثال: % أو مهمة">
+    <select id="cDirection" class="field"><option value="">اتجاه النجاح</option><option value="HIGHER_IS_BETTER">الارتفاع أفضل</option><option value="LOWER_IS_BETTER">الانخفاض أفضل</option></select>
+    <input id="cBase" class="field" type="number" step="any" placeholder="Baseline"><select id="cBaseEvidence" class="field"><option value="">دليل Baseline</option>${evidenceOptions}</select><input id="cBaseDate" class="field" type="date">
+    <input id="cTarget" class="field" type="number" step="any" placeholder="Target المعتمد"><input id="cTargetDate" class="field" type="date">
+    <input id="cActual" class="field" type="number" step="any" placeholder="Actual"><select id="cActualEvidence" class="field"><option value="">دليل Actual</option>${evidenceOptions}</select><input id="cActualDate" class="field" type="date">
+    <textarea id="cSummary" class="field" placeholder="ما النتيجة التي حدثت؟"></textarea><input id="cSource" class="field" placeholder="مرجع النتيجة">
+    <div class="deferred">سنع يحسب حكم الأثر من Baseline وActual واتجاه KPI؛ لا تختاره يدويًا.</div>
+    <textarea id="cNotes" class="field" placeholder="سبب الحكم"></textarea><div id="cError" class="error"></div>
+    <button class="btn" onclick="submitClientImpact('${taskId}')">حفظ القياس وإغلاق المهمة</button>
+    <button class="btn" style="background:#6E7580;margin-right:6px" onclick="document.getElementById('clientImpactModal').remove()">إلغاء</button></section>`;
+  document.body.appendChild(modal);
+}
+async function submitClientImpact(taskId){
+  const val=id=>document.getElementById(id).value.trim(), box=document.getElementById('cError');
+  const decisionId=(caseData.tasks||[]).find(x=>x.task_id===taskId)?.decision_id||'';
+  const body={baseline_value:val('cBase'),baseline_numeric:val('cBase'),baseline_source_ref:'evidence',baseline_evidence_id:val('cBaseEvidence'),baseline_observed_at:val('cBaseDate'),target_value:val('cTarget'),target_numeric:val('cTarget'),target_source_ref:`DECISION:${decisionId}`,target_observed_at:val('cTargetDate'),actual_value:val('cActual'),actual_numeric:val('cActual'),actual_source_ref:'evidence',actual_evidence_id:val('cActualEvidence'),actual_observed_at:val('cActualDate'),measurement_unit:val('cUnit'),kpi_direction:val('cDirection'),result_summary:val('cSummary'),result_source_ref:val('cSource'),impact_notes:val('cNotes')};
+  if(Object.values(body).some(v=>!v)){box.textContent='أكمل baseline وtarget وactual ومصدر وتاريخ كل قياس.';return}
+  try{const r=await fetch(`/api/tasks/${taskId}/p0-result`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(!r.ok||!j.success)throw Error(j.message||'تعذر حفظ القياس');location.reload()}catch(e){box.textContent=e.message}}
 function render(d){
   caseData=d;
   const decisions=d.decisions||[], tasks=d.tasks||[], evidence=d.evidence||[];
   const activeDecision=decisions.find(x=>x.status==='مقترح'||x.status==='معتمد')||decisions[0];
   const activeTask=tasks.find(x=>x.status!=='منجزة')||tasks[0];
-  const review=d.diagnostic_review||{},journey=review.journey||{status:'NOT_RUN',label:'لم يُشغّل بعد',message:'لم تُجمع نتيجة Sana Scan بعد.',action_label:'شغّل Sana Scan'},gate=review.evidence_gate||{open:true,missing_evidence:[]};
-  const scan=d.scan,scanReady=scan&&['REVIEW_REQUIRED','COMPLETE'].includes(journey.status);
+   const review=d.diagnostic_review||{},journey=review.journey||{status:'NOT_RUN',label:'لم نرتب الصورة بعد',message:'لم نجمع ما يكفي من المعلومات بعد.',action_label:'رتّب ما عرفناه'},gate=review.evidence_gate||{open:true,missing_evidence:[]};
+   const scan=d.scan,scanReady=scan&&['REVIEW_REQUIRED','COMPLETE'].includes(journey.status),terminalUnknown=scan?.journey_outcome==='UNKNOWN',requests=(scan||{}).evidence_requests||[],progress=(scan||{}).evidence_progress||{completed:0,total:requests.length},nextRequest=requests.find(x=>x.status==='OPEN'||x.status==='PENDING'),activeRequest=nextRequest;
   const sourceMap=Object.fromEntries((review.sources||[]).map(x=>[String(x.source_id),x]));
-  const findingCard=(label,item)=>item?`<div class="finding"><strong>${label} · ${esc(item.classification||'')}</strong><div>${esc(item.statement)}</div><div class="meta">المصادر: ${(item.source_ids||[]).map(id=>{const s=sourceMap[String(id)]||{};return `${esc(id)} (${esc(s.source_type||'مصدر')} · ${esc(s.source_date||'تاريخ غير متاح')})`}).join('، ')||'لا يوجد مصدر'}</div></div>`:'';
+   const findingCard=(label,item)=>item?`<div class="finding"><strong>${label}</strong><div>${esc(clientText(item.statement))}</div></div>`:'';
   let action='';
-  if(activeTask){action=`<a class="btn" href="/home">افتح خطوة اليوم</a>`}
+  const taskDecision=activeTask&&decisions.find(x=>x.decision_id===activeTask.decision_id);
+  if(activeTask&&taskDecision&&taskDecision.phase_label==='P0'&&activeTask.status!=='منجزة'){action=`<button class="btn" onclick="openClientImpact('${activeTask.task_id}')">سجّل القياس وراجع الأثر</button>`}
+  else if(activeTask){action=`<a class="btn" href="/home">افتح خطوة اليوم</a>`}
+  else if(activeDecision&&activeDecision.status==='مقترح'){action=clientApprovalForm(activeDecision)}
   else if(activeDecision){action=`<a class="btn" href="/home">راجع القرار واعتمده</a>`}
-  else if(!scan){action=`<button class="btn" onclick="runAnalysis()">حلّل الأدلة الحالية</button><div id="actionError" class="error"></div>`}
-  else if(!scanReady){action=`<input id="evidenceTitle" class="field" placeholder="أضف حقيقة أو دليلًا جديدًا"><input id="sourceRef" class="field" placeholder="مرجع المصدر: ملف، تقرير، أو ملاحظة موثقة"><button class="btn" onclick="addAndAnalyze()">حفظ الدليل وإعادة التحليل</button><div id="actionError" class="error"></div>`}
-  else {action=`<button class="btn" onclick="buildDecision()">إنشاء ملف قرار للمراجعة</button><div id="actionError" class="error"></div>`}
+   else if(!scan){action=`<button class="btn" onclick="runAnalysis()">رتّب المعلومات</button><div id="actionError" class="error"></div>`}
+   else if(!scanReady&&nextRequest){action=`<div class="meta">التقدم ${progress.completed}/${progress.total}</div><strong>${esc(clientText(nextRequest.label||nextRequest.question))}</strong><input id="evidenceTitle" class="field" aria-label="اكتب المعلومة أو الرقم" placeholder="اكتب المعلومة أو الرقم"><input id="sourceRef" class="field" aria-label="من وين جبتها؟" placeholder="مثال: تقرير مبيعات أو كشف حساب"><button class="btn" onclick="addAndAnalyze()">احفظ وكمل</button><button class="btn" style="margin-top:7px;background:#6E7580" onclick="saveUnknown()">ما عندي هذه المعلومة الآن</button><div id="actionError" class="error"></div>`}
+   else if(!scanReady){action=`<div class="deferred">استلمنا المعلومات المطلوبة (${progress.completed}/${progress.total}). تحتاج مراجعة بشرية قبل القرار.</div>`}
+   else {action=`<button class="btn" onclick="buildDecision()">جهّز القرار</button><div id="actionError" class="error"></div>`}
   const refs=(review.reference_knowledge||{}).references||[];
   document.getElementById('app').innerHTML=`
-    <div class="eyebrow">مراجعة تشخيصية واحدة · فرصة تحسين</div>
+     <div class="eyebrow">نشوف الصورة · موضوع واحد</div>
     <h1>${esc(d.case.title||'ملف القرار')}</h1>
-    <p class="lead">${esc(d.case.real_question||d.case.declared_problem||'نجمع الدليل قبل اعتماد أي قرار.')}</p>
-    <section class="state ${journey.status==='INCOMPLETE'?'warning':''}"><span class="pill">${esc(journey.status)}</span><h2>${esc(journey.label)}</h2><div class="lead" style="margin:0">${esc(journey.message)}</div><div class="meta">Snapshot: ${esc((review.snapshot||{}).scan_id||'NOT_RUN')} · ${esc((review.snapshot||{}).methodology_version||'بانتظار التشغيل')}</div></section>
-    <section><h2>المشكلة ← الفرضية ← الاستنتاج ← الفرصة</h2>
-      <div class="item"><strong>المشكلة:</strong> ${esc((review.problem||{}).statement||d.case.declared_problem||'غير محددة')}<div class="meta">${esc((review.problem||{}).source_id||'Discovery')} · ${esc((review.problem||{}).source_date||'تاريخ غير متاح')}</div></div>
-      ${findingCard('الفرضية',review.hypothesis)}
-      ${findingCard('الاستنتاج',review.inference)}
-      ${findingCard('الفرصة المقترحة',review.opportunity)}
+    <p class="lead">${esc(d.case.real_question||d.case.declared_problem||'هذا ما نعرفه الآن. وما يحتاج تأكيد يبقى واضحًا.')}</p>
+     <section><h2>وش عرفنا؟</h2>
+       <div class="item"><strong>ما نعرفه:</strong> ${esc(clientText((review.problem||{}).statement||d.case.declared_problem||'لم تتضح الصورة بعد'))}</div>
+      ${findingCard('ما نحتاج نتأكد منه',review.hypothesis)}
+      ${findingCard('ما ظهر لنا',review.inference)}
+      ${findingCard('الفرصة',review.opportunity)}
     </section>
-    <section><h2>بوابة الأدلة</h2>${gate.open?`<div class="gate"><strong>الاستنتاج والقرار والدرجة النهائية مؤجلة.</strong><ul>${(gate.missing_evidence||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>أضف Fact أو Evidence مستقلًا ثم أعد Scan.</li>'}</ul></div>`:'<div class="deferred">اكتملت بوابة المدخلات في هذا snapshot، وتبقى المراجعة البشرية مطلوبة قبل التنفيذ.</div>'}</section>
-    <section><h2>دليل العميل ومصادره</h2>${rows(review.client_evidence||[],e=>`<div class="item"><strong>${esc(e.source_id)}</strong> — ${esc(e.statement)}<div class="meta">${esc(e.classification)} · ${esc(e.source_type)} · ${esc(e.source_ref)} · ${esc(e.source_date||'تاريخ غير متاح')}</div></div>`,'لا يوجد دليل عميل مؤهل بعد.')}</section>
-    <section class="reference"><h2>المعرفة المرجعية — ليست Evidence</h2><div class="deferred">لا تغيّر هذه المواد Scan أو الدرجة أو القرار.</div>${rows(refs,r=>`<div class="item"><strong>${esc(r.title)}</strong><div>${esc(r.original_summary||r.problem||'')}</div><div class="meta">الإصدار ${esc(r.source_version||r.version||'—')} · سبب المطابقة: ${esc((r.match_reasons||[]).join(' · ')||'مرجع عام')}<br>الدليل المطلوب: ${esc(r.required_client_evidence||'Fact أو Evidence خاص بالشركة')}</div></div>`,esc((review.reference_knowledge||{}).knowledge_gap||'لا توجد معرفة مرجعية متاحة الآن؛ يستمر Scan بأدلة العميل.'))}</section>
-    <section><h2>القيمة</h2><div class="deferred">Sana Score والقيمة المالية: ${esc((review.financial_value||{}).label||'N/A — Deferred')} عند نقص الدليل، ولا تُعرض نسبة نمو مصطنعة.</div></section>
-    <section><h2>ملف القرار</h2>${activeDecision?`<div class="item"><strong>${esc(activeDecision.title)}</strong><div>${esc(activeDecision.reason||'بانتظار اكتمال السبب المدعوم.')}</div><div class="meta">الحالة: ${esc(activeDecision.status)}</div></div>`:'<p class="empty">لم يُقترح قرار بعد؛ لن يعرض سنع حكمًا بلا دليل.</p>'}</section>
-    <section class="next"><h2>الخطوة التالية</h2>${activeTask?`<div class="item"><strong>${esc(activeTask.title)}</strong><div class="meta">الحالة: ${esc(activeTask.status)}${activeTask.due_date?' · الموعد: '+esc(activeTask.due_date):''}</div></div>`:'<p class="empty">أكمل الخطوة التالية ليظهر قرار قابل للمراجعة.</p>'}${action}</section>`;
+     ${periodSummary((scan||{}).diagnostic_baseline||{})}
+      <section><h2>وش ناقص؟</h2>${nextRequest?`<div class="gate"><strong>الطلب التالي فقط</strong><div>${esc(clientText(nextRequest.label||nextRequest.question))}</div><div class="meta">التقدم ${progress.completed}/${progress.total}</div></div>`:terminalUnknown?'<div class="deferred">المعلومة غير متاحة الآن، ولن نعيد طلبها في هذه الدورة.</div>':'<div class="deferred">استلمنا كل المعلومات المطلوبة لهذه المرحلة. ما يحتاج تحققًا مستقلًا سيبقى واضحًا للمراجع.</div>'}</section>
+     <section><h2>المعلومات التي شاركتها</h2>${rows(review.client_evidence||[],e=>`<div class="item"><strong>${esc(clientText(e.statement))}</strong><div class="meta">من وين جبتها؟ ${esc(e.source_ref||'غير محدد')}</div></div>`,'لا توجد معلومة موثقة بعد.')}</section>
+     <section class="reference"><h2>معلومات عامة تساعدنا نفهم</h2><div class="deferred">تفيدنا هذه المعلومات في الفهم، لكنها لا تغيّر ما نعرفه عن شركتك.</div>${rows(refs,r=>`<div class="item"><strong>${esc(r.title)}</strong><div>${esc(r.original_summary||r.problem||'')}</div><div class="meta">الإصدار ${esc(r.source_version||r.version||'—')} · سبب الصلة: ${esc((r.match_reasons||[]).join(' · ')||'معلومة عامة')}<br>ما نحتاجه منك: ${esc(r.required_client_evidence||'رقم أو معلومة خاصة بالشركة')}</div></div>`,esc((review.reference_knowledge||{}).knowledge_gap||'لا توجد معلومات عامة مناسبة الآن؛ نكمل بما نعرفه عن شركتك.'))}</section>
+      <section><h2>وش القرار؟</h2>${activeDecision?`<div class="item"><strong>${esc(clientText(activeDecision.title))}</strong><div>${esc(clientText(activeDecision.reason||'ننتظر وضوحًا كافيًا قبل أن نبدأ.'))}</div><div class="meta">الحالة: ${esc(humanLabel(activeDecision.status))}</div></div>`:'<p class="empty">باقي معلومة أو اثنتان قبل أن نقترح قرارًا.</p>'}</section>
+      <section class="next"><h2>وش تسوي الآن؟</h2>${activeTask?`<div class="item"><strong>${esc(activeTask.title)}</strong><div class="meta">الحالة: ${esc(humanLabel(activeTask.status))}${activeTask.due_date?' · الموعد: '+esc(activeTask.due_date):''}</div></div>`:'<p class="empty">أضف الرقم أو المعلومة ومصدرها، ونرتب لك الخطوة التالية.</p>'}${action}</section>
+      <section class="state ${journey.status==='INCOMPLETE'?'warning':''}"><h2>وش تغيّر؟</h2><strong>${esc(clientText(humanLabel(journey.label)))}</strong><div class="lead" style="margin:4px 0 0">${esc(clientText(journey.message))}</div></section>`;
+  if(!(scan||{}).diagnostic_baseline)initPeriodForm({});
 }
-async function runAnalysis(){const r=await fetch(`/api/cases/${CASE_ID}/scan`,{method:'POST'}),j=await r.json();if(r.ok&&j.success)location.reload();else document.getElementById('actionError').textContent=j.message||'تعذر تحليل الأدلة.'}
-async function addAndAnalyze(){const title=document.getElementById('evidenceTitle').value.trim(),source=document.getElementById('sourceRef').value.trim(),box=document.getElementById('actionError');if(!title||!source){box.textContent='اكتب الدليل ومرجع مصدره.';return}const r=await fetch(`/api/companies/${COMPANY_ID}/evidence`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:CASE_ID,asset_id:caseData.case.related_asset_id,title,source_type:'دليل عميل',source_ref:source,evidence_type:'Evidence',confidence:70})}),j=await r.json();if(!r.ok||!j.success){box.textContent=j.message||'تعذر حفظ الدليل.';return}await runAnalysis()}
-async function buildDecision(){const r=await fetch(`/api/cases/${CASE_ID}/p0-decision`,{method:'POST'}),j=await r.json();if(r.ok&&j.success)location.href='/home';else document.getElementById('actionError').textContent=j.message||'تعذر إنشاء ملف القرار.'}
+const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const dateOf=v=>{const [y,m,d]=String(v||'').split('-').map(Number);return y&&m&&d?new Date(y,m-1,d,12):null};
+const mark=(selector,value,key)=>document.querySelectorAll(selector).forEach(x=>x.classList.toggle('selected',x.dataset[key]===value));
+function updatePeriod(){
+  const start=periodStart.value,end=periodEnd.value,today=iso(new Date());
+  if(!start||!end){periodSummary.hidden=true;compareQuestion.hidden=true;return false}
+  if(start>today||end>today){periodSummary.hidden=true;compareQuestion.hidden=true;periodNote.textContent='هذه فترة مستهدفة، وليست نتيجة فعلية بعد';return false}
+  if(end<start){periodSummary.hidden=true;compareQuestion.hidden=true;periodNote.textContent='تاريخ النهاية لازم يكون بعد تاريخ البداية.';return false}
+  periodSummary.textContent=`الفترة المختارة: ${start} إلى ${end}`;periodSummary.hidden=false;compareQuestion.hidden=false;periodNote.textContent=end===today?'تشمل البيانات المتاحة حتى اليوم.':'';return true;
+}
+function suggestCompare(){
+  const start=dateOf(periodStart.value),end=dateOf(periodEnd.value);if(!start||!end)return;
+  const span=end-start,previousEnd=new Date(start);previousEnd.setDate(previousEnd.getDate()-1);
+  const previousStart=new Date(previousEnd-span);compareStart.value=iso(previousStart);compareEnd.value=iso(previousEnd);updateCompare();
+}
+function updateCompare(){
+  if(!compareStart.value||!compareEnd.value)return;
+  compareSummary.textContent=`الفترة المقترحة: ${compareStart.value} إلى ${compareEnd.value}`;
+  const currentStart=dateOf(periodStart.value),currentEnd=dateOf(periodEnd.value),pastStart=dateOf(compareStart.value),pastEnd=dateOf(compareEnd.value);
+  if(compareEnd.value>iso(new Date()))compareNote.textContent='المقارنة تحتاج فترة انتهت فعليًا';
+  else if(pastEnd>=currentStart)compareNote.textContent='الفترة السابقة لازم تنتهي قبل الفترة الحالية.';
+  else compareNote.textContent=Math.round((currentEnd-currentStart)/86400000)!==Math.round((pastEnd-pastStart)/86400000)?'يفضل أن تكون الفترتان بنفس الطول حتى تكون المقارنة أوضح.':'';
+}
+function choosePeriod(value){
+  mark('[data-period]',value,'period');periodDates.hidden=value!=='custom';
+  if(value==='custom'){updatePeriod();return}
+  const end=new Date(),start=new Date(end);
+  if(value==='30')start.setDate(start.getDate()-29);
+  if(value==='3m'){start.setMonth(start.getMonth()-3);start.setDate(start.getDate()+1)}
+  if(value==='month')start.setTime(new Date(end.getFullYear(),end.getMonth(),1,12).getTime());
+  periodStart.value=iso(start);periodEnd.value=iso(end);if(updatePeriod()&&document.querySelector('[data-compare="yes"].selected'))suggestCompare();
+}
+function chooseCompare(value){
+  mark('[data-compare]',value,'compare');compareWrap.hidden=value!=='yes';
+  if(value==='yes')suggestCompare();else{compareStart.value='';compareEnd.value=''}
+}
+function initPeriodForm(saved){
+  const today=iso(new Date());['periodStart','periodEnd','compareStart','compareEnd'].forEach(id=>document.getElementById(id).max=today);
+  document.querySelectorAll('[data-period]').forEach(x=>x.onclick=()=>choosePeriod(x.dataset.period));
+  document.querySelectorAll('[data-compare]').forEach(x=>x.onclick=()=>chooseCompare(x.dataset.compare));
+  periodStart.onchange=periodEnd.onchange=()=>{if(updatePeriod()&&document.querySelector('[data-compare="yes"].selected'))suggestCompare()};
+  compareStart.onchange=compareEnd.onchange=updateCompare;compareEdit.onclick=()=>compareDates.hidden=false;
+  if(saved.baseline_start&&saved.baseline_end){mark('[data-period]','custom','period');periodDates.hidden=false;updatePeriod();if(saved.comparison_start){mark('[data-compare]','yes','compare');compareWrap.hidden=false;updateCompare()}else mark('[data-compare]','no','compare')}
+  if([...periodSeason.options].some(x=>x.value===saved.seasonality_context))periodSeason.value=saved.seasonality_context;
+}
+async function savePeriod(){
+  const box=periodError,choice=document.querySelector('[data-compare].selected')?.dataset.compare;
+  if(!updatePeriod()){box.textContent=periodNote.textContent||'اختر الفترة اللي عندك عنها بيانات فعلية.';return}
+  if(!choice){box.textContent='حدد هل تبغى تقارن بفترة سابقة.';return}
+  const body={baseline_start:periodStart.value,baseline_end:periodEnd.value,comparison_start:choice==='yes'?compareStart.value:null,comparison_end:choice==='yes'?compareEnd.value:null,seasonality_context:periodSeason.value};
+  if(choice==='yes'&&(!body.comparison_start||!body.comparison_end)){box.textContent='حدد الفترة السابقة، أو اختر ما عندي مقارنة الآن.';return}
+  if(choice==='yes'&&body.comparison_end>iso(new Date())){box.textContent='المقارنة تحتاج فترة انتهت فعليًا';return}
+  if(choice==='yes'&&body.comparison_end>=body.baseline_start){box.textContent='الفترة السابقة لازم تنتهي قبل الفترة الحالية.';return}
+  periodSave.disabled=true;box.textContent='';
+  try{const r=await fetch(`/api/cases/${CASE_ID}/diagnostic-baseline`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(!r.ok||!j.success)throw Error(j.message||'تعذر الحفظ');box.style.color='#087e7d';box.textContent=choice==='yes'?'حُفظت الفترة والفترة السابقة.':'حُفظت الفترة كنقطة بداية.'}
+  catch(e){box.style.color='#B23A2E';box.textContent=e.message}finally{periodSave.disabled=false}
+}
+async function runAnalysis(){const r=await fetch(`/api/cases/${CASE_ID}/scan`,{method:'POST'}),j=await r.json();if(r.ok&&j.success)location.reload();else document.getElementById('actionError').textContent=j.message||'تعذر ترتيب الصورة.'}
+async function addAndAnalyze(){const title=document.getElementById('evidenceTitle').value.trim(),source=document.getElementById('sourceRef').value.trim(),box=document.getElementById('actionError'),request=((caseData.scan||{}).evidence_requests||[]).find(x=>x.status==='OPEN'||x.status==='PENDING');if(!title||!source){box.textContent='اكتب الرقم أو المعلومة ومصدرها.';return}if(!request){box.textContent='لا يوجد طلب مفتوح الآن.';return}const r=await fetch(`/api/companies/${COMPANY_ID}/evidence`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:CASE_ID,request_key:request.request_key,request_fingerprint:request.fingerprint,asset_id:request.asset_id,title,source_type:'معلومة عميل بمصدر',source_ref:source,evidence_type:'Evidence',confidence:70})}),j=await r.json();if(!r.ok||!j.success){box.textContent=j.message||'لم تغلق المعلومة الطلب: تأكد أنها تخص النقطة الظاهرة وأن مصدرها واضح.';return}location.reload()}
+async function saveUnknown(){const box=document.getElementById('actionError'),request=((caseData.scan||{}).evidence_requests||[]).find(x=>x.status==='OPEN'||x.status==='PENDING');if(!request){box.textContent='لا يوجد طلب دليل حرج مفتوح.';return}const r=await fetch(`/api/companies/${COMPANY_ID}/evidence`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:CASE_ID,unknown:true,request_key:request.request_key,request_fingerprint:request.fingerprint})}),j=await r.json();if(!r.ok||!j.success){box.textContent=j.message||'تعذر تسجيل الإجابة.';return}location.reload()}
+async function buildDecision(){const r=await fetch(`/api/cases/${CASE_ID}/p0-decision`,{method:'POST'}),j=await r.json();if(r.ok&&j.success)location.href='/home';else document.getElementById('actionError').textContent=j.message||'تعذر تجهيز القرار.'}
 fetch(`/api/cases/${CASE_ID}`).then(r=>r.json()).then(j=>{
   if(!j.success) throw new Error();
   render(j.data);

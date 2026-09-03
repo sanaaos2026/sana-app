@@ -54,19 +54,19 @@
   </svg>
 
   <div class="card">
-    <h1>إنشاء حساب جديد</h1>
-    <div class="sub">حساب واحد لشركتك أنت فقط — تبدأ بمساحة عمل فارغة ومنعزلة تمامًا عن أي شركة أخرى.</div>
+    <h1>أنشئ حساب شركتك</h1>
+    <div class="sub">ابدأ الآن واحفظ معلومات عملك في مكان واحد.</div>
 
     <div class="error" id="errorMsg"></div>
 
     <label for="email">البريد الإلكتروني</label>
-    <input type="email" id="email" autocomplete="username" placeholder="you@company.com">
+    <input type="email" id="email" autocomplete="username" placeholder="بريدك الإلكتروني">
 
     <label for="password">كلمة المرور</label>
     <input type="password" id="password" autocomplete="new-password" placeholder="8 أحرف على الأقل">
 
     <label for="referralSource">من أين سمعت عنا؟ <span style="font-weight:400; color:var(--slate);">(اختياري)</span></label>
-    <input type="text" id="referralSource" placeholder="مثال: توصية صديق، تويتر، بحث جوجل...">
+    <input type="text" id="referralSource" placeholder="مثال: توصية من صديق">
 
     <button class="btn" id="submitBtn" onclick="doSignup()">إنشاء الحساب</button>
 
@@ -94,7 +94,7 @@ async function doSignup(){
   }
 
   btn.disabled = true;
-  btn.textContent = 'جارٍ الإنشاء...';
+   btn.textContent = 'جارٍ إنشاء الحساب...';
   try{
     const res = await fetch('/signup', {
       method: 'POST',
@@ -112,13 +112,13 @@ async function doSignup(){
       }
       errorMsg.classList.add('show');
       btn.disabled = false;
-      btn.textContent = 'إنشاء الحساب';
+       btn.textContent = 'إنشاء الحساب';
     }
   } catch(e){
     errorMsg.textContent = 'تعذّر الاتصال بالخادم، حاول مرة أخرى.';
     errorMsg.classList.add('show');
     btn.disabled = false;
-    btn.textContent = 'إنشاء الحساب';
+     btn.textContent = 'إنشاء الحساب';
   }
 }
 </script>
