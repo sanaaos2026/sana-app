@@ -54,7 +54,7 @@
   .journey-kicker{ color:#6E7580; font-size:10px; letter-spacing:1.5px; font-weight:700; margin-bottom:5px; }
   .journey-title{ color:#0B132B; font-size:16px; font-weight:700; margin-bottom:6px; }
   .journey-message{ color:#6E7580; font-size:13px; line-height:1.7; }
-  .journey-action{ display:inline-block; margin-top:14px; padding:9px 16px; border-radius:7px; background:#0B132B; color:#fff; font-size:12.5px; font-weight:600; }
+  .journey-action{ display:inline-flex; align-items:center; justify-content:center; min-height:44px; margin-top:14px; padding:9px 16px; border-radius:7px; background:#0B132B; color:#fff; font-size:12.5px; font-weight:600; }
   .deferred-note{ background:#F5F6FB; border:1px solid #DEE1EC; border-radius:10px; padding:14px 16px; color:#6E7580; font-size:12.5px; line-height:1.7; }
 
   /* ── SDS-002: قسم "بقيت فجوة واحدة" ── */
@@ -79,6 +79,22 @@
   .sds-msg.show{ display:block; }
   .sds-suggestion{ margin-top:10px; font-size:12.5px; color:#6E7580; font-style:italic; display:none; }
   .sds-suggestion.show{ display:block; }
+
+  @media screen and (max-width:480px){
+    .concept-nav{ padding:8px 10px; gap:2px; }
+    .concept-nav a{ padding:5px 8px; font-size:11px; }
+    .cover{ padding:28px 18px 24px; }
+    .cover .value-row{ gap:18px 24px; }
+    .cover .vitem{ min-width:86px; }
+    main{ padding:18px 12px 44px; }
+    section{ padding:18px 16px; }
+    .asset-row{ grid-template-columns:minmax(78px,1.2fr) minmax(42px,1fr) 24px 42px; gap:7px; }
+    .asset-row .ar-name,.asset-row .ar-score,.ev-count{ min-width:0; }
+    .asset-row .ar-score{ font-size:10px !important; }
+    .sds-section{ margin:0 12px 44px; padding:18px 16px; }
+    .sds-options{ gap:8px; }
+    .sds-opt{ min-height:44px; min-width:90px; padding:10px 8px; }
+  }
 </style>
 {% include '_customer-journey-styles.html' %}
 </head>

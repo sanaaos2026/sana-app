@@ -200,6 +200,31 @@
     .report-details .report-action{flex:1;min-width:105px}
   }
 
+  @media screen and (max-width:480px){
+    .wrap{ width:100%; }
+    header{ padding:20px 16px 18px; }
+    .head-top{ align-items:flex-start; gap:10px; }
+    .brand span{ font-size:16px; }
+    .export-date{ font-size:9px; text-align:left; }
+    h1{ font-size:20px; line-height:1.45; }
+    .company-name{ font-size:13px; }
+    section{ padding:20px 16px; }
+    .sec-head{ align-items:flex-start; gap:8px; flex-wrap:wrap; }
+    .sec-note{ width:100%; margin-right:38px; }
+    .journey-state{ padding:12px 13px; }
+    .journey-state-title{ font-size:13.5px; line-height:1.65; }
+    .journey-state-copy{ font-size:12.5px; line-height:1.8; }
+    .stat-row{ grid-template-columns:1fr; gap:8px; }
+    .asset-row{ display:grid; grid-template-columns:minmax(78px,1fr) minmax(0,1fr) 54px; gap:8px; }
+    .asset-name,.asset-val{ width:auto; }
+    .asset-track{ min-width:0; }
+    .finding-head{ align-items:flex-start; flex-wrap:wrap; }
+    .source-item{ align-items:flex-start; }
+    .initiative-grid{ grid-template-columns:1fr; }
+    .phase-head{ align-items:flex-start; gap:8px; flex-wrap:wrap; }
+    .phase-purpose{ width:100%; }
+  }
+
   @media print{
     body{ background:#fff; }
     .wrap{ max-width:100%; }

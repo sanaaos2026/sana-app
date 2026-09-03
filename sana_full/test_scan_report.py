@@ -1131,7 +1131,7 @@ class SanaScanJourneyBrowserTests(unittest.TestCase):
         ("NOT_RUN", "لم يُشغّل بعد", "ابدأ تقييم الأصول", "/assessment"),
         ("INCOMPLETE", "غير مكتمل — بوابة الأدلة مفتوحة", "أكمل الأدلة المطلوبة", "/case/"),
         ("REVIEW_REQUIRED", "جاهز للمراجعة البشرية", "راجع التقرير التنفيذي", "/company/"),
-        ("COMPLETE", "مكتمل — التقرير جاهز", "افتح التقرير التنفيذي", "/company/"),
+        ("COMPLETE", "اكتملت المراجعة — التقرير جاهز", "افتح التقرير التنفيذي", "/company/"),
     )
 
     @classmethod
@@ -1359,8 +1359,12 @@ class SanaScanJourneyBrowserTests(unittest.TestCase):
                     else:
                         self.assertTrue(action_href.startswith("/assessment"))
                     live_summary = page.locator("[data-testid='live-passport-summary']")
-                    self.assertIn("الملخص الحي", live_summary.inner_text())
-                    self.assertIn("التقرير التنفيذي", live_summary.inner_text())
+                    live_summary_text = live_summary.inner_text()
+                    self.assertTrue(
+                        "الملخص الحي" in live_summary_text
+                        or "صورة الشركة" in live_summary_text
+                    )
+                    self.assertIn("التقرير", live_summary_text)
                     page.screenshot(
                         path=os.path.join(
                             screenshot_dir, f"{status.lower()}-passport.png"
@@ -1387,7 +1391,8 @@ class SanaScanJourneyBrowserTests(unittest.TestCase):
                     )
                     self.assertIn(expected_label, journey.inner_text())
                     self.assertIn(expected_action, journey.inner_text())
-                    self.assertIn("EXECUTIVE REPORT", report.inner_text())
+                    self.assertIn("تقرير Sana Scan التنفيذي", report.inner_text())
+                    self.assertNotIn("الملخص الحي", report.inner_text())
                     self.assertNotIn("LIVE PASSPORT", report.inner_text())
                     page.screenshot(
                         path=os.path.join(
@@ -1398,19 +1403,112 @@ class SanaScanJourneyBrowserTests(unittest.TestCase):
                     page.close()
                     browser.close()
 
+    def test_each_scan_state_is_clear_on_mobile(self):
+        from playwright.sync_api import sync_playwright
+
+        screenshot_dir = os.environ.get(
+            "SANA_SCAN_SCREENSHOT_DIR", "/tmp/sana-scan-browser"
+        )
+        os.makedirs(screenshot_dir, exist_ok=True)
+        mobile_viewport = {"width": 390, "height": 844}
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            for status, expected_label, expected_action, _ in self.STATES:
+                with self.subTest(status=status):
+                    page = browser.new_page(viewport=mobile_viewport)
+                    fixture = self.fixtures[status]
+                    company_id = fixture["company_id"]
+                    page.goto(
+                        self._preview_url("/passport", company_id),
+                        wait_until="domcontentloaded",
+                    )
+                    live = page.locator("[data-testid='live-scan-journey']")
+                    live.wait_for(state="visible", timeout=30_000)
+                    action_link = live.locator(".journey-action")
+                    action_link.wait_for(state="visible", timeout=10_000)
+
+                    self.assertEqual(status, live.get_attribute("data-scan-status"))
+                    self.assertIn(expected_label, live.inner_text())
+                    self.assertIn(expected_action, action_link.inner_text())
+                    live_box = live.bounding_box()
+                    action_box = action_link.bounding_box()
+                    self.assertIsNotNone(live_box)
+                    self.assertIsNotNone(action_box)
+                    self.assertGreaterEqual(live_box["x"], 0)
+                    self.assertLessEqual(live_box["x"] + live_box["width"], 390)
+                    self.assertGreaterEqual(action_box["height"], 44)
+                    self.assertLessEqual(action_box["x"] + action_box["width"], 390)
+                    self.assertLessEqual(
+                        page.evaluate("() => document.documentElement.scrollWidth"),
+                        390,
+                    )
+
+                    page.screenshot(
+                        path=os.path.join(
+                            screenshot_dir, f"{status.lower()}-passport-mobile.png"
+                        ),
+                        full_page=True,
+                    )
+
+                    page.goto(
+                        self._preview_url(
+                            f"/company/{company_id}/scan-report", company_id
+                        ),
+                        wait_until="domcontentloaded",
+                    )
+                    report = page.locator("[data-testid='executive-report']")
+                    report.wait_for(state="visible", timeout=30_000)
+                    report_kicker = report.locator(".report-kicker")
+                    report_title = report.locator("h1")
+                    journey = report.locator(
+                        "[data-testid='report-journey-state']"
+                    )
+                    report_kicker.wait_for(state="visible", timeout=10_000)
+                    report_title.wait_for(state="visible", timeout=10_000)
+                    journey.wait_for(state="visible", timeout=10_000)
+                    self.assertIn("تقرير Sana Scan التنفيذي", report_kicker.inner_text())
+                    self.assertTrue(report_title.inner_text().strip())
+                    self.assertIn(expected_label, journey.inner_text())
+                    self.assertIn(expected_action, journey.inner_text())
+                    title_box = report_title.bounding_box()
+                    journey_box = journey.bounding_box()
+                    self.assertIsNotNone(title_box)
+                    self.assertIsNotNone(journey_box)
+                    self.assertGreater(title_box["height"], 0)
+                    self.assertGreater(journey_box["height"], 0)
+                    self.assertLessEqual(
+                        page.evaluate("() => document.documentElement.scrollWidth"),
+                        390,
+                    )
+                    page.screenshot(
+                        path=os.path.join(
+                            screenshot_dir, f"{status.lower()}-report-mobile.png"
+                        ),
+                        full_page=True,
+                    )
+                    page.close()
+            browser.close()
+
     def test_assessment_returns_to_the_same_preview_passport_context(self):
         from playwright.sync_api import sync_playwright
 
         company_id = self.fixtures["NOT_RUN"]["company_id"]
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1440, "height": 1100})
+            page = browser.new_page(viewport={"width": 390, "height": 844})
             page.goto(
                 self._preview_url("/assessment", company_id),
                 wait_until="domcontentloaded",
             )
             return_link = page.locator("[data-testid='passport-after-assessment']")
             return_link.wait_for(state="visible", timeout=10_000)
+            return_box = return_link.bounding_box()
+            self.assertIsNotNone(return_box)
+            self.assertGreater(return_box["height"], 0)
+            self.assertLessEqual(
+                page.evaluate("() => document.documentElement.scrollWidth"),
+                390,
+            )
             href = return_link.get_attribute("href")
             self.assertTrue(href.startswith("/passport?"))
             self.assertIn(f"company_id={company_id}", href)
