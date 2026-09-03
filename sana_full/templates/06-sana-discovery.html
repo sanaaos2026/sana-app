@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% from '_sana-mark.html' import sana_mark %}
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
@@ -335,7 +336,7 @@
     margin-bottom: 10px;
   }
 
-  /* ── Sana logo SVG inline ── */
+  /* ── Sana logo ── */
   .sana-logo { display: block; }
 </style>
 {% include '_customer-journey-styles.html' %}
@@ -385,19 +386,10 @@ const MEMORY_KEY_BY_QUESTION = {
 };
 
 // ────────────────────────────────────────────────
-// SANA LOGO SVG
+// SANA LOGO
 // ────────────────────────────────────────────────
-const LOGO_SVG = `<svg class="sana-logo" width="44" height="44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M76 20 H24 V80 H76 V64" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/>
-  <path d="M76 20 V36" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" fill="none"/>
-  <rect x="50" y="42" width="16" height="16" fill="#F2B233"/>
-</svg>`;
-
-const LOGO_LG = `<svg class="sana-logo" width="60" height="60" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M76 20 H24 V80 H76 V64" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/>
-  <path d="M76 20 V36" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" fill="none"/>
-  <rect x="50" y="42" width="16" height="16" fill="#F2B233"/>
-</svg>`;
+const LOGO_SVG = `{{ sana_mark(size=44, color='#FFFFFF', class_name='sana-logo', decorative=true) }}`;
+const LOGO_LG = `{{ sana_mark(size=60, color='#FFFFFF', class_name='sana-logo', decorative=true) }}`;
 
 // ────────────────────────────────────────────────
 // ICONS per question

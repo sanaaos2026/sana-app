@@ -1,0 +1,7 @@
+{% macro sana_mark(size=26, color='#0B132B', accent_color='#F2B233', class_name='', decorative=false, stroke_width=7) -%}
+<svg{% if class_name %} class="{{ class_name }}"{% endif %} width="{{ size }}" height="{{ size }}" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"{% if decorative %} aria-hidden="true" focusable="false"{% else %} role="img" aria-label="سنع"{% endif %}>
+  <path d="M76 20 H24 V80 H76 V64" stroke="{{ color }}" stroke-width="{{ stroke_width }}" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/>
+  <path d="M76 20 V36" stroke="{{ color }}" stroke-width="{{ stroke_width }}" stroke-linecap="butt" fill="none"/>
+  <rect x="50" y="42" width="16" height="16" fill="{{ accent_color }}"/>
+</svg>
+{%- endmacro %}

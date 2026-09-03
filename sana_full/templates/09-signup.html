@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% from '_sana-mark.html' import sana_mark %}
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
@@ -47,10 +48,7 @@
 </head>
 <body>
 
-  <svg class="mark" viewBox="0 0 100 100">
-    <path d="M78,32 L78,17 L19,17 L19,83 L78,83 L78,68" fill="none" stroke="#0B132B" stroke-width="9" stroke-linecap="square"/>
-    <rect x="44" y="41" width="19" height="19" fill="#F2B233"/>
-  </svg>
+  {{ sana_mark(size=36, class_name='mark', decorative=true, stroke_width=9) }}
 
   <div class="card">
     <h1>أنشئ حساب شركتك</h1>

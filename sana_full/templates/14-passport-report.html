@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% from '_sana-mark.html' import sana_mark %}
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
@@ -266,7 +267,7 @@
   <header>
     <div class="head-top">
       <div class="brand">
-        <svg viewBox="0 0 100 100"><path d="M76 20 H24 V80 H76 V64" stroke="#0B132B" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/><path d="M76 20 V36" stroke="#0B132B" stroke-width="7" stroke-linecap="butt" fill="none"/><rect x="50" y="42" width="16" height="16" fill="#F2B233"/></svg>
+        {{ sana_mark(size=26, color='#0B132B', decorative=true) }}
         <span>سنع</span>
       </div>
       <div class="export-date">تاريخ الإصدار: {{ export_date }}</div>
@@ -314,15 +315,15 @@
       <a class="report-action primary" href="{{ report_pdf_url }}">تحميل التقرير</a>
       <a class="report-action" href="{{ report_details_url }}">عرض التفاصيل</a>
       {% if human_review and current_review and current_review.expert_summary_status == 'APPROVED' %}
-        <a class="report-action small" href="{{ current_review.summary_url }}"><svg class="expert-review-mark" aria-hidden="true" focusable="false" viewBox="0 0 100 100"><path d="M76 20 H24 V80 H76 V64" stroke="currentColor" stroke-width="7" fill="none"/><path d="M76 20 V36" stroke="currentColor" stroke-width="7" fill="none"/><rect x="50" y="42" width="16" height="16" fill="currentColor"/></svg>راجع مع خبير</a>
+        <a class="report-action small" href="{{ current_review.summary_url }}">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}راجع مع خبير</a>
       {% elif human_review and current_review and current_review.status in ['REQUESTED','SCHEDULED'] %}
-        <span class="report-action small"><svg class="expert-review-mark" aria-hidden="true" focusable="false" viewBox="0 0 100 100"><path d="M76 20 H24 V80 H76 V64" stroke="currentColor" stroke-width="7" fill="none"/><path d="M76 20 V36" stroke="currentColor" stroke-width="7" fill="none"/><rect x="50" y="42" width="16" height="16" fill="currentColor"/></svg>راجع مع خبير — قيد الانتظار</span>
+        <span class="report-action small">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}راجع مع خبير — قيد الانتظار</span>
       {% elif human_review and current_review and current_review.status == 'COMPLETED' %}
-        <span class="report-action small"><svg class="expert-review-mark" aria-hidden="true" focusable="false" viewBox="0 0 100 100"><path d="M76 20 H24 V80 H76 V64" stroke="currentColor" stroke-width="7" fill="none"/><path d="M76 20 V36" stroke="currentColor" stroke-width="7" fill="none"/><rect x="50" y="42" width="16" height="16" fill="currentColor"/></svg>راجع مع خبير — تمت المراجعة</span>
+        <span class="report-action small">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}راجع مع خبير — تمت المراجعة</span>
       {% elif human_review and human_review.settings.available and not current_review %}
-        <button class="report-action small" id="openReview"><svg class="expert-review-mark" aria-hidden="true" focusable="false" viewBox="0 0 100 100"><path d="M76 20 H24 V80 H76 V64" stroke="currentColor" stroke-width="7" fill="none"/><path d="M76 20 V36" stroke="currentColor" stroke-width="7" fill="none"/><rect x="50" y="42" width="16" height="16" fill="currentColor"/></svg>راجع مع خبير</button>
+        <button class="report-action small" id="openReview">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}راجع مع خبير</button>
       {% else %}
-        <span class="report-action small" aria-disabled="true"><svg class="expert-review-mark" aria-hidden="true" focusable="false" viewBox="0 0 100 100"><path d="M76 20 H24 V80 H76 V64" stroke="currentColor" stroke-width="7" fill="none"/><path d="M76 20 V36" stroke="currentColor" stroke-width="7" fill="none"/><rect x="50" y="42" width="16" height="16" fill="currentColor"/></svg>راجع مع خبير</span>
+        <span class="report-action small" aria-disabled="true">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}راجع مع خبير</span>
       {% endif %}
     {% elif report_view == 'plan' %}
       <a class="report-action primary" href="{{ execution_plan_pdf_url }}">تحميل خطة التنفيذ</a>

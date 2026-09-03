@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% from '_sana-mark.html' import sana_mark %}
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
@@ -112,7 +113,7 @@
 
 <nav>
   <div class="brand">
-    <svg viewBox="0 0 100 100"><path d="M76 20 H24 V80 H76 V64" stroke="#0B132B" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/><path d="M76 20 V36" stroke="#0B132B" stroke-width="7" stroke-linecap="butt" fill="none"/><rect x="50" y="42" width="16" height="16" fill="#F2B233"/></svg>
+    {{ sana_mark(size=26, decorative=true) }}
     <span>سنع</span>
   </div>
   <a href="/login" class="nav-cta">تسجيل الدخول</a>
@@ -120,7 +121,7 @@
 
 <header class="hero">
   <div class="hero-inner">
-    <svg class="mark" viewBox="0 0 100 100"><path d="M76 20 H24 V80 H76 V64" stroke="#F5F6F8" stroke-width="6" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/><path d="M76 20 V36" stroke="#F5F6F8" stroke-width="6" stroke-linecap="butt" fill="none"/><rect x="50" y="42" width="16" height="16" fill="#F2B233"/></svg>
+    {{ sana_mark(size=50, color='#F5F6F8', class_name='mark', decorative=true, stroke_width=6) }}
     <h1>شخّص شركتك، ورتّب أولوياتك، <span class="gold">واتخذ قرارك بوضوح</span></h1>
     <p class="hero-description">سنع يشخّص شركتك الخدمية من واقع معلوماتها، ويرتّب المشاكل والفرص، ثم يحوّلها إلى أولويات وقرارات واضحة بدل التخمين.</p>
     <ol class="hero-journey" aria-label="مسار العمل مع سنع">

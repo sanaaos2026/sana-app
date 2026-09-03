@@ -12,11 +12,9 @@ class ExpertReviewTemplateTest(unittest.TestCase):
             Path(__file__).parent / "templates" / "14-passport-report.html"
         ).read_text(encoding="utf-8")
 
-        self.assertEqual(template.count('class="expert-review-mark"'), 5)
+        self.assertEqual(template.count("class_name='expert-review-mark'"), 5)
         self.assertEqual(
-            template.count(
-                'class="expert-review-mark" aria-hidden="true" focusable="false"'
-            ),
+            template.count("class_name='expert-review-mark', decorative=true"),
             5,
         )
         self.assertIn(
