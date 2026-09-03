@@ -4,31 +4,67 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   {% include '_csrf-fetch.html' %}
-  <title>مسار Build & Launch — سنع</title>
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f6fb">
+  <title>ابنِ خدمتك وانطلق — سنع</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    *{box-sizing:border-box} body{margin:0;background:#f6f7f9;color:#0b132b;font-family:Arial,sans-serif}
-    main{min-height:100vh;display:grid;place-items:center;padding:24px}.card{max-width:620px;background:#fff;border:1px solid #e2e5ea;border-radius:18px;padding:34px;box-shadow:0 14px 38px rgba(11,19,43,.08)}
-    .k{color:#0a8f8e;font-size:12px;font-weight:700}.mark{font-size:26px;font-weight:800;margin:12px 0}h1{font-size:25px;line-height:1.5;margin:0 0 12px}
-    p{line-height:1.9;color:#5f6876}.next{background:#fff8e7;border:1px solid #ebcb79;border-radius:12px;padding:14px;margin:20px 0;color:#0b132b}
-    label{display:block;font-size:13px;font-weight:700;margin-bottom:7px}input{width:100%;padding:12px;border:1px solid #d8dde5;border-radius:9px;font:inherit}
-    button,a{display:inline-flex;justify-content:center;border-radius:9px;padding:11px 16px;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}
-    button{border:0;background:#0b132b;color:#fff;margin-top:12px}a{color:#0a8f8e}.msg{margin-top:12px;color:#0a8f8e;font-weight:700;line-height:1.7}
+    :root{color-scheme:light;--navy:#0b132b;--teal:#0a8f8e;--amber:#f2b233;--muted:#626b78;--line:#dee1ec}
+    *{box-sizing:border-box}
+    body{margin:0;background:#f5f6fb;color:var(--navy);font-family:'IBM Plex Sans Arabic',sans-serif}
+    main{min-height:100vh;display:grid;place-items:center;padding:32px 18px}
+    .card{width:min(100%,660px);background:#fff;border:1px solid var(--line);border-radius:20px;padding:clamp(24px,5vw,44px);box-shadow:0 16px 44px rgba(11,19,43,.07)}
+    .brand{display:flex;align-items:center;gap:11px;margin-bottom:26px;font-size:19px;font-weight:700}
+    .brand svg{width:30px;height:30px;flex:none}
+    .k{display:inline-block;color:var(--teal);font-size:12px;font-weight:700;margin-bottom:10px}
+    h1{font-size:clamp(23px,4.5vw,31px);line-height:1.5;margin:0 0 12px;letter-spacing:-.2px}
+    p{margin:0;line-height:1.9;color:var(--muted);font-size:15px}
+    .next{background:#fffaf0;border:1px solid #efd48e;border-radius:14px;padding:19px 20px;margin:25px 0}
+    .next strong{display:block;font-size:18px;margin-bottom:7px}
+    .value{color:var(--navy);font-weight:500}
+    form{border-top:1px solid #eceef3;padding-top:24px}
+    .form-intro{color:var(--navy);font-weight:600;margin-bottom:4px}
+    .help{font-size:13px;margin-bottom:15px}
+    label{display:block;font-size:13px;font-weight:600;margin-bottom:7px}
+    input{width:100%;min-width:0;padding:13px 14px;border:1px solid #d8dde5;border-radius:10px;font:inherit;direction:ltr;text-align:right;outline:none;transition:border-color .15s,box-shadow .15s}
+    input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(10,143,142,.1)}
+    .actions{display:flex;align-items:center;gap:12px;margin-top:14px}
+    button,a{display:inline-flex;justify-content:center;align-items:center;border-radius:10px;padding:12px 17px;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}
+    button{border:0;background:var(--navy);color:#fff;min-height:48px;transition:opacity .15s}
+    button:disabled{cursor:wait;opacity:.7}
+    a{color:var(--teal);font-size:13px;font-weight:600}
+    .msg{min-height:25px;margin-top:12px;color:var(--teal);font-weight:700;line-height:1.7;font-size:14px}
+    @media(max-width:520px){main{padding:14px}.card{border-radius:16px}.actions{align-items:stretch;flex-direction:column}.actions button{width:100%}.actions a{padding:8px}}
   </style>
 </head>
 <body>
 <main>
   <div class="card">
-    <div class="mark">سنع</div>
+    <div class="brand">
+      <svg aria-hidden="true" viewBox="0 0 100 100">
+        <path d="M78,32 L78,17 L19,17 L19,83 L78,83 L78,68" fill="none" stroke="#0B132B" stroke-width="9" stroke-linecap="square"/>
+        <rect x="44" y="41" width="19" height="19" fill="#F2B233"/>
+      </svg>
+      <span>سنع</span>
+    </div>
     <div class="k">نتيجة الملاءمة</div>
-    <h1>{{ company_name }} في مرحلة تسبق Sana Scan</h1>
-    <p>التشخيص يعطي قيمة أكبر عندما توجد خدمة تُقدّم لعملاء فعليين وبيانات تشغيل يمكن تتبعها. هذا ليس رفضًا للفكرة؛ بل اختيار للمسار الأنسب لمرحلتها.</p>
-    <div class="next"><strong>الأنسب الآن: Build & Launch</strong><br>مسار مستقل يساعدك على تحويل الخبرة أو الفكرة إلى عرض واضح، الوصول لأول عميل، وبناء تشغيل أولي قابل للقياس.</div>
+    <h1>مشروعك ليس مرفوضًا — بل يحتاج خطوة تسبق التشخيص</h1>
+    <p>{{ company_name }} في مرحلة مبكرة واعدة. يعطي Sana Scan قيمة أكبر بعد وجود خدمة تُقدّم لعملاء فعليين وتشغيل يمكن تتبّعه؛ لذلك نوجّهك الآن إلى المسار الأنسب لهذه المرحلة.</p>
+    <div class="next">
+      <strong>الأنسب الآن: ابنِ خدمتك وانطلق</strong>
+      <p class="value">حوّل فكرتك إلى عرض واضح، واكسب أول عميل، وابنِ تشغيلًا قابلًا للنمو.</p>
+    </div>
     <form id="interestForm">
+      <p class="form-intro">هل ترغب أن نخبرك عند فتح هذا المسار؟</p>
+      <p class="help">اترك رقمك إن أحببت، وسنتواصل معك لفهم احتياجك. رقم الجوال اختياري.</p>
       <label for="phone">رقم الجوال (اختياري)</label>
       <input id="phone" inputmode="tel" autocomplete="tel" placeholder="+966 …">
-      <button id="submitBtn" type="submit">سجّل اهتمامي بالمسار</button>
-      <a href="/home">العودة للرئيسية</a>
-      <div id="message" class="msg"></div>
+      <div class="actions">
+        <button id="submitBtn" type="submit">أرغب أن تتواصلوا معي</button>
+        <a href="/home">العودة للرئيسية</a>
+      </div>
+      <div id="message" class="msg" role="status" aria-live="polite"></div>
     </form>
   </div>
 </main>
@@ -47,7 +83,7 @@ document.getElementById('interestForm').addEventListener('submit', async (event)
     if(!response.ok||!result.success) throw new Error(result.message||'تعذر التسجيل الآن.');
     message.textContent=result.message;
     button.hidden=true;
-  }catch(error){message.textContent=error.message;button.disabled=false;button.textContent='سجّل اهتمامي بالمسار';}
+  }catch(error){message.textContent=error.message;button.disabled=false;button.textContent='أرغب أن تتواصلوا معي';}
 });
 </script>
 </body>
