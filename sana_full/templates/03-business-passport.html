@@ -172,7 +172,9 @@ function render(d, meta, sds){
       </section>` : ''}
       <section style="text-align:center;">
         <div style="font-size:11.5px;color:#6E7580;margin-bottom:8px;">راجع التفاصيل قبل اتخاذ قرار كبير.</div>
-        <a data-testid="executive-report-link" href="${journey.report_url || `/company/${COMPANY_ID}/scan-report`}" style="display:inline-block;color:#0EA5A5;font-weight:600;font-size:13.5px;margin-bottom:14px;">عرض ملخص القرار والتفاصيل ←</a><br>
+        <a data-testid="executive-report-link" href="${journey.report_url || `/company/${COMPANY_ID}/scan-report`}" style="display:inline-block;color:#0EA5A5;font-weight:600;font-size:13.5px;margin-bottom:8px;">عرض الملخص التنفيذي ←</a>
+        ${['REVIEW_REQUIRED','COMPLETE'].includes(journey.status) ? `<a data-testid="execution-plan-link" href="/company/${COMPANY_ID}/execution-plan${CQS}" style="display:inline-block;color:#0B132B;font-weight:600;font-size:13.5px;margin:0 12px 8px;">خطة التنفيذ ←</a>` : ''}
+        <br>
         <button class="btn" id="downloadReportBtn" onclick="downloadReport()"
           style="background:#0B132B; color:#fff; border:none; padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans Arabic';">
           ⬇ تحميل التقرير

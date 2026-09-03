@@ -154,13 +154,30 @@
   .review-fields{display:grid;gap:10px;margin-top:12px}.review-fields select,.review-fields textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;font-family:inherit}.review-fields textarea{min-height:84px;resize:vertical}
   .review-status{font-size:12px;color:#08745F;font-weight:700;margin-top:8px}
   .review-result{margin-top:10px;padding:11px;border-right:3px solid var(--teal);background:#fff;font-size:12px}
+  .report-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:14px 28px;border-bottom:1px solid var(--line);background:#fff}
+  .report-action{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:8px;padding:8px 12px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}
+  .report-action.primary{background:var(--navy);border-color:var(--navy);color:#fff}
+  .report-action.small{padding:7px 10px;font-size:11px;color:var(--muted)}
+  .compact-review{margin:10px 28px 0;padding:12px;border:1px solid var(--line);background:#fff;border-radius:9px}
+  .executive-stack{display:grid;gap:12px}
+  .executive-block{border-bottom:1px solid var(--line);padding-bottom:12px}
+  .executive-block:last-child{border-bottom:0;padding-bottom:0}
+  .executive-block h2{font-family:'Cairo';font-size:13px;color:var(--muted);margin-bottom:4px}
+  .executive-block p{font-size:14px;line-height:1.8;color:var(--navy)}
+  .two-lines{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .signal-list,.executive-missing{padding-right:18px;font-size:13px;color:var(--ink)}
+  .signal-list li,.executive-missing li{margin-bottom:4px}
+  .single-alert{background:#FFF8E7;border:1px solid #EBCB79;border-radius:10px;padding:14px 16px}
+  .single-alert strong{display:block;color:var(--navy);font-family:'Cairo';font-size:14px;margin-bottom:8px}
+  .cta{display:inline-flex;text-decoration:none;background:var(--gold);color:var(--navy);border-radius:8px;padding:9px 14px;font-weight:800;font-size:13px}
   @media(max-width:560px){
     .wrap{ padding-bottom:32px; }
     header{ padding:22px 18px 18px; }
     section{ padding:20px 18px; }
     .head-top{ margin-bottom:14px; }
     .next-step{ margin:18px 18px 0; padding:18px; }
-    .review-card{margin:14px 18px 0}
+    .review-card,.compact-review{margin:14px 18px 0}
+    .report-actions{padding:12px 18px}
     .answer-grid,.initiative-grid,.confidence-grid{ grid-template-columns:1fr; }
   }
 
@@ -186,102 +203,94 @@
       </div>
       <div class="export-date">تاريخ الإصدار: {{ export_date }}</div>
     </div>
-    <div class="report-kicker">تقرير Sana Scan التنفيذي</div>
-    <h1>ما القرار والخطوة التالية؟</h1>
+    <div class="report-kicker">{% if report_view == 'plan' %}خطة التنفيذ{% elif report_view == 'details' %}تفاصيل Sana Scan{% else %}تقرير Sana Scan التنفيذي{% endif %}</div>
+    <h1>{% if report_view == 'plan' %}خطة التنفيذ{% elif report_view == 'details' %}تفاصيل الصورة التشخيصية{% else %}ما القرار والخطوة التالية؟{% endif %}</h1>
     <div class="company-name">{{ company.name }}{% if company.sector %} — {{ company.sector }}{% endif %}</div>
-    <div class="report-meta">
-      <span><b>الحالة:</b> <span class="status-pill {{ scan_journey.tone if scan_journey else ('incomplete' if scan_status != 'REVIEW_REQUIRED' else '') }}">{{ scan_status_label }}</span></span>
-    </div>
-    {% if scan_journey %}
-    <div class="journey-state {{ scan_journey.tone }}" data-testid="report-journey-state">
-      <div class="journey-state-title">{{ scan_journey.label }}</div>
-      <div class="journey-state-copy">{{ scan_journey.message }} الإجراء التالي: {{ scan_journey.action_label }}.</div>
-    </div>
-    {% endif %}
   </header>
 
-  {% if human_review %}
-  <div class="review-card{% if human_review.needs_emphasis %} emphasis{% endif %}" data-testid="human-review-card">
-    {% set current_review = human_review.review %}
-    {% if current_review and current_review.expert_summary_status == 'APPROVED' %}
-      <div class="review-title">ملخص مراجعة الخبير جاهز</div>
-      <div class="review-copy">اعتمد الخبير/الإدارة الورقة النهائية. ملاحظات الخبير تبقى مراجعة بشرية ولا تتحول تلقائيًا إلى حقيقة.</div>
-      <div>
-        <a class="review-action" href="{{ current_review.summary_url }}">عرض الملخص</a>
-        <a class="review-action secondary" href="{{ current_review.summary_pdf_url }}">تنزيل PDF</a>
-      </div>
-    {% elif current_review and current_review.status == 'COMPLETED' %}
-      <div class="review-title">تمت مراجعة القرار مع خبير سنع</div>
-      <div class="review-copy">حُفظ القرار السابق ونتيجة المراجعة في سجل مستقل.</div>
-      <div class="review-result">
-        <b>القرار النهائي:</b> {{ current_review.final_decision }}<br>
-        <b>علامة النجاح:</b> {{ current_review.approved_kpi }}<br>
-        <b>الخطوة التالية:</b> {{ current_review.next_action }}
-      </div>
-    {% elif current_review and current_review.status in ['REQUESTED','SCHEDULED'] %}
-      <div class="review-title">وصل طلب المراجعة البشرية</div>
-      <div class="review-copy">سيطّلع الخبير على الحالة. التقرير والتنزيل متاحان كالمعتاد.</div>
-      <div class="review-status">ستظهر ورقة «ملخص مراجعة الخبير» هنا بعد اعتمادها.</div>
-    {% else %}
-      <div class="review-title">التواصل مع خبير</div>
-      <div class="review-copy">اطلب مراجعة بشرية للحالة. المراجعة اختيارية ولا توقف التقرير أو القرار الحالي.</div>
-      {% if human_review.settings.available %}
-      <button class="review-action" id="openReview">اطلب مراجعة بشرية</button>
-      <div class="review-fields" id="reviewFields" hidden>
-        <textarea id="reviewClientNote" maxlength="500" aria-label="ملاحظة قصيرة اختيارية" placeholder="ملاحظة قصيرة للخبير (اختياري)"></textarea>
-        <div><button class="review-action" id="confirmReview">إرسال طلب المراجعة</button> <button class="review-action secondary" id="cancelReview">رجوع</button></div>
-        <div id="reviewMessage" class="review-copy"></div>
-      </div>
-      {% elif not human_review.settings.available %}
-      <div class="review-copy">هذا الخيار غير متاح حاليًا. يمكنك متابعة التقرير دون مراجعة.</div>
+  {% set current_review = human_review.review if human_review else none %}
+  <div class="report-actions" data-testid="report-actions">
+    {% if report_view == 'main' %}
+      <a class="report-action primary" href="{{ report_pdf_url }}">تحميل التقرير</a>
+      <a class="report-action" href="{{ report_details_url }}">عرض التفاصيل</a>
+      {% if human_review and current_review and current_review.expert_summary_status == 'APPROVED' %}
+        <a class="report-action small" href="{{ current_review.summary_url }}">راجع مع خبير</a>
+      {% elif human_review and current_review and current_review.status in ['REQUESTED','SCHEDULED'] %}
+        <span class="report-action small">راجع مع خبير — قيد الانتظار</span>
+      {% elif human_review and current_review and current_review.status == 'COMPLETED' %}
+        <span class="report-action small">راجع مع خبير — تمت المراجعة</span>
+      {% elif human_review and human_review.settings.available and not current_review %}
+        <button class="report-action small" id="openReview">راجع مع خبير</button>
+      {% else %}
+        <span class="report-action small" aria-disabled="true">راجع مع خبير</span>
       {% endif %}
+    {% elif report_view == 'plan' %}
+      <a class="report-action primary" href="{{ execution_plan_pdf_url }}">تحميل خطة التنفيذ</a>
+      <a class="report-action" href="/company/{{ company.company_id }}/scan-report">الملخص التنفيذي</a>
+    {% else %}
+      <a class="report-action" href="/company/{{ company.company_id }}/scan-report">الملخص التنفيذي</a>
     {% endif %}
+  </div>
+  {% if report_view == 'main' and human_review and human_review.settings.available and not current_review %}
+  <div class="compact-review review-fields" id="reviewFields" hidden>
+    <textarea id="reviewClientNote" maxlength="500" aria-label="ملاحظة قصيرة اختيارية" placeholder="ملاحظة قصيرة للخبير (اختياري)"></textarea>
+    <div><button class="review-action" id="confirmReview">إرسال طلب المراجعة</button> <button class="review-action secondary" id="cancelReview">رجوع</button></div>
+    <div id="reviewMessage" class="review-copy"></div>
   </div>
   {% endif %}
 
   <!-- الملخص التنفيذي -->
+  {% if report_view == 'main' %}
   <section data-testid="executive-report-summary">
-    <div class="sec-head">
-      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M8 8 H40 V40 H8 Z" stroke="#0B132B" stroke-width="3"/><path d="M15 17 H33 M15 24 H33 M15 31 H26" stroke="#F2B233" stroke-width="3" stroke-linecap="round"/></svg>
-      <div>
-        <div class="surface-label">الخلاصة أولًا</div>
-        <div class="sec-title">الخلاصة والقرار</div>
+    <div class="executive-stack">
+      <div class="executive-block">
+        <h2>الصورة الآن</h2>
+        <p class="two-lines">{% if scan_case %}{{ scan_case.declared_problem or scan_case.case_title }}{% if scan_case.real_question %} — {{ scan_case.real_question }}{% endif %}{% else %}ابدأ بتوصيف القضية حتى تتكوّن صورة قابلة للمراجعة.{% endif %}</p>
       </div>
-      <div class="sec-note">ما يحتاج المدير معرفته أولًا</div>
-    </div>
-    <div class="executive-lede">{{ scan_executive_answer }}</div>
-    <div class="answer-grid">
-      <div class="answer-card">
-        <div class="answer-label">الوضع الآن</div>
-        <div class="answer-value">{% if scan_case %}{{ scan_case.declared_problem or scan_case.case_title }}{% else %}لا توجد قضية تشخيصية محفوظة{% endif %}</div>
-        {% if diagnostic_review.problem %}<div class="source-ref">المعلومات من جلسة التشخيص{% if diagnostic_review.problem.source_date %} · {{ diagnostic_review.problem.source_date }}{% endif %}</div>{% endif %}
+      {% if scan_bottleneck or scan_opportunity %}
+      <div class="executive-block">
+        <h2>أهم اختناق / أولوية</h2>
+        <p class="two-lines">{{ (scan_bottleneck or scan_opportunity).statement }}</p>
       </div>
-      <div class="answer-card">
-        <div class="answer-label">السؤال الحقيقي</div>
-        <div class="answer-value">{% if scan_case and scan_case.real_question %}{{ scan_case.real_question }}{% else %}يتضح بعد اكتمال جمع المعلومات{% endif %}</div>
+      {% endif %}
+      {% if scan_executive_signals %}
+      <div class="executive-block">
+        <h2>لماذا؟</h2>
+        <ul class="signal-list">
+          {% for signal in scan_executive_signals %}<li>{{ signal.statement }}</li>{% endfor %}
+        </ul>
       </div>
-      <div class="answer-card wide">
-        <div class="answer-label">الفرصة ذات الأولوية</div>
-        <div class="answer-value">{% if scan_opportunity %}{{ scan_opportunity.statement }}{% else %}لا توجد فرصة مثبتة بعد؛ لا ننتقل للتنفيذ قبل إغلاق بوابة الأدلة.{% endif %}</div>
+      {% endif %}
+      {% if scan_client_missing_evidence %}
+      <div class="executive-block">
+        <h2>ما الذي ما زال ناقصًا؟</h2>
+        <ul class="executive-missing">
+          {% for item in scan_client_missing_evidence[:2] %}<li>{{ item }}</li>{% endfor %}
+        </ul>
       </div>
-    </div>
-    <div class="confidence-grid" data-testid="confidence-stages">
-      {% for stage in scan_client_confidence.stages %}
-      <div class="confidence-card">
-        <div class="confidence-title">{{ stage.title }}</div>
-        <span class="confidence-state {{ stage.view.status|lower|replace('_', '-') }}">{{ stage.view.label }}</span>
-        {% if stage.view.score is not none %}<span class="confidence-score">{{ stage.view.score }}٪</span>{% endif %}
-        <div class="confidence-copy">{{ stage.view.message }}</div>
+      {% endif %}
+      {% if scan_decision_ready and scan_current_decision %}
+      <div class="executive-block">
+        <h2>القرار الآن</h2>
+        <p class="two-lines">{{ scan_current_decision.title or scan_current_decision.statement }}</p>
       </div>
-      {% endfor %}
-    </div>
-    <div class="report-meta">
-      <span><b>اكتمال المحاور:</b> {{ scan.score_complete_count if scan.score_complete_count is not none else 0 }} / {{ scan.score_total_count if scan.score_total_count is not none else 0 }}</span>
-      <span><b>المعلومات المطلوبة:</b> {{ scan_client_missing_evidence|length }}</span>
-      <span><b>المراجعة البشرية:</b> {% if scan.status == 'COMPLETE' %}مكتملة{% elif scan.human_review_required or scan_has_run %}مطلوبة{% else %}غير متاحة{% endif %}</span>
+      {% if scan_next_action %}
+      <div class="executive-block">
+        <h2>الخطوة التالية</h2>
+        <p><b>{{ scan_next_action.task }}</b>{% if scan_next_action.owner %} · المسؤول: {{ scan_next_action.owner }}{% endif %}{% if scan_next_action.due_date %} · الموعد: {{ scan_next_action.due_date }}{% endif %}{% if scan_next_action.kpi %} · المقياس: {{ scan_next_action.kpi }}{% endif %}</p>
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="single-alert" data-testid="single-readiness-alert">
+        <strong>باقي معلومات قليلة قبل اعتماد القرار</strong>
+        <a class="cta" data-testid="complete-picture-cta" href="{{ adaptive_questions_url }}">كمّل الصورة</a>
+      </div>
+      {% endif %}
     </div>
   </section>
+  {% endif %}
 
+  {% if report_view == 'details' %}
   <!-- جودة الصورة التشخيصية -->
   <section>
     <div class="sec-head">
@@ -350,13 +359,13 @@
   </section>
 
   <!-- الأدلة -->
+  {% if scan_citations %}
   <section>
     <div class="sec-head">
       <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M12 7 H30 L37 14 V41 H12 Z" stroke="#0B132B" stroke-width="3"/><path d="M30 7 V15 H37" stroke="#F2B233" stroke-width="3"/><path d="M17 23 H32 M17 30 H32" stroke="#0EA5A5" stroke-width="2.5" stroke-linecap="round"/></svg>
       <div class="sec-title">الأدلة ومصادرها</div>
       <div class="sec-note">كل استنتاج قابل للتتبع</div>
     </div>
-    {% if scan_citations %}
     <ul class="source-list">
       {% for source in scan_citations %}
       <li class="source-item">
@@ -364,12 +373,11 @@
       </li>
       {% endfor %}
     </ul>
-    {% else %}
-    <div class="no-data">لا توجد معلومات موثقة مرتبطة بآخر مراجعة.</div>
-    {% endif %}
   </section>
+  {% endif %}
 
   <!-- الأولويات وما لا نفعله -->
+  {% if reference_knowledge.references or reference_knowledge.conflicts or reference_knowledge.knowledge_gap %}
   <section>
     <div class="sec-head">
       <div class="sec-title">معلومات عامة ذات صلة</div>
@@ -398,6 +406,7 @@
       <div class="quality-box"><div class="quality-top"><span class="t">تعارض للمراجعة البشرية</span><span class="v">{{ conflict.conflicting_version }}</span></div><div class="quality-hint">{{ conflict.conflict_note }}</div></div>
     {% endfor %}
   </section>
+  {% endif %}
 
   <!-- الأولويات وما لا نفعله -->
   <section>
@@ -419,7 +428,9 @@
       {% for item in scan_what_not_do %}<div class="not-do">{{ item }}</div>{% endfor %}
     </div>
   </section>
+  {% endif %}
 
+  {% if report_view == 'plan' %}
   <!-- خطة 90 يومًا -->
   <section class="report-page-break">
     <div class="sec-head">
@@ -427,12 +438,12 @@
       <div class="sec-title">خطة التنفيذ — 90 يومًا</div>
       <div class="sec-note">قرار → مسؤول → موعد → علامة نجاح → أثر</div>
     </div>
-    <div class="report-meta" style="margin-bottom:14px;"><span><b>القاعدة:</b> لا تُعد المبادرة مكتملة إلا بوجود مسؤول وموعد وعلامة نجاح ومعلومة موثقة وأثر متوقع.</span></div>
+    {% if scan_execution_plan_available %}
     {% for phase in scan_phases %}
+    {% if phase.initiatives %}
     <div class="phase">
       <div class="phase-head"><div class="phase-name">{{ phase.title }}</div><div class="phase-purpose">المرحلة {{ loop.index }}</div></div>
-      {% if phase.initiatives %}
-        {% for initiative in phase.initiatives %}
+      {% for initiative in phase.initiatives %}
         <div class="initiative">
           <div class="initiative-title">{{ initiative.task }}</div>
           <div class="initiative-grid">
@@ -452,11 +463,9 @@
           </div>
           <div class="initiative-evidence"><b>المعلومة المطلوبة / المرتبطة:</b> {% for evidence in initiative.evidence %}<span>{{ evidence.statement }}{% if not loop.last %} · {% endif %}</span>{% else %}<span>غير محددة — يلزم ربط معلومة</span>{% endfor %}</div>
         </div>
-        {% endfor %}
-      {% else %}
-        <div class="empty-phase">لا توجد مبادرة معتمدة لهذه المرحلة بعد. لا نملأ الفراغ بتوقعات؛ يُحدد القرار بعد مراجعة نتائج المرحلة السابقة.</div>
-      {% endif %}
+      {% endfor %}
     </div>
+    {% endif %}
     {% endfor %}
     {% if scan_unplanned_decisions %}
     <div class="quality-box" style="margin-top:14px;">
@@ -468,18 +477,16 @@
       </ul>
     </div>
     {% endif %}
-  </section>
-
-  <!-- جلسة النتائج -->
-  <section>
-    <div class="sec-head">
-      <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M8 10 H40 V34 H27 L20 41 V34 H8 Z" stroke="#0B132B" stroke-width="3"/><path d="M15 18 H33 M15 25 H27" stroke="#F2B233" stroke-width="3" stroke-linecap="round"/></svg>
-      <div class="sec-title">ملاحظة جلسة النتائج</div>
+    {% else %}
+    <div class="single-alert" data-testid="execution-plan-unavailable">
+      <strong>خطة التنفيذ تظهر بعد اعتماد القرار وتحديد أول مهمة قابلة للقياس.</strong>
+      <a class="cta" href="{{ adaptive_questions_url }}">كمّل الصورة</a>
     </div>
-    <div class="executive-lede" style="font-size:13px;">{{ scan_review_note }}</div>
-    <div class="answer-value">التسلسل المقترح: أين أنتم؟ ← ماذا وجدنا؟ ← ماذا تقول الأدلة؟ ← ما الاختناق؟ ← ما تكلفة الاستمرار؟ ← ما أول قرار؟ ← ماذا يحدث خلال 90 يومًا؟</div>
+    {% endif %}
   </section>
+  {% endif %}
 
+  {% if report_view == 'details' %}
   <!-- ملحق جواز الشركة للحفاظ على المخرج السابق -->
   <section class="report-page-break">
     <div class="appendix-label">تفاصيل صورة الشركة</div>
@@ -540,12 +547,12 @@
   </section>
 
   <!-- 3. الإنجازات -->
+  {% if tasks_by_phase %}
   <section>
     <div class="sec-head">
       <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="18" stroke="#0B132B" stroke-width="3" fill="none"/><path d="M17 24 L22 29 L32 18" stroke="#F2B233" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <div class="sec-title">الإنجازات المنجزة</div>
     </div>
-    {% if tasks_by_phase %}
       {% for phase, tasks in tasks_by_phase.items() %}
       <div class="ach-group">
         <div class="ach-group-head">
@@ -560,18 +567,16 @@
         {% endfor %}
       </div>
       {% endfor %}
-    {% else %}
-      <div class="no-data">لا توجد إنجازات مسجَّلة بعد.</div>
-    {% endif %}
   </section>
+  {% endif %}
 
   <!-- 4. القرارات -->
+  {% if decisions %}
   <section style="border-bottom:none;">
     <div class="sec-head">
       <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M8 10 H40 V32 H22 L14 40 V32 H8 Z" stroke="#0B132B" stroke-width="3" fill="none" stroke-linejoin="round"/><rect x="19" y="17" width="9" height="9" fill="#F2B233"/></svg>
       <div class="sec-title">القرارات</div>
     </div>
-    {% if decisions %}
       {% for d in decisions %}
       <div class="decision">
         <div class="decision-top">
@@ -609,10 +614,8 @@
         {% endif %}
       </div>
       {% endfor %}
-    {% else %}
-      <div class="no-data">لا توجد قرارات مسجَّلة بعد.</div>
-    {% endif %}
   </section>
+  {% endif %}
 
   <!-- الخطوة التالية -->
   {% if weakest_asset %}
@@ -621,11 +624,12 @@
     <div class="t">أقرب أصل لك من التحسّن هو "{{ weakest_asset.client_asset_name }}" ({{ weakest_asset.current_score }}/100) — إضافة أول دليل عليه يرفع جواز الشركة بأكمله.</div>
   </div>
   {% endif %}
+  {% endif %}
 
-  <footer>سنع — ملخص يمكن الرجوع إلى تفاصيله · القيمة المالية تحتاج معلومات موثقة</footer>
+  <footer>{% if report_view == 'plan' %}سنع — خطة التنفيذ{% elif report_view == 'details' %}سنع — تفاصيل Sana Scan{% else %}سنع — الملخص التنفيذي{% endif %}</footer>
 
 </div>
-{% if human_review and human_review.settings.available and not human_review.review %}
+{% if report_view == 'main' and human_review and human_review.settings.available and not human_review.review %}
 <script>
 const reviewCaseId={{ (scan_case.case_id if scan_case else '')|tojson }};
 const csrf=document.querySelector('meta[name="csrf-token"]').content;

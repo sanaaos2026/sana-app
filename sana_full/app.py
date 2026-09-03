@@ -8364,6 +8364,39 @@ def _build_scan_report_context(company_id, case_id=None):
     client_missing_evidence = _client_missing_evidence(
         scan.get("missing_evidence") or []
     )
+    priority_source_ids = {
+        str(source_id)
+        for source_id in ((bottleneck or opportunity or {}).get("source_ids") or [])
+    }
+    executive_signals = [
+        item for item in evidence_citations
+        if str(item.get("source_id")) in priority_source_ids
+    ]
+    if len(executive_signals) < 3:
+        existing_signal_ids = {
+            str(item.get("source_id")) for item in executive_signals
+        }
+        executive_signals.extend(
+            item for item in evidence_citations
+            if str(item.get("source_id")) not in existing_signal_ids
+        )
+    executive_signals = executive_signals[:3]
+    decision_ready = status in {"REVIEW_REQUIRED", "COMPLETE"}
+    current_decision = (
+        decisions[0] if decisions
+        else proposed_decision if decision_ready else None
+    )
+    next_action = next(
+        (
+            item for item in initiatives
+            if item.get("decision_id") and decision_ready
+        ),
+        None,
+    )
+    execution_plan_available = bool(
+        decision_ready
+        and any(item.get("decision_id") for item in initiatives)
+    )
     diagnostic_review = {
         "contract_version": "SANA-DIAGNOSTIC-REVIEW-v1",
         "snapshot": {
@@ -8444,6 +8477,11 @@ def _build_scan_report_context(company_id, case_id=None):
         "scan_initiatives": initiatives,
         "scan_unplanned_decisions": unplanned_decisions,
         "scan_executive_answer": executive_answer,
+        "scan_executive_signals": executive_signals,
+        "scan_current_decision": current_decision,
+        "scan_next_action": next_action,
+        "scan_decision_ready": decision_ready,
+        "scan_execution_plan_available": execution_plan_available,
         "scan_what_not_do": what_not_do,
         "scan_journey": scan_journey,
         "scan_score_progress": {
@@ -8562,7 +8600,37 @@ def _build_passport_context(company_id):
         context["human_review"] = client_payload(db, company_id, case_id)
     else:
         context["human_review"] = None
+    context["report_view"] = "main"
+    context["report_details_url"] = f"/company/{company_id}/scan-report/details"
+    context["execution_plan_url"] = f"/company/{company_id}/execution-plan"
+    context["report_pdf_url"] = f"/api/companies/{company_id}/scan/report-pdf"
+    context["execution_plan_pdf_url"] = (
+        f"/api/companies/{company_id}/scan/report-pdf?view=execution-plan"
+    )
+    context["adaptive_questions_url"] = (
+        f"/case/{case_id}#sdsSection" if case_id else "/assessment"
+    )
     return context
+
+
+def _render_scan_report_view(company_id, report_view):
+    company = get_db().execute(
+        "SELECT company_id FROM companies WHERE company_id=?", (company_id,)
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(company["company_id"])
+    if guard:
+        return guard
+    scan_redirect = _client_scan_result_redirect(company_id)
+    if scan_redirect:
+        return scan_redirect
+    ctx = _build_passport_context(company_id)
+    from flask_wtf.csrf import generate_csrf
+    ctx["csrf_value"] = generate_csrf()
+    ctx["report_view"] = report_view
+    return render_template("14-passport-report.html", **ctx)
+
 
 @app.route("/company/<company_id>/scan-report")
 def scan_report_html(company_id):
@@ -8589,13 +8657,17 @@ def scan_report_html(company_id):
                 "error": "EXPERT_SUMMARY_NOT_AVAILABLE",
             }), 404
         return render_template("25-expert-review-summary.html", summary=summary)
-    scan_redirect = _client_scan_result_redirect(company_id)
-    if scan_redirect:
-        return scan_redirect
-    ctx = _build_passport_context(company_id)
-    from flask_wtf.csrf import generate_csrf
-    ctx["csrf_value"] = generate_csrf()
-    return render_template("14-passport-report.html", **ctx)
+    return _render_scan_report_view(company_id, "main")
+
+
+@app.route("/company/<company_id>/scan-report/details")
+def scan_report_details_html(company_id):
+    return _render_scan_report_view(company_id, "details")
+
+
+@app.route("/company/<company_id>/execution-plan")
+def execution_plan_html(company_id):
+    return _render_scan_report_view(company_id, "plan")
 
 
 @app.route("/api/cases/<case_id>/human-review", methods=["GET", "POST", "DELETE"])
@@ -8717,9 +8789,15 @@ def passport_report_pdf(company_id):
         ctx = _build_passport_context(company_id)
         if not ctx:
             return jsonify({"success": False, "error": "BUILD_FAILED"}), 500
+        execution_plan_export = request.args.get("view") == "execution-plan"
+        ctx["report_view"] = "plan" if execution_plan_export else "main"
         html_string = render_template("14-passport-report.html", **ctx)
         safe_name = ctx["company"]["name"].replace("/", "-")
-        download_name = f"Sana-Scan_{safe_name}.pdf"
+        download_name = (
+            f"Sana-Execution-Plan_{safe_name}.pdf"
+            if execution_plan_export
+            else f"Sana-Scan_{safe_name}.pdf"
+        )
 
     # lazy import — weasyprint يحتاج libpango كـ system lib
     import weasyprint  # noqa: PLC0415
