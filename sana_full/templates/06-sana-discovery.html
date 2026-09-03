@@ -199,7 +199,13 @@
   .period-field .followup-input {
     background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.2);
     border-radius: 10px; padding: 11px 10px; min-height: 45px;
-    width: 100%; box-sizing: border-box;
+    width: 100%; min-width: 0; box-sizing: border-box;
+  }
+  .period-field .followup-input[type="date"] {
+    display: block;
+    font-size: 16px;
+    color: #fff;
+    -webkit-text-fill-color: #fff;
   }
   .period-field .followup-input::-webkit-calendar-picker-indicator {
     cursor: pointer; opacity: .78;

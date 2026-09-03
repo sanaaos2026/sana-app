@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import unittest
 
@@ -79,6 +80,104 @@ class SanaScanUserUxAcceptanceTests(unittest.TestCase):
             self.assertIn(f'aria-label="{label}"', DISCOVERY)
         self.assertIn("unicode-bidi: plaintext", DISCOVERY)
         self.assertIn("@media (max-width: 380px)", DISCOVERY)
+
+    def test_g_webkit_iphone_custom_dates_stay_readable_and_validate_order(self):
+        browser_required = os.environ.get("SANA_REQUIRE_BROWSER_TESTS") == "1"
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            if browser_required:
+                self.fail("Playwright is required for the WebKit iPhone date check")
+            self.skipTest("Playwright is not installed")
+
+        styles = DISCOVERY.split("<style>", 1)[1].split("</style>", 1)[0]
+        html = f"""<!doctype html>
+        <html lang="ar" dir="rtl"><head><meta name="viewport"
+          content="width=device-width, initial-scale=1"><style>{styles}</style></head>
+        <body><main id="stage"><div class="calibration-wrap">
+          <button type="button" class="period-option" id="custom-period"
+            aria-controls="custom-fields">أحدّد الفترة بنفسي</button>
+          <div id="custom-fields" hidden>
+            <div class="period-custom-fields" aria-label="حدد الفترة بنفسك">
+              <div class="period-field"><label for="baseline-start">من</label>
+                <input class="followup-input" type="date" id="baseline-start"
+                  dir="ltr" lang="en-CA" aria-label="تاريخ بداية الفترة"></div>
+              <div class="period-field"><label for="baseline-end">إلى</label>
+                <input class="followup-input" type="date" id="baseline-end"
+                  dir="ltr" lang="en-CA" aria-label="تاريخ نهاية الفترة"></div>
+            </div>
+          </div>
+          <div id="calibration-error" class="period-error" role="alert"></div>
+          <button type="button" class="outro-btn period-continue" id="continue">
+            متابعة</button>
+        </div></main><script>
+          document.querySelector('#custom-period').onclick = () => {{
+            document.querySelector('#custom-fields').hidden = false;
+          }};
+          document.querySelector('#continue').onclick = () => {{
+            const start = document.querySelector('#baseline-start').value;
+            const end = document.querySelector('#baseline-end').value;
+            if (end < start) document.querySelector('#calibration-error').textContent =
+              'تأكد أن تاريخ «إلى» بعد تاريخ «من».';
+          }};
+        </script></body></html>"""
+
+        with sync_playwright() as playwright:
+            launch_errors = []
+            try:
+                browser = playwright.webkit.launch(headless=True)
+            except Exception as exc:
+                launch_errors.append(str(exc))
+                browser = None
+                nix_webkits = sorted(
+                    Path("/nix/store").glob("*-playwright-webkit/pw_run.sh")
+                )
+                for executable in reversed(nix_webkits):
+                    try:
+                        browser = playwright.webkit.launch(
+                            headless=True, executable_path=str(executable)
+                        )
+                        break
+                    except Exception as fallback_exc:
+                        launch_errors.append(str(fallback_exc))
+            if browser is None:
+                message = "Playwright WebKit is unavailable: " + " | ".join(
+                    launch_errors
+                )
+                if browser_required:
+                    self.fail(f"{message}; browser verification is required")
+                self.skipTest(message)
+
+            context = browser.new_context(**playwright.devices["iPhone 13"])
+            page = context.new_page()
+            page.set_content(html, wait_until="domcontentloaded")
+            page.get_by_role("button", name="أحدّد الفترة بنفسي").click()
+
+            start = page.get_by_label("تاريخ بداية الفترة")
+            end = page.get_by_label("تاريخ نهاية الفترة")
+            for field, label in ((start, "من"), (end, "إلى")):
+                self.assertTrue(field.is_visible())
+                self.assertTrue(page.get_by_text(label, exact=True).is_visible())
+                box = field.bounding_box()
+                self.assertIsNotNone(box)
+                self.assertGreaterEqual(box["width"], 120)
+                self.assertEqual(
+                    "ltr", field.evaluate("element => getComputedStyle(element).direction")
+                )
+
+            start.fill("2026-09-20")
+            end.fill("2026-09-01")
+            self.assertEqual("2026-09-20", start.input_value())
+            self.assertEqual("2026-09-01", end.input_value())
+            page.get_by_role("button", name="متابعة").click()
+
+            error = page.get_by_role("alert")
+            self.assertTrue(error.is_visible())
+            self.assertEqual(
+                "تأكد أن تاريخ «إلى» بعد تاريخ «من».", error.inner_text()
+            )
+            context.close()
+            browser.close()
 
 
 if __name__ == "__main__":
