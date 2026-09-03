@@ -107,9 +107,8 @@ def acquire_schema_lock(db):
 
     The lock is transaction-scoped, so it is released automatically when the
     caller commits or rolls back.  A short lock timeout is intentional:
-    startup must not make the web process wait forever behind a long-running
-    business transaction.  The caller can retry initialization on a later
-    startup/request after rolling back the timed-out transaction.
+    startup must not wait forever behind either another initializer or a
+    long-running transaction holding a relation lock needed by DDL.
     """
     if getattr(db, "_schema_lock_acquired", False) is True:
         return
@@ -141,6 +140,10 @@ def acquire_schema_lock(db):
                 f"{timeout_seconds} seconds"
             )
         time.sleep(min(0.1, remaining))
+    db.execute(
+        "SELECT set_config('lock_timeout', ?, true)",
+        (f"{timeout_seconds}s",),
+    )
     try:
         db._schema_lock_acquired = True
     except AttributeError:
