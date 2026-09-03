@@ -30,7 +30,12 @@ def _schema_ready(connect_db, has_required_tables, has_required_columns):
             and has_required_columns(
                 db,
                 {
-                    "companies": ("sds_done", "main_goal"),
+                    "companies": (
+                        "sds_done",
+                        "main_goal",
+                        "business_type",
+                        "respondent_role",
+                    ),
                     "user_accounts": (
                         "admin_role",
                         "account_status",

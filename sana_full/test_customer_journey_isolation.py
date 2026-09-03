@@ -15,6 +15,11 @@ import sana_knowledge
 
 
 DISCOVERY_ANSWERS = {
+    "fit_gate": {
+        "operating_duration": "ONE_PLUS",
+        "paying_customers": "YES",
+        "delivery_mode": "TEAM_DELIVERY",
+    },
     "q1": "زيادة المبيعات بشكل منضبط",
     "q2": "📉 المبيعات",
     "q3": "📊 البيانات والتقارير",
@@ -145,7 +150,8 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
                 "name": f"شركة رحلة {label}",
                 "sector": "consulting",
                 "employee_count": 12,
-                "business_description": "خدمات استشارية للشركات الصغيرة",
+                "business_type": "management_consulting",
+                "respondent_role": "owner_founder",
                 "goal_90_days": "تحسين التحويل خلال 90 يومًا",
                 "primary_challenge": "تشتت الأدلة والقرارات",
             },
@@ -216,7 +222,10 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
             for item in later_scan_data["missing_evidence"]
         ))
 
-        case_page = client_a.get(f"/case/{later_case_id}")
+        case_page = client_a.get(
+            f"/case/{later_case_id}",
+            follow_redirects=True,
+        )
         case_html = case_page.get_data(as_text=True)
         self.assertIn("وش الفترة اللي عندك عنها بيانات فعلية؟", case_html)
         self.assertIn("آخر 30 يوم", case_html)
@@ -332,7 +341,10 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
             )
         )
 
-        decision_file = client_a.get(f"/case/{customer_a['case_id']}")
+        decision_file = client_a.get(
+            f"/case/{customer_a['case_id']}",
+            follow_redirects=True,
+        )
         self.assertEqual(200, decision_file.status_code)
         decision_html = decision_file.get_data(as_text=True)
         self.assertNotIn(">ملف القرار</a>", decision_html)

@@ -56,6 +56,97 @@ SECTORS = [
 ]
 SECTOR_KEYS = {s["key"] for s in SECTORS}
 
+SECTOR_BUSINESS_TYPES = {
+    "legal": [
+        {"key": "law_firm", "label": "مكتب أو شركة محاماة"},
+        {"key": "independent_lawyer", "label": "محامٍ أو مستشار قانوني مستقل"},
+        {"key": "legal_consulting", "label": "استشارات قانونية وامتثال"},
+        {"key": "legal_tech", "label": "منصة أو تقنية قانونية"},
+    ],
+    "food": [
+        {"key": "restaurant_cafe", "label": "مطعم أو مقهى"},
+        {"key": "cloud_kitchen", "label": "مطبخ سحابي"},
+        {"key": "catering", "label": "تموين وضيافة"},
+        {"key": "food_brand", "label": "علامة أو تصنيع غذائي"},
+        {"key": "hotel_hospitality", "label": "فندق أو منشأة ضيافة"},
+    ],
+    "manufacturing": [
+        {"key": "factory", "label": "مصنع"},
+        {"key": "workshop", "label": "ورشة إنتاج"},
+        {"key": "perfume_cosmetics", "label": "عطور أو مستحضرات تجميل"},
+        {"key": "private_label", "label": "تصنيع للغير / علامة خاصة"},
+        {"key": "industrial_supplier", "label": "مورد صناعي"},
+    ],
+    "retail": [
+        {"key": "physical_store", "label": "متجر فعلي"},
+        {"key": "ecommerce", "label": "متجر إلكتروني"},
+        {"key": "omnichannel", "label": "متجر فعلي وإلكتروني"},
+        {"key": "wholesale", "label": "توزيع أو جملة"},
+        {"key": "marketplace", "label": "منصة سوق متعددة البائعين"},
+    ],
+    "construction": [
+        {"key": "main_contractor", "label": "مقاول رئيسي"},
+        {"key": "subcontractor", "label": "مقاول متخصص أو باطن"},
+        {"key": "engineering_office", "label": "مكتب هندسي"},
+        {"key": "project_management", "label": "إدارة مشاريع"},
+        {"key": "building_supplier", "label": "مواد ومستلزمات بناء"},
+    ],
+    "tech": [
+        {"key": "saas", "label": "منتج SaaS"},
+        {"key": "software_company", "label": "شركة تطوير برمجيات"},
+        {"key": "tech_consulting", "label": "استشارات تقنية"},
+        {"key": "digital_platform", "label": "منصة أو سوق رقمي"},
+        {"key": "managed_it", "label": "خدمات تقنية أو أمن سيبراني مُدارة"},
+    ],
+    "consulting": [
+        {"key": "management_consulting", "label": "استشارات إدارية"},
+        {"key": "marketing_agency", "label": "وكالة تسويق أو إبداع"},
+        {"key": "finance_accounting", "label": "محاسبة أو استشارات مالية"},
+        {"key": "hr_recruitment", "label": "موارد بشرية أو توظيف"},
+        {"key": "training_advisory", "label": "تدريب أو استشارات متخصصة"},
+    ],
+    "realestate": [
+        {"key": "property_platform", "label": "منصة عقارية"},
+        {"key": "brokerage_office", "label": "مكتب وساطة عقارية"},
+        {"key": "developer", "label": "مطور عقاري"},
+        {"key": "property_management", "label": "إدارة أملاك"},
+        {"key": "valuation_consulting", "label": "تقييم أو استشارات عقارية"},
+        {"key": "facilities_management", "label": "إدارة مرافق"},
+    ],
+    "health": [
+        {"key": "clinic", "label": "عيادة"},
+        {"key": "medical_center", "label": "مجمع أو مركز طبي"},
+        {"key": "hospital", "label": "مستشفى"},
+        {"key": "pharmacy", "label": "صيدلية أو سلسلة صيدليات"},
+        {"key": "lab", "label": "مختبر أو مركز تشخيص"},
+        {"key": "digital_home_health", "label": "صحة رقمية أو رعاية منزلية"},
+    ],
+    "education": [
+        {"key": "school", "label": "مدرسة أو روضة"},
+        {"key": "training_center", "label": "مركز تدريب"},
+        {"key": "academy", "label": "أكاديمية متخصصة"},
+        {"key": "edtech", "label": "منصة تعليمية تقنية"},
+        {"key": "independent_trainer", "label": "مدرب أو معلم مستقل"},
+    ],
+    "other": [
+        {"key": "service_business", "label": "شركة خدمات"},
+        {"key": "office_agency", "label": "مكتب أو وكالة"},
+        {"key": "platform", "label": "منصة رقمية"},
+        {"key": "store", "label": "متجر"},
+        {"key": "manufacturer", "label": "مصنّع أو منتج"},
+        {"key": "independent", "label": "مهني مستقل"},
+    ],
+}
+
+RESPONDENT_ROLES = [
+    {"key": "owner_founder", "label": "مالك أو مؤسس"},
+    {"key": "ceo_general_manager", "label": "رئيس تنفيذي أو مدير عام"},
+    {"key": "department_manager", "label": "مدير إدارة"},
+    {"key": "operations", "label": "مسؤول تشغيل"},
+    {"key": "sales_marketing", "label": "مسؤول مبيعات أو تسويق"},
+    {"key": "advisor_other", "label": "مستشار أو صفة أخرى"},
+]
+
 
 """
 سنع — الخادم الأساسي (MVP الحقيقي)
@@ -805,6 +896,8 @@ def _reset_company_experience(db, company_id):
         "name": "شركة جديدة",
         "sector": None,
         "sector_other": None,
+        "business_type": None,
+        "respondent_role": None,
         "city": None,
         "stage": None,
         "employee_count": None,
@@ -1365,6 +1458,10 @@ def init_db(force=False):
             conn.execute("ALTER TABLE companies ADD COLUMN success_criteria TEXT")
         if "sector_other" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN sector_other TEXT")
+        if "business_type" not in companies_cols:
+            conn.execute("ALTER TABLE companies ADD COLUMN business_type TEXT")
+        if "respondent_role" not in companies_cols:
+            conn.execute("ALTER TABLE companies ADD COLUMN respondent_role TEXT")
         if "website_url" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN website_url TEXT")
         if "social_media_url" not in companies_cols:
@@ -2405,7 +2502,8 @@ def onboarding():
     if not account:
         return redirect(url_for("login"))
     company = get_db().execute(
-        """SELECT name, sector, sector_other, employee_count, business_description,
+        """SELECT name, sector, sector_other, business_type, respondent_role,
+                  employee_count, business_description,
                   goal_90_days, primary_challenge, sds_done
            FROM companies WHERE company_id=?""",
         (account["company_id"],),
@@ -2416,14 +2514,26 @@ def onboarding():
         )
 
     if request.method == "GET":
-        return render_template("11-onboarding.html", company=company or {})
+        return render_template(
+            "11-onboarding.html",
+            company=company or {},
+            sectors=SECTORS,
+            sector_business_types=SECTOR_BUSINESS_TYPES,
+            respondent_roles=RESPONDENT_ROLES,
+            onboarding_submit_url=url_for("onboarding"),
+            discovery_url=url_for("discovery"),
+        )
 
     body = request.get_json(silent=True) or request.form
     name = (body.get("name") or "").strip()
     sector_key = (body.get("sector") or "").strip() or None
     sector_other = (body.get("sector_other") or "").strip() or None
+    business_type = (body.get("business_type") or "").strip() or None
+    respondent_role = (body.get("respondent_role") or "").strip() or None
     employee_count = body.get("employee_count")
-    business_description = (body.get("business_description") or "").strip()
+    legacy_business_description = (
+        body.get("business_description") or ""
+    ).strip()
     goal_90_days = (body.get("goal_90_days") or "").strip()
     primary_challenge = (body.get("primary_challenge") or "").strip()
     try:
@@ -2435,25 +2545,67 @@ def onboarding():
         return jsonify({"success": False, "error": "MISSING_NAME", "message": "اسم الشركة مطلوب."}), 400
     if not sector_key:
         return jsonify({"success": False, "error": "MISSING_SECTOR", "message": "تحديد القطاع إلزامي قبل المتابعة."}), 400
+    if sector_key not in SECTOR_KEYS:
+        return jsonify({"success": False, "error": "INVALID_SECTOR", "message": "اختر قطاعًا من القائمة."}), 400
     if sector_key == "other" and not sector_other:
         return jsonify({"success": False, "error": "MISSING_SECTOR_OTHER", "message": "يرجى كتابة وصف قطاعك عند اختيار 'أخرى'."}), 400
-    if not business_description or not goal_90_days or not primary_challenge:
+    if not goal_90_days or not primary_challenge:
         return jsonify({
             "success": False,
             "error": "INCOMPLETE_COMPANY_SETUP",
-            "message": "أكمل وصف النشاط والهدف والتحدي قبل المتابعة.",
+            "message": "أكمل النتيجة المطلوبة والتحدي قبل المتابعة.",
         }), 400
+    role_labels = {item["key"]: item["label"] for item in RESPONDENT_ROLES}
+    structured_profile = bool(business_type or respondent_role)
+    if structured_profile:
+        allowed_business_types = {
+            item["key"] for item in SECTOR_BUSINESS_TYPES.get(sector_key, [])
+        }
+        if business_type not in allowed_business_types:
+            return jsonify({
+                "success": False,
+                "error": "INVALID_BUSINESS_TYPE",
+                "message": "اختر نوع النشاط المناسب للقطاع.",
+            }), 400
+        if respondent_role not in role_labels:
+            return jsonify({
+                "success": False,
+                "error": "INVALID_RESPONDENT_ROLE",
+                "message": "اختر صفتك في العمل.",
+            }), 400
+    elif not legacy_business_description:
+        return jsonify({
+            "success": False,
+            "error": "MISSING_BUSINESS_PROFILE",
+            "message": "اختر نوع النشاط وصفتك في العمل.",
+        }), 400
+    if structured_profile:
+        business_type_labels = {
+            item["key"]: item["label"]
+            for item in SECTOR_BUSINESS_TYPES[sector_key]
+        }
+        sector_labels = {item["key"]: item["label"] for item in SECTORS}
+        business_description = (
+            f"{sector_other} — {business_type_labels[business_type]}"
+            if sector_key == "other"
+            else f"{sector_labels[sector_key]} — {business_type_labels[business_type]}"
+        )
+    else:
+        business_description = legacy_business_description
 
     db = get_db()
     db.execute(
         """UPDATE companies
-           SET name=?, sector=?, sector_other=?, employee_count=?,
-               business_description=?, goal_90_days=?, primary_challenge=?
+           SET name=?, sector=?, sector_other=?, business_type=?,
+               respondent_role=?, employee_count=?, business_description=?,
+               goal_90_days=?, primary_challenge=?
            WHERE company_id=?""",
         (
             name,
             sector_key,
             sector_other if sector_key == "other" else None,
+            business_type,
+            respondent_role,
             employee_count,
             business_description,
             goal_90_days,
@@ -2463,7 +2615,10 @@ def onboarding():
     )
     db.commit()
 
-    return jsonify({"success": True, "data": {"redirect": "/discovery"}})
+    return jsonify({
+        "success": True,
+        "data": {"redirect": url_for("discovery")},
+    })
 
 
 @app.route("/api/testing/reset-experience", methods=["POST"])
@@ -13269,16 +13424,6 @@ def company_memory_confirm_api(company_id, memory_id):
         return jsonify({"success": False, "error": str(exc)}), status
 
 
-if __name__ == "__main__":
-    _enforce_web_process_invariants()
-    _start_startup_initialization(is_serving_process=True)
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", "5000")),
-        debug=False,
-        use_reloader=False,
-    )
-
 @app.route("/api/companies/<company_id>/memory/conflicts/<conflict_id>/resolve", methods=["POST"])
 def company_memory_conflict_api(company_id, conflict_id):
     guard = enforce_entity_company_scope(company_id)
@@ -13311,3 +13456,14 @@ def company_memory_history_api(company_id, memory_id):
     if not data:
         return jsonify({"success": False, "error": "MEMORY_NOT_FOUND"}), 404
     return jsonify({"success": True, "data": data})
+
+
+if __name__ == "__main__":
+    _enforce_web_process_invariants()
+    _start_startup_initialization(is_serving_process=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", "5000")),
+        debug=False,
+        use_reloader=False,
+    )
