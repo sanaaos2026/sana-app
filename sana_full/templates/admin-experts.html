@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="csrf-token" content="{{ csrf_token() }}">
-<script>(function(){var m=document.querySelector('meta[name="csrf-token"]');if(!m)return;var t=m.content;var S=new Set(['POST','PUT','PATCH','DELETE']);var F=window.fetch.bind(window);window.fetch=function(u,o){o=o||{};if(S.has((o.method||'GET').toUpperCase())){o.headers=Object.assign({'X-CSRFToken':t,'Content-Type':'application/json'},o.headers||{});}return F(u,o);};})();</script>
+{% include '_csrf-fetch.html' %}
 <title>سنع — إدارة الخبراء</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -565,6 +564,7 @@ async function submitNewExpert() {
 
   const res  = await fetch('/api/experts', {
     method: 'POST',
+    headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
       name, domain_expertise: domain,
       phone: document.getElementById('f-phone').value.trim(),

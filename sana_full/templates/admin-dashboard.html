@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="csrf-token" content="{{ csrf_token() }}">
+{% include '_csrf-fetch.html' %}
 <meta name="color-scheme" content="light">
 <title>سنع — الإدارة الداخلية</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -61,10 +61,9 @@ main{max-width:1180px;margin:auto;padding:24px 18px 70px}.headline{display:flex;
   <section id="audit" class="section"><div class="loading">جارٍ تحميل السجل...</div></section>
 </main>
 <script>
-const csrf=document.querySelector('meta[name="csrf-token"]').content;
 const esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(url,options={}){
-  options.headers=Object.assign({'X-CSRFToken':csrf,'Accept':'application/json'},options.headers||{});
+  options.headers=Object.assign({'Accept':'application/json'},options.headers||{});
   let r;
   try{r=await fetch(url,options)}catch(_e){throw new Error('تعذر الاتصال بالخادم. أعد المحاولة.')}
   const contentType=r.headers.get('content-type')||'';

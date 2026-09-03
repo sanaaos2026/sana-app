@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="csrf-token" content="{{ csrf_token() }}">
+  {% include '_csrf-fetch.html' %}
   <title>{{ seo_title }}</title>
   {% include '_seo-head.html' %}
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -44,10 +44,9 @@
   <div class="message" id="message"></div>
 </section></main>
 <script>
-const csrf=document.querySelector('meta[name="csrf-token"]').content;
 const fmt=n=>`${(n/100).toLocaleString('ar-SA')} ريال`;
 let authenticated=false,code='',current={price_minor:0,discount_minor:0,amount_now_minor:0};
-async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf},body:JSON.stringify(body)});const j=await r.json();if(!r.ok||!j.success)throw new Error(j.message||j.error||'تعذر الطلب');return j.data}
+async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok||!j.success)throw new Error(j.message||j.error||'تعذر الطلب');return j.data}
 function draw(){summaryPrice.textContent=fmt(current.price_minor);summaryDiscount.textContent=fmt(current.discount_minor);summaryNow.textContent=fmt(current.amount_now_minor);checkout.textContent=current.amount_now_minor===0?'ابدأ مجانًا':'اشترك الآن'}
 couponToggle.onclick=()=>couponBox.classList.toggle('open');
 applyCoupon.onclick=async()=>{message.textContent='';try{current=await post('/api/billing/quote',{code:couponCode.value});code=current.coupon_code||'';draw()}catch(e){message.textContent=e.message}};

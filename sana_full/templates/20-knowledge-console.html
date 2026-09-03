@@ -3,15 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="csrf-token" content="{{ csrf_token() }}">
-  <script>
-    (function(){
-      var m=document.querySelector('meta[name="csrf-token"]'); if(!m)return;
-      var t=m.content, S=new Set(['POST','PUT','PATCH','DELETE']), F=window.fetch.bind(window);
-      window.fetch=function(u,o){o=o||{};if(S.has((o.method||'GET').toUpperCase())){
-        o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});}return F(u,o);};
-    })();
-  </script>
+  {% include '_csrf-fetch.html' %}
   <title>سنع — مكتبة المعرفة</title>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>

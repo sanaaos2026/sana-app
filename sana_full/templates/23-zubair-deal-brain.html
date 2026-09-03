@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="csrf-token" content="{{ csrf_token() }}">
+  {% include '_csrf-fetch.html' %}
   <title>Zubair Deal Brain — Private Beta</title>
   <style>
     :root{--navy:#0B132B;--deep:#080E1F;--teal:#0EA5A5;--gold:#F2B233;--paper:#F5F6FB;--line:#DEE1EC;--muted:#6E7580;--red:#B23A2E}
@@ -26,20 +26,6 @@
   </style>
 </head>
 <body>
-<script>
-(function(){
-  const meta=document.querySelector('meta[name="csrf-token"]');
-  if(!meta)return;
-  const original=window.fetch.bind(window);
-  window.fetch=function(url,options){
-    options=options||{};
-    if(new Set(['POST','PUT','PATCH','DELETE']).has((options.method||'GET').toUpperCase())){
-      options.headers=Object.assign({'X-CSRFToken':meta.content},options.headers||{});
-    }
-    return original(url,options);
-  };
-})();
-</script>
 <header><div><h1>Zubair Deal Brain</h1><div class="beta">PRIVATE BETA · حساب المؤسس/المشرف فقط</div></div><a href="/home" style="color:#fff;font-size:12px">غرفة القرار ←</a></header>
 <main>
   <div class="intro"><h2>سجّل ما حدث…</h2><p>حوّل ملاحظة أو اتصالًا إلى مسودة قابلة للمراجعة. لا يُحدَّث أي سجل تجاري قبل تأكيدك.</p></div>

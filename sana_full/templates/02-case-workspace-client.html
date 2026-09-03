@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="csrf-token" content="{{ csrf_token() }}">
-<script>(function(){var m=document.querySelector('meta[name="csrf-token"]'),t=m.content,F=window.fetch.bind(window);window.fetch=async function(u,o){o=o||{};if(['POST','PUT','PATCH','DELETE'].includes((o.method||'GET').toUpperCase()))o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});var r=await F(u,o);if(r.status===401){try{var j=await r.clone().json();if(j.redirect)window.location.assign(j.redirect)}catch(_){}}return r}})();</script>
+{% include '_csrf-fetch.html' %}
 <meta name="color-scheme" content="light">
 <title>سنع — نتيجة التشخيص</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">

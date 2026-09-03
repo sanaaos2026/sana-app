@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="csrf-token" content="{{ csrf_token() }}">
+{% include '_csrf-fetch.html' %}
 <title>وش تغير من آخر مرة؟ — سنع</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -19,9 +19,9 @@ input,select,textarea{width:100%;margin-top:10px;padding:12px;border:1px solid v
 </style></head>
 <body><main><div id="app"><div class="kicker">مراجعة سريعة</div><h1 class="title">وش تغير من آخر مرة؟</h1><p class="lead">سنراجع آخر صورة عندنا ونركز فقط على الجديد.</p><button class="btn" onclick="start()">ابدأ المراجعة</button><a class="secondary" href="/discovery?full=1">أبغى أراجع كل شيء من جديد</a></div></main>
 <script>
-const csrf=document.querySelector('meta[name="csrf-token"]').content,app=document.getElementById('app');let checkin=null,index=0,answers=[];
+const app=document.getElementById('app');let checkin=null,index=0,answers=[];
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function api(url,options={}){options.headers=Object.assign({'X-CSRFToken':csrf,'Content-Type':'application/json'},options.headers||{});const r=await fetch(url,options),j=await r.json();if(!r.ok||!j.success)throw Error(j.message||j.error);return j.data}
+async function api(url,options={}){options.headers=Object.assign({'Content-Type':'application/json'},options.headers||{});const r=await fetch(url,options),j=await r.json();if(!r.ok||!j.success)throw Error(j.message||j.error);return j.data}
 async function start(){try{checkin=await api('/api/returning-checkin',{method:'POST',body:'{}'});renderQuestion()}catch(e){app.innerHTML=`<div class="card">${esc(e.message)}</div>`}}
 function renderQuestion(){const q=checkin.questions[index],pct=Math.round(index/checkin.questions.length*100);app.innerHTML=`<div class="progress"><span style="width:${pct}%"></span></div><div class="meta">سؤال ${index+1} من ${checkin.questions.length}</div><div class="card"><div class="q">${esc(q.text)}</div>${renderInput(q)}<button class="btn" onclick="next()">التالي</button><div id="error" class="meta"></div></div>`}
 function renderInput(q){if(q.kind==='metric')return `<input id="numeric" type="number" step="any" placeholder="القيمة الحالية (${esc(q.unit||'الوحدة السابقة')})"><div class="dates"><input id="periodStart" type="date" aria-label="بداية الفترة"><input id="periodEnd" type="date" aria-label="نهاية الفترة"></div><select id="season"><option value="">سياق الفترة غير معروف</option><option>فترة تشغيل اعتيادية</option><option>موسم مرتفع</option><option>موسم منخفض</option></select>`;return `<div class="choices">${q.options.map(x=>`<button class="choice" data-value="${esc(x)}" onclick="choose(this)">${esc(x)}</button>`).join('')}</div>${q.followup?`<textarea id="note" rows="2" placeholder="${esc(q.followup)}" hidden></textarea>`:''}`}

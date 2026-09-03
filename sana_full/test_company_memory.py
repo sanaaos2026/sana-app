@@ -1,8 +1,10 @@
 import json
 import os
+import re
 import secrets
 import unittest
 from datetime import date, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 from flask import render_template
@@ -265,9 +267,12 @@ class CompanyMemoryTest(unittest.TestCase):
         memory = retrieve_memory(self.db, self.company_a)
         item = memory["items"][0]
         with sana_app.app.test_request_context("/discovery"):
+            template_context = sana_app.p0_template_context()
+            template_context["company_id"] = self.company_a
             html = render_template(
                 "06-sana-discovery.html", full_reassessment=False,
-                company_memory=memory, company_id=self.company_a,
+                company_memory=memory,
+                **template_context,
             )
         expected_path = (
             f"/api/companies/{self.company_a}/memory/"
@@ -278,7 +283,8 @@ class CompanyMemoryTest(unittest.TestCase):
         )
         self.assertIn("encodeURIComponent(memoryId)", html)
         self.assertIn('name="csrf-token"', html)
-        self.assertIn("'X-CSRFToken':t", html)
+        self.assertIn('headers.set("X-CSRFToken", token)', html)
+        self.assertIn("window.__sanaCsrfFetchInstalled", html)
 
         client = sana_app.app.test_client()
         with patch.object(sana_app, "enforce_entity_company_scope", return_value=None), \
@@ -299,6 +305,86 @@ class CompanyMemoryTest(unittest.TestCase):
         self.assertEqual(1, verified["summary"]["reusable"])
         self.assertTrue(verified["items"][0]["is_current"])
         self.assertEqual("VERIFIED", verified["items"][0]["verification_status"])
+
+    def test_templates_use_only_the_shared_csrf_fetch_guard(self):
+        templates_dir = Path(sana_app.app.template_folder)
+        shared_name = "_csrf-fetch.html"
+        shared = (templates_dir / shared_name).read_text(encoding="utf-8")
+        self.assertEqual(1, shared.count('<meta name="csrf-token"'))
+        self.assertEqual(2, shared.count("X-CSRFToken"))
+        self.assertIn("window.fetch = async function", shared)
+        self.assertIn("window.__sanaCsrfFetchInstalled", shared)
+
+        forbidden_parallel_implementations = (
+            "X-CSRF-Token",
+            "X-CSRFToken",
+            'name="csrf-token"',
+            "window.fetch=",
+            "window.fetch =",
+            "fetch.bind(window)",
+        )
+        mutating_fetch = re.compile(
+            r"fetch\s*\([^;]{0,1200}?method\s*:\s*['\"]"
+            r"(?:POST|PUT|PATCH|DELETE)['\"]",
+            re.IGNORECASE | re.DOTALL,
+        )
+        for template_path in templates_dir.glob("*.html"):
+            if template_path.name == shared_name:
+                continue
+            source = template_path.read_text(encoding="utf-8")
+            for forbidden in forbidden_parallel_implementations:
+                self.assertNotIn(
+                    forbidden, source,
+                    f"{template_path.name} has a parallel CSRF implementation",
+                )
+            if mutating_fetch.search(source):
+                self.assertIn(
+                    "{% include '_csrf-fetch.html' %}", source,
+                    f"{template_path.name} mutates through fetch without the shared guard",
+                )
+
+    def test_admin_expert_creation_keeps_json_request_contract(self):
+        template = (
+            Path(sana_app.app.template_folder) / "admin-experts.html"
+        ).read_text(encoding="utf-8")
+        create_request = re.search(
+            r"fetch\('/api/experts',\s*\{(?P<options>.*?)\}\);",
+            template,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(create_request)
+        self.assertIn(
+            "headers: {'Content-Type': 'application/json'}",
+            create_request.group("options"),
+        )
+
+        client = sana_app.app.test_client()
+        with client.session_transaction() as session_state:
+            session_state["is_admin"] = True
+        with patch.object(
+            sana_app,
+            "current_account",
+            return_value={
+                "account_id": "ACC-EXPERT-CONTRACT",
+                "company_id": self.company_a,
+            },
+        ):
+            response = client.post(
+                "/api/experts",
+                data=json.dumps({
+                    "name": "خبير اختبار عقد JSON",
+                    "domain_expertise": "اختبار العقود",
+                }),
+                content_type="application/json",
+            )
+        self.assertEqual(201, response.status_code, response.get_data(as_text=True))
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.db.execute(
+            "DELETE FROM experts WHERE expert_id=?",
+            (payload["expert_id"],),
+        )
+        self.db.commit()
 
     def test_closed_case_learning_stays_private_and_out_of_public_knowledge(self):
         before = self.db.execute(
