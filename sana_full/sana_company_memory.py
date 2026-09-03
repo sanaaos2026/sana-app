@@ -228,6 +228,22 @@ def ensure_schema(db):
     _SCHEMA_READY = True
 
 
+def require_schema(db):
+    """Confirm Company Memory is ready without running DDL in request paths."""
+    global _SCHEMA_READY
+    if _SCHEMA_READY or os.environ.get("SANA_PRODUCTION_SCHEMA_READY") == "1":
+        _SCHEMA_READY = True
+        return
+    row = db.execute(
+        "SELECT to_regclass('company_memory_items')"
+    ).fetchone()
+    if not row or row[0] is None:
+        raise RuntimeError(
+            "Company Memory schema is not initialized; run production_init.py"
+        )
+    _SCHEMA_READY = True
+
+
 def _freshness_state(observed_at, freshness_class, today=None):
     today = today or date.today()
     observed = _date(observed_at)
@@ -260,7 +276,7 @@ def record_memory(
     reason=None, source_id=None, lifecycle_status=None,
 ):
     """سجّل إصدارًا جديدًا، وحدّث المؤشر الحالي فقط لقيمة موثقة غير متعارضة."""
-    ensure_schema(db)
+    require_schema(db)
     memory_key = str(memory_key or "").strip()
     if not memory_key:
         raise ValueError("memory_key مطلوب")
@@ -467,7 +483,7 @@ def retrieve_memory(
     task_id=None, memory_keys=None, include_history=False, today=None,
 ):
     """استرجاع سياقي محدود؛ لا يعيد ذاكرة شركة أخرى ولا يخلط المعرفة العامة."""
-    ensure_schema(db)
+    require_schema(db)
     params = [company_id]
     rows = db.execute(
         """SELECT i.*, v.version_id, v.memory_id AS v_memory_id, v.memory_type AS v_memory_type,
@@ -576,7 +592,7 @@ def confirm_memory(
     presented_version_id=None,
 ):
     """تأكيد سريع ينشئ إصدارًا موثقًا؛ لا يعدّل الإصدار السابق."""
-    ensure_schema(db)
+    require_schema(db)
     open_conflict = db.execute(
         """SELECT conflict_id FROM company_memory_conflicts
            WHERE company_id=? AND memory_id=? AND status IN ('OPEN','KEPT_OPEN')
@@ -627,7 +643,7 @@ def confirm_memory(
 
 
 def list_memory_history(db, company_id, memory_id):
-    ensure_schema(db)
+    require_schema(db)
     rows = db.execute(
         """SELECT v.*,i.memory_key FROM company_memory_versions v
            JOIN company_memory_items i ON i.memory_id=v.memory_id
@@ -640,7 +656,7 @@ def list_memory_history(db, company_id, memory_id):
 
 def resolve_memory_conflict(db, company_id, conflict_id, *, action, actor_id, reason):
     """اختر قيمة بمراجعة صريحة أو أبقِ التعارض مفتوحًا."""
-    ensure_schema(db)
+    require_schema(db)
     if action not in {"accept_existing", "accept_incoming", "keep_open"}:
         raise ValueError("CONFLICT_ACTION_INVALID")
     if not str(reason or "").strip():

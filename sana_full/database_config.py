@@ -144,6 +144,10 @@ def acquire_schema_lock(db):
         "SELECT set_config('lock_timeout', ?, true)",
         (f"{timeout_seconds}s",),
     )
+    db.execute(
+        "SELECT set_config('statement_timeout', ?, true)",
+        (f"{timeout_seconds}s",),
+    )
     try:
         db._schema_lock_acquired = True
     except AttributeError:
