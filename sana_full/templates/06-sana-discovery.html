@@ -356,6 +356,7 @@ const caseUrl = (template, caseId) =>
   template.replace('__CASE_ID__', encodeURIComponent(caseId));
 const FULL_REASSESSMENT = {{ (full_reassessment|default(false))|tojson }};
 const COMPANY_MEMORY = {{ (company_memory|default({"items": []}))|tojson }};
+const INITIAL_DISCOVERY_DRAFT = {{ (discovery_draft or {})|tojson }};
 const MEMORY_KEY_BY_QUESTION = {
   q1: 'goal:primary',
   q2: 'problem:declared',
@@ -644,6 +645,74 @@ function showToast(msg, cb) {
   }, 1600);
 }
 
+let draftSaveTimer = null;
+let draftSaveInFlight = null;
+let discoveryFinalizing = false;
+const DRAFT_ENABLED = {{ (discovery_drafts_enabled|default(false))|tojson }};
+
+function draftSnapshot() {
+  const snapshot = JSON.parse(JSON.stringify(ans));
+  snapshot.calibration_draft = {
+    baseline_start: calibrationDraft.baseline_start || '',
+    baseline_end: calibrationDraft.baseline_end || '',
+    period_choice: calibrationPeriodChoice || ''
+  };
+  return snapshot;
+}
+
+async function saveDraftNow(keepalive = false) {
+  if (!DRAFT_ENABLED || discoveryFinalizing || step > 8) return null;
+  const request = fetch(withContext(JOURNEY_URLS.discovery_draft), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    keepalive,
+    body: JSON.stringify({ payload: draftSnapshot(), current_step: step })
+  });
+  draftSaveInFlight = request.catch(() => null).finally(() => {
+    draftSaveInFlight = null;
+  });
+  return draftSaveInFlight;
+}
+
+function scheduleDraftSave() {
+  if (!DRAFT_ENABLED || discoveryFinalizing) return;
+  clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(() => {
+    draftSaveTimer = null;
+    saveDraftNow();
+  }, 350);
+}
+
+function restoreDiscoveryDraft(draft) {
+  if (!draft || !draft.payload) return false;
+  const payload = draft.payload;
+  if (payload.fit_gate && typeof payload.fit_gate === 'object') {
+    ans.fit_gate = {
+      operating_duration: payload.fit_gate.operating_duration || null,
+      paying_customers: payload.fit_gate.paying_customers || null,
+      delivery_mode: payload.fit_gate.delivery_mode || null
+    };
+  }
+  ['q1', 'q2', 'q3', 'q4', 'q4_fu', 'q5', 'q5_text', 'q6'].forEach(key => {
+    if (typeof payload[key] === 'string') ans[key] = payload[key];
+  });
+  if (Array.isArray(payload.q7)) ans.q7 = payload.q7.slice(0, 3);
+  if (payload.diagnostic_baseline && typeof payload.diagnostic_baseline === 'object') {
+    ans.diagnostic_baseline = {...payload.diagnostic_baseline};
+  }
+  const calibration = payload.calibration_draft;
+  if (calibration && typeof calibration === 'object') {
+    calibrationDraft.baseline_start = calibration.baseline_start || '';
+    calibrationDraft.baseline_end = calibration.baseline_end || '';
+    calibrationPeriodChoice = calibration.period_choice || null;
+  }
+  const restoredStep = Number(draft.current_step);
+  if (Number.isInteger(restoredStep) && restoredStep >= 0 && restoredStep <= 8) {
+    step = restoredStep;
+  }
+  return true;
+}
+
 function transitionTo(renderFn, backward = false) {
   const cur = $screen;
   cur.classList.add(backward ? 'exiting-back' : 'exiting');
@@ -702,7 +771,8 @@ function renderFitGate() {
           <div style="font-weight:700; margin-bottom:8px;">${field.title}</div>
           <div class="period-options" data-fit-group="${field.key}">
             ${field.options.map(([value,label]) => `
-              <button type="button" class="period-option" onclick="selectFit('${field.key}','${value}',this)">${label}</button>
+              <button type="button" class="period-option${ans.fit_gate[field.key] === value ? ' selected' : ''}"
+                onclick="selectFit('${field.key}','${value}',this)">${label}</button>
             `).join('')}
           </div>
         </div>
@@ -716,6 +786,7 @@ function selectFit(key, value, button) {
   ans.fit_gate[key] = value;
   document.querySelectorAll(`[data-fit-group="${key}"] .period-option`).forEach(el => el.classList.remove('selected'));
   button.classList.add('selected');
+  scheduleDraftSave();
 }
 
 async function submitFitGate() {
@@ -740,6 +811,7 @@ async function submitFitGate() {
       return;
     }
     step = 1;
+    scheduleDraftSave();
     transitionTo(render);
   } catch (err) {
     error.textContent = err.message;
@@ -879,6 +951,7 @@ function captureCalibrationDraft() {
 
 function refreshCustomPeriod() {
   captureCalibrationDraft();
+  scheduleDraftSave();
   if (calibrationDraft.baseline_start && calibrationDraft.baseline_end) {
     renderCalibration();
   }
@@ -887,6 +960,7 @@ function refreshCustomPeriod() {
 function selectCalibrationPeriod(choice) {
   captureCalibrationDraft();
   calibrationPeriodChoice = choice;
+  scheduleDraftSave();
   renderCalibration();
 }
 
@@ -980,6 +1054,14 @@ function renderPassport(data) {
 }
 
 async function saveAndFinish() {
+  discoveryFinalizing = true;
+  if (draftSaveTimer) {
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = null;
+  }
+  if (draftSaveInFlight) {
+    await draftSaveInFlight.catch(() => {});
+  }
   let saveData = { case_id: null };
   try {
     const res = await fetch(withContext(JOURNEY_URLS.discovery_save), {
@@ -1050,8 +1132,8 @@ function renderQuestion(q) {
             placeholder="اكتب هنا..."
             value="${escHtml(textVal)}"
             id="fu-input"
-            onchange="ans['${q.textKey}']=this.value"
-            oninput="ans['${q.textKey}']=this.value">
+            onchange="ans['${q.textKey}']=this.value; scheduleDraftSave()"
+            oninput="ans['${q.textKey}']=this.value; scheduleDraftSave()">
         </div>`;
     }
     body += `
@@ -1145,6 +1227,7 @@ async function confirmMemory(questionKey, memoryId, displayedVersionId) {
       throw new Error('لم تصبح المعلومة مؤكدة؛ راجع التعارض قبل استخدامها.');
     }
     ans[questionKey] = item.value;
+    scheduleDraftSave();
     showToast('تم التأكيد؛ ستُستخدم المعلومة في هذه الإجابة.', () => render());
   } catch (error) {
     showToast(error.message || 'تعذر تأكيد المعلومة الآن.');
@@ -1155,6 +1238,7 @@ function updateMemory(questionKey) {
   const card = document.getElementById(`memory-${questionKey}`);
   if (card) card.remove();
   delete ans[questionKey];
+  scheduleDraftSave();
   showToast('لن نستخدم القيمة القديمة؛ اختر الإجابة الحالية.');
 }
 
@@ -1186,6 +1270,7 @@ function renderChoices(choices, key, mode, current, inline = false) {
 // ────────────────────────────────────────────────
 function pickChoice(key, value) {
   ans[key] = value;
+  scheduleDraftSave();
   const q = Q[step - 1];
   const choiceEls = document.getElementById('main-choices');
   if (choiceEls) {
@@ -1219,6 +1304,7 @@ function shouldShowFollowup(q, choice) {
 
 function pickFuChoice(fuKey, value) {
   ans[fuKey] = value;
+  scheduleDraftSave();
   const q = Q[step - 1];
   const fuEl = document.getElementById('fu-choices');
   if (fuEl) {
@@ -1231,6 +1317,7 @@ function pickFuChoice(fuKey, value) {
 
 function afterFollowupText() {
   const q = Q[step - 1];
+  scheduleDraftSave();
   showToast(q.motivation, goNext);
 }
 
@@ -1244,6 +1331,7 @@ function toggleMulti(value) {
   } else if (arr.length < q.maxSelect) {
     arr.push(value);
   }
+  scheduleDraftSave();
   const cnt = document.getElementById('multi-count');
   const nb  = document.getElementById('next-btn');
   if (cnt) cnt.textContent = `محدد ${arr.length}/${q.maxSelect}`;
@@ -1264,11 +1352,13 @@ function submitMulti() {
 
 function goNext() {
   step++;
+  scheduleDraftSave();
   transitionTo(render, false);
 }
 
 function goBack() {
   step--;
+  scheduleDraftSave();
   transitionTo(render, true);
 }
 
@@ -1284,7 +1374,22 @@ function escJs(str) { return (str||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")
 // ────────────────────────────────────────────────
 const _devStep = parseInt(new URL(location.href).searchParams.get('step') || '0');
 if (_devStep > 0 && _devStep <= 8) step = _devStep;
-render();
+if (!_devStep) restoreDiscoveryDraft(INITIAL_DISCOVERY_DRAFT);
+if (
+  !_devStep &&
+  INITIAL_DISCOVERY_DRAFT &&
+  INITIAL_DISCOVERY_DRAFT.payload &&
+  INITIAL_DISCOVERY_DRAFT.current_step === 0 &&
+  INITIAL_DISCOVERY_DRAFT.payload.fit_gate &&
+  Object.values(INITIAL_DISCOVERY_DRAFT.payload.fit_gate).some(Boolean)
+) {
+  renderFitGate();
+} else {
+  render();
+}
+window.addEventListener('pagehide', () => {
+  if (DRAFT_ENABLED && !discoveryFinalizing) saveDraftNow(true);
+});
 </script>
 </body>
 </html>

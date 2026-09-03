@@ -1102,6 +1102,7 @@ def p0_template_context():
             "company_report": url_for("scan_report_html", company_id=company_id),
             "company_plan": url_for("execution_plan_html", company_id=company_id),
             "discovery_save": url_for("discovery_save"),
+            "discovery_draft": url_for("discovery_draft"),
             "fit_gate": url_for("fit_gate_check"),
             "reset_experience": url_for("reset_experience"),
             "case_api_template": url_for("case_detail", case_id="__CASE_ID__"),
@@ -1390,6 +1391,28 @@ def init_db(force=False):
             FOREIGN KEY (decision_id) REFERENCES decisions(decision_id),
             FOREIGN KEY (asset_id) REFERENCES assets(asset_id)
             )""")
+        # مسودة SDS-001 المؤقتة — إضافة غير هدّامة لقواعد البيانات القائمة.
+        conn.execute("""CREATE TABLE IF NOT EXISTS sana_discovery_drafts (
+            draft_id TEXT PRIMARY KEY,
+            company_id TEXT NOT NULL REFERENCES companies(company_id) ON DELETE CASCADE,
+            account_id TEXT NOT NULL REFERENCES user_accounts(account_id) ON DELETE CASCADE,
+            payload_json TEXT NOT NULL,
+            current_step SMALLINT NOT NULL DEFAULT 0 CHECK (current_step BETWEEN 0 AND 8),
+            status TEXT NOT NULL DEFAULT 'ACTIVE'
+                CHECK (status IN ('ACTIVE', 'COMPLETED', 'EXPIRED')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_at TIMESTAMPTZ NOT NULL,
+            UNIQUE(company_id, account_id)
+        )""")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sana_discovery_drafts_expiry "
+            "ON sana_discovery_drafts(expires_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sana_discovery_drafts_owner "
+            "ON sana_discovery_drafts(company_id, account_id, status, updated_at DESC)"
+        )
         # إضافة أعمدة اختيارية لجدول tasks لدعم تجميع المهام تحت مراحل فرعية
         # مع بيان القيمة المتحققة من كل إنجاز — دون كسر أي بيانات موجودة.
         existing_cols = _columns_of(conn, "tasks")
@@ -3172,7 +3195,8 @@ def discovery():
     if context["admin_preview"]:
         return render_template(
             "06-sana-discovery.html", full_reassessment=full_reassessment,
-            company_memory=memory_context,
+            company_memory=memory_context, discovery_draft=None,
+            discovery_drafts_enabled=False,
             **p0_template_context(),
         )
     account = current_account()
@@ -3181,9 +3205,17 @@ def discovery():
         return redirect(start)
     if start == url_for("ceo_home") and not full_reassessment:
         return redirect(start)
+    draft_scope = _discovery_draft_scope(db)
+    removed = _cleanup_expired_discovery_drafts(db)
+    if removed:
+        db.commit()
+    discovery_draft_data = (
+        _load_discovery_draft(db, draft_scope) if draft_scope else None
+    )
     return render_template(
         "06-sana-discovery.html", full_reassessment=full_reassessment,
-        company_memory=memory_context,
+        company_memory=memory_context, discovery_draft=discovery_draft_data,
+        discovery_drafts_enabled=bool(draft_scope),
         **p0_template_context(),
     )
 
@@ -3325,6 +3357,234 @@ def fit_gate_interest():
     }), 200 if duplicate else 201
 
 
+DISCOVERY_DRAFT_TTL_DAYS = 30
+DISCOVERY_DRAFT_MAX_BYTES = 24 * 1024
+DISCOVERY_DRAFT_STEP_MIN = 0
+DISCOVERY_DRAFT_STEP_MAX = 8
+DISCOVERY_DRAFT_TEXT_FIELDS = (
+    "q1", "q2", "q3", "q4", "q4_fu", "q5", "q5_text", "q6",
+)
+DISCOVERY_DRAFT_FIT_FIELDS = (
+    "operating_duration", "paying_customers", "delivery_mode",
+)
+DISCOVERY_DRAFT_BASELINE_FIELDS = (
+    "baseline_start", "baseline_end", "comparison_start",
+    "comparison_end", "seasonality_context",
+)
+DISCOVERY_DRAFT_CALIBRATION_FIELDS = (
+    "baseline_start", "baseline_end", "period_choice",
+)
+
+
+def _discovery_draft_scope(db):
+    """Resolve a real, active customer account; admin previews never use drafts."""
+    account = current_account()
+    if not account or not account.get("account_id") or not account.get("company_id"):
+        return None
+    member = db.execute(
+        """SELECT account_id, company_id FROM user_accounts
+           WHERE account_id=? AND company_id=?""",
+        (account["account_id"], account["company_id"]),
+    ).fetchone()
+    if not member:
+        return None
+    return {
+        "account_id": member["account_id"],
+        "company_id": member["company_id"],
+    }
+
+
+def _cleanup_expired_discovery_drafts(db):
+    """Delete only expired transient drafts; evidence and completed data are untouched."""
+    result = db.execute(
+        "DELETE FROM sana_discovery_drafts WHERE expires_at <= now()"
+    )
+    return result.rowcount or 0
+
+
+def _draft_text(value, field, max_length=2000):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} يجب أن يكون نصًا.")
+    value = value.strip()
+    if len(value) > max_length:
+        raise ValueError(f"{field} يتجاوز الحد المسموح.")
+    return value
+
+
+def _normalize_discovery_draft_payload(payload):
+    """Keep draft storage bounded and limited to known SDS-001 answer fields."""
+    if not isinstance(payload, dict):
+        raise ValueError("بيانات المسودة غير صالحة.")
+
+    normalized = {}
+    fit_gate = payload.get("fit_gate")
+    if fit_gate is not None:
+        if not isinstance(fit_gate, dict):
+            raise ValueError("بيانات الملاءمة غير صالحة.")
+        normalized["fit_gate"] = {
+            key: _draft_text(fit_gate.get(key), f"fit_gate.{key}", 100)
+            for key in DISCOVERY_DRAFT_FIT_FIELDS
+            if fit_gate.get(key) is not None
+        }
+
+    for field in DISCOVERY_DRAFT_TEXT_FIELDS:
+        if field in payload and payload[field] is not None:
+            normalized[field] = _draft_text(payload[field], field)
+
+    if "q7" in payload and payload["q7"] is not None:
+        q7 = payload["q7"]
+        if not isinstance(q7, list) or len(q7) > 3:
+            raise ValueError("q7 يجب أن يحتوي على ثلاث اختيارات كحد أقصى.")
+        normalized["q7"] = [_draft_text(value, "q7", 500) for value in q7]
+
+    baseline = payload.get("diagnostic_baseline")
+    if baseline is not None:
+        if not isinstance(baseline, dict):
+            raise ValueError("فترة الأساس غير صالحة.")
+        normalized["diagnostic_baseline"] = {
+            key: _draft_text(baseline.get(key), f"diagnostic_baseline.{key}", 500)
+            for key in DISCOVERY_DRAFT_BASELINE_FIELDS
+            if baseline.get(key) is not None
+        }
+
+    calibration = payload.get("calibration_draft")
+    if calibration is not None:
+        if not isinstance(calibration, dict):
+            raise ValueError("مسودة فترة الأساس غير صالحة.")
+        normalized["calibration_draft"] = {
+            key: _draft_text(
+                calibration.get(key), f"calibration_draft.{key}", 100
+            )
+            for key in DISCOVERY_DRAFT_CALIBRATION_FIELDS
+            if calibration.get(key) is not None
+        }
+
+    encoded = json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > DISCOVERY_DRAFT_MAX_BYTES:
+        raise ValueError("المسودة أكبر من الحد المسموح.")
+    return normalized
+
+
+def _draft_timestamp(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value) if value is not None else None
+
+
+def _load_discovery_draft(db, scope):
+    row = db.execute(
+        """SELECT draft_id, payload_json, current_step, updated_at, expires_at
+           FROM sana_discovery_drafts
+           WHERE company_id=? AND account_id=? AND status='ACTIVE'
+             AND expires_at > now()
+           ORDER BY updated_at DESC
+           LIMIT 1""",
+        (scope["company_id"], scope["account_id"]),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        payload = json.loads(row["payload_json"])
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return {
+        "draft_id": row["draft_id"],
+        "payload": payload,
+        "current_step": int(row["current_step"]),
+        "updated_at": _draft_timestamp(row["updated_at"]),
+        "expires_at": _draft_timestamp(row["expires_at"]),
+    }
+
+
+def _clear_discovery_draft(db, company_id, account_id):
+    if not company_id or not account_id:
+        return 0
+    result = db.execute(
+        """DELETE FROM sana_discovery_drafts
+           WHERE company_id=? AND account_id=?""",
+        (company_id, account_id),
+    )
+    return result.rowcount or 0
+
+
+@app.route("/api/discovery/draft", methods=["GET", "PUT", "POST", "DELETE"])
+def discovery_draft():
+    """مسودة مؤقتة لإجابات SDS-001، منفصلة تمامًا عن Evidence Gate."""
+    db = get_db()
+    if not current_account():
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+    scope = _discovery_draft_scope(db)
+    if not scope:
+        return jsonify({
+            "success": False,
+            "error": "DISCOVERY_DRAFT_UNAVAILABLE",
+            "message": "المسودات متاحة لحسابات العملاء المرتبطة بشركة فقط.",
+        }), 403
+
+    if request.method == "GET":
+        removed = _cleanup_expired_discovery_drafts(db)
+        if removed:
+            db.commit()
+        draft = _load_discovery_draft(db, scope)
+        return jsonify({"success": True, "data": draft})
+
+    if request.method == "DELETE":
+        _clear_discovery_draft(db, scope["company_id"], scope["account_id"])
+        db.commit()
+        return jsonify({"success": True, "data": {"cleared": True}})
+
+    body = request.get_json(silent=True) or {}
+    payload = body.get("payload", body.get("answers"))
+    try:
+        current_step = body.get("current_step", 0)
+        if isinstance(current_step, bool):
+            raise ValueError("السؤال الحالي غير صالح.")
+        current_step = int(current_step)
+        if not DISCOVERY_DRAFT_STEP_MIN <= current_step <= DISCOVERY_DRAFT_STEP_MAX:
+            raise ValueError("السؤال الحالي غير صالح.")
+        payload = _normalize_discovery_draft_payload(payload)
+    except (TypeError, ValueError) as exc:
+        return jsonify({
+            "success": False,
+            "error": "INVALID_DISCOVERY_DRAFT",
+            "message": str(exc),
+        }), 400
+
+    _cleanup_expired_discovery_drafts(db)
+    expires_at = datetime.utcnow() + timedelta(days=DISCOVERY_DRAFT_TTL_DAYS)
+    draft_id = "SDSD-" + uuid.uuid4().hex[:12].upper()
+    payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    db.execute(
+        """INSERT INTO sana_discovery_drafts
+           (draft_id, company_id, account_id, payload_json, current_step,
+            status, expires_at)
+           VALUES (?,?,?,?,?,'ACTIVE',?)
+           ON CONFLICT (company_id, account_id) DO UPDATE SET
+             payload_json=EXCLUDED.payload_json,
+             current_step=EXCLUDED.current_step,
+             status='ACTIVE',
+             updated_at=now(),
+             expires_at=EXCLUDED.expires_at""",
+        (
+            draft_id, scope["company_id"], scope["account_id"],
+            payload_json, current_step, expires_at,
+        ),
+    )
+    db.commit()
+    saved = _load_discovery_draft(db, scope)
+    return jsonify({
+        "success": True,
+        "data": {
+            "draft_id": saved["draft_id"],
+            "current_step": saved["current_step"],
+            "updated_at": saved["updated_at"],
+            "expires_at": saved["expires_at"],
+        },
+    })
+
+
 @app.route("/api/discovery/save", methods=["POST"])
 def discovery_save():
     """يحفظ إجابات SDS-001 ويُنشئ أول قضية تلقائيًا."""
@@ -3343,6 +3603,10 @@ def discovery_save():
         "SELECT sds_done, main_goal FROM companies WHERE company_id=?", (company_id,)
     ).fetchone()
     if company and company["sds_done"] and company["main_goal"] and not full_reassessment:
+        account = current_account()
+        if account:
+            _clear_discovery_draft(db, company_id, account.get("account_id"))
+            db.commit()
         case = db.execute(
             "SELECT case_id FROM cases WHERE company_id=? ORDER BY opened_at ASC LIMIT 1",
             (company_id,)
@@ -3617,6 +3881,10 @@ def discovery_save():
 
     # تحديث علامة اكتمال الجلسة
     db.execute("UPDATE companies SET sds_done=1 WHERE company_id=?", (company_id,))
+    account = current_account()
+    if account and account.get("company_id") == company_id:
+        # لا تصبح المسودة دليلًا؛ تُحذف فقط ضمن معاملة الإتمام الناجحة.
+        _clear_discovery_draft(db, company_id, account.get("account_id"))
     db.commit()
     scan_state = _run_initial_case_scan(db, company_id, case_id)
 

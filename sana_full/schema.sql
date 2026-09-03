@@ -1425,6 +1425,25 @@ CREATE TABLE IF NOT EXISTS zubair_capture_drafts (
     UNIQUE(company_id, input_hash)
 );
 
+-- مسودة جلسة الاكتشاف — مؤقتة وخاصة بالحساب والشركة، وليست دليلاً أو نتيجة Scan.
+CREATE TABLE IF NOT EXISTS sana_discovery_drafts (
+    draft_id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL REFERENCES companies(company_id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES user_accounts(account_id) ON DELETE CASCADE,
+    payload_json TEXT NOT NULL,
+    current_step SMALLINT NOT NULL DEFAULT 0 CHECK (current_step BETWEEN 0 AND 8),
+    status TEXT NOT NULL DEFAULT 'ACTIVE'
+        CHECK (status IN ('ACTIVE', 'COMPLETED', 'EXPIRED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    UNIQUE(company_id, account_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sana_discovery_drafts_expiry
+    ON sana_discovery_drafts(expires_at);
+CREATE INDEX IF NOT EXISTS idx_sana_discovery_drafts_owner
+    ON sana_discovery_drafts(company_id, account_id, status, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS zubair_attachments (
     attachment_id TEXT PRIMARY KEY,
     draft_id TEXT NOT NULL REFERENCES zubair_capture_drafts(draft_id) ON DELETE CASCADE,
