@@ -31,3 +31,4 @@
 - [Sana returning-company check-ins](sana-returning-checkins.md) — returning users review only decision-relevant changes; numeric deltas require comparable periods and stay direction-neutral.
 - [Sana cleanup freshness alerts](sana-cleanup-freshness-alerts.md) — derive dashboard warnings from worker results; never enqueue a notification merely because an admin opened a page.
 - [Billing test schema cleanup](billing-test-schema-cleanup.md) — PostgreSQL has no schema creation timestamp; auto-delete only timestamped Sana test names with no active session.
+- [Sana P0 production source](sana-p0-production-source.md) — Replit Production is the sole P0 runtime; GitHub is a non-blocking backup mirror and Railway stays inactive.
