@@ -597,21 +597,108 @@ def _has_test_identity_marker(*values):
 
 
 def _test_reset_allowed(account=None):
-    """Keep the destructive journey reset outside ordinary production accounts."""
+    """Allow the destructive reset only to Pilot members or system admins."""
     account = account or current_account()
-    if not account or not account.get("company_id") or IS_PRODUCTION:
+    if not account or not account.get("company_id"):
         return False
-    if app.config.get("TESTING"):
+    if _admin_role() in SYSTEM_ADMIN_ROLES:
         return True
-    if str(os.environ.get("SANA_ENABLE_TEST_RESET", "")).strip().lower() in {
-        "1", "true", "yes", "on",
-    }:
-        return True
-    if _has_test_identity_marker(
-        account.get("account_id"), account.get("email"), account.get("company_id"),
+    row = get_db().execute(
+        """SELECT pilot_cohort_number,account_status
+           FROM user_accounts WHERE account_id=? AND company_id=?""",
+        (account["account_id"], account["company_id"]),
+    ).fetchone()
+    return bool(
+        row
+        and row["account_status"] == "active"
+        and row["pilot_cohort_number"]
+        and 1 <= int(row["pilot_cohort_number"]) <= PILOT_COHORT_LIMIT
+    )
+
+
+PILOT_COHORT_LIMIT = 20
+
+
+def _pilot_identity_is_eligible(row):
+    role = str(row["admin_role"] or "USER").upper()
+    return (
+        row["company_id"]
+        and role in COMPANY_ROLES | {"USER"}
+        and not row["is_admin"]
+        and not _has_test_identity_marker(
+            row["account_id"], row["email"], row["company_id"],
+        )
+    )
+
+
+def _assign_pilot_slot(db, account_id):
+    """Assign the next durable Pilot slot without using timestamps."""
+    db.execute("SELECT pg_advisory_xact_lock(hashtext('sana-pilot-cohort'))")
+    account = db.execute(
+        """SELECT account_id,email,company_id,is_admin,admin_role,
+                  pilot_cohort_number
+           FROM user_accounts WHERE account_id=?""",
+        (account_id,),
+    ).fetchone()
+    if not account or not _pilot_identity_is_eligible(account):
+        return None
+    if account["pilot_cohort_number"]:
+        return int(account["pilot_cohort_number"])
+    used = {
+        int(row["pilot_cohort_number"])
+        for row in db.execute(
+            """SELECT pilot_cohort_number FROM user_accounts
+               WHERE pilot_cohort_number IS NOT NULL
+               ORDER BY pilot_cohort_number"""
+        ).fetchall()
+        if 1 <= int(row["pilot_cohort_number"]) <= PILOT_COHORT_LIMIT
+    }
+    available = [
+        number for number in range(1, PILOT_COHORT_LIMIT + 1)
+        if number not in used
+    ]
+    if not available:
+        return None
+    db.execute(
+        "UPDATE user_accounts SET pilot_cohort_number=? WHERE account_id=?",
+        (available[0], account_id),
+    )
+    return available[0]
+
+
+def _seed_pilot_cohort(db):
+    """Give existing real company accounts stable slots, in count order only."""
+    db.execute("SELECT pg_advisory_xact_lock(hashtext('sana-pilot-cohort'))")
+    used = {
+        int(row["pilot_cohort_number"])
+        for row in db.execute(
+            """SELECT pilot_cohort_number FROM user_accounts
+               WHERE pilot_cohort_number IS NOT NULL"""
+        ).fetchall()
+        if 1 <= int(row["pilot_cohort_number"]) <= PILOT_COHORT_LIMIT
+    }
+    available = [
+        number for number in range(1, PILOT_COHORT_LIMIT + 1)
+        if number not in used
+    ]
+    if not available:
+        return
+    candidates = db.execute(
+        """SELECT account_id,email,company_id,is_admin,admin_role
+           FROM user_accounts
+           WHERE company_id IS NOT NULL
+             AND pilot_cohort_number IS NULL
+             AND COALESCE(admin_role,'USER') IN ('USER','COMPANY_OWNER','COMPANY_MEMBER')
+           ORDER BY account_id"""
+    ).fetchall()
+    for row, number in zip(
+        (row for row in candidates if _pilot_identity_is_eligible(row)),
+        available,
     ):
-        return True
-    return _admin_role() in SYSTEM_ADMIN_ROLES
+        db.execute(
+            "UPDATE user_accounts SET pilot_cohort_number=? WHERE account_id=?",
+            (number, row["account_id"]),
+        )
 
 
 def _reset_company_experience(db, company_id):
@@ -1490,6 +1577,15 @@ def init_db(force=False):
             conn.execute("ALTER TABLE user_accounts ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active'")
         if "last_login_at" not in accts_cols:
             conn.execute("ALTER TABLE user_accounts ADD COLUMN last_login_at TIMESTAMPTZ")
+        if "pilot_cohort_number" not in accts_cols:
+            conn.execute(
+                "ALTER TABLE user_accounts ADD COLUMN pilot_cohort_number INTEGER"
+            )
+        conn.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS uq_user_accounts_pilot_cohort_number
+               ON user_accounts(pilot_cohort_number)
+               WHERE pilot_cohort_number IS NOT NULL"""
+        )
         # حساب SUPER_ADMIN العام ليس عضوًا في أي شركة. يبقى NULL ممنوعًا على
         # USER/ADMIN بواسطة القيد التالي، وتظل بيانات الشركات خلف tenant guards.
         company_id_nullable = conn.execute(
@@ -1522,6 +1618,7 @@ def init_db(force=False):
             "UPDATE user_accounts SET admin_role='SUPER_ADMIN' "
             "WHERE is_admin=1 AND COALESCE(admin_role,'USER')='USER'"
         )
+        _seed_pilot_cohort(conn)
         company_cols_for_admin = _columns_of(conn, "companies")
         if "lifecycle_status" not in company_cols_for_admin:
             conn.execute(
@@ -2274,6 +2371,7 @@ def signup():
             referral_source, "COMPANY_OWNER",
         ),
     )
+    _assign_pilot_slot(db, account_id)
     db.commit()
 
     session.clear()
@@ -4852,6 +4950,7 @@ def admin_issue_company_invitation(company_id):
             "SELECT * FROM user_accounts WHERE account_id=?",
             (account["account_id"],),
         ).fetchone()
+    _assign_pilot_slot(db, account["account_id"])
     invitation = _issue_company_invitation(
         db, company, account, company_role,
         current_account()["account_id"], reason,

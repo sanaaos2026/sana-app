@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS user_accounts (
     is_admin SMALLINT NOT NULL DEFAULT 0,
     admin_role TEXT NOT NULL DEFAULT 'USER',
     admin_permissions TEXT NOT NULL DEFAULT '[]',
+    pilot_cohort_number INTEGER,
     account_status TEXT NOT NULL DEFAULT 'active',
     last_login_at TIMESTAMPTZ,
     created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
@@ -53,6 +54,9 @@ CREATE TABLE IF NOT EXISTS user_accounts (
         OR (admin_role IN ('ADMIN','SUPER_ADMIN') AND is_admin = 1)
       )
 );
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_accounts_pilot_cohort_number
+    ON user_accounts(pilot_cohort_number)
+    WHERE pilot_cohort_number IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS users (
     user_id TEXT PRIMARY KEY,
