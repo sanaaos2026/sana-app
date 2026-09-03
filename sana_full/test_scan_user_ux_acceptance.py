@@ -60,6 +60,26 @@ class SanaScanUserUxAcceptanceTests(unittest.TestCase):
         self.assertIn("button.disabled = false;", fit_gate_script)
         self.assertIn("button.textContent = 'ابدأ التقييم';", fit_gate_script)
 
+    def test_f_period_picker_keeps_arabic_copy_and_dates_readable(self):
+        for copy in (
+            "آخر 12 شهرًا",
+            "أحدّد الفترة بنفسي",
+            "اختر الفترة التي تعكس وضع شركتك الآن بأدق صورة.",
+            ">متابعة</button>",
+        ):
+            self.assertIn(copy, DISCOVERY)
+        for field_id, label in (
+            ("baseline-start", "تاريخ بداية الفترة"),
+            ("baseline-end", "تاريخ نهاية الفترة"),
+        ):
+            self.assertIn(
+                f'id="{field_id}" dir="ltr" lang="en-CA"',
+                DISCOVERY,
+            )
+            self.assertIn(f'aria-label="{label}"', DISCOVERY)
+        self.assertIn("unicode-bidi: plaintext", DISCOVERY)
+        self.assertIn("@media (max-width: 380px)", DISCOVERY)
+
 
 if __name__ == "__main__":
     unittest.main()

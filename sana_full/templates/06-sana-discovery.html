@@ -130,7 +130,12 @@
   }
   .followup-input:focus { border-bottom-color: var(--gold); }
   .followup-input::placeholder { color: var(--muted); }
-  .followup-input[type="date"] { direction: ltr; text-align: left; }
+  .followup-input[type="date"] {
+    direction: ltr;
+    unicode-bidi: plaintext;
+    text-align: left;
+    color-scheme: dark;
+  }
 
   /* ── Mobile-first period picker ── */
   .calibration-wrap {
@@ -194,12 +199,21 @@
   .period-field .followup-input {
     background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.2);
     border-radius: 10px; padding: 11px 10px; min-height: 45px;
+    width: 100%; box-sizing: border-box;
+  }
+  .period-field .followup-input::-webkit-calendar-picker-indicator {
+    cursor: pointer; opacity: .78;
   }
   .period-error {
     color: #ffb4a8; font-size: 12px; min-height: 20px; margin-top: 9px;
   }
   .period-continue {
     margin-top: 18px; opacity: 1; pointer-events: auto; transform: none;
+  }
+  @media (max-width: 380px) {
+    .period-custom-fields { grid-template-columns: 1fr; gap: 10px; }
+    .period-option { padding: 12px 14px; }
+    .period-field .followup-input { font-size: 16px; }
   }
 
   /* ── Next / submit button ── */
@@ -845,24 +859,26 @@ function renderCalibration() {
   $screen.innerHTML = `
     <div class="calibration-wrap">
       <div class="calibration-kicker">على أي فترة نبني الصورة؟</div>
-      <div class="calibration-note">اختر الفترة الأقرب لوضع شركتك الآن</div>
+      <div class="calibration-note">اختر الفترة التي تعكس وضع شركتك الآن بأدق صورة.</div>
       <div class="period-options" role="radiogroup" aria-label="الفترة التي تمثل وضع الشركة">
         ${renderPeriodOption('last_30_days', 'آخر 30 يوم', 'صورة سريعة عن الوضع الحالي')}
         ${renderPeriodOption('last_3_months', 'آخر 3 أشهر', 'الاختيار المقترح')}
         ${renderPeriodOption('last_6_months', 'آخر 6 أشهر', 'لصورة أوسع عن الأداء')}
-        ${renderPeriodOption('last_12_months', 'آخر 12 شهر', 'لرؤية دورة سنة كاملة')}
-        ${renderPeriodOption('custom', 'أحدد بنفسي', 'إذا عندك فترة محددة')}
+        ${renderPeriodOption('last_12_months', 'آخر 12 شهرًا', 'لرؤية دورة سنة كاملة')}
+        ${renderPeriodOption('custom', 'أحدّد الفترة بنفسي', 'إذا كانت لديك فترة محددة')}
       </div>
       ${isCustom ? `
         <div class="period-custom-fields" aria-label="حدد الفترة بنفسك">
           <div class="period-field">
             <label for="baseline-start">من</label>
-            <input class="followup-input" type="date" id="baseline-start" value="${escHtml(period.start)}"
+            <input class="followup-input" type="date" id="baseline-start" dir="ltr" lang="en-CA"
+              aria-label="تاريخ بداية الفترة" value="${escHtml(period.start)}"
               onchange="refreshCustomPeriod()">
           </div>
           <div class="period-field">
             <label for="baseline-end">إلى</label>
-            <input class="followup-input" type="date" id="baseline-end" value="${escHtml(period.end)}"
+            <input class="followup-input" type="date" id="baseline-end" dir="ltr" lang="en-CA"
+              aria-label="تاريخ نهاية الفترة" value="${escHtml(period.end)}"
               onchange="refreshCustomPeriod()">
           </div>
         </div>` : ''}
@@ -870,7 +886,7 @@ function renderCalibration() {
         <div class="period-confirmation">الفترة: ${formatPeriodForDisplay(period.start, period.end)}</div>
         ` : ''}
       <div id="calibration-error" class="period-error"></div>
-      <button class="outro-btn period-continue" onclick="submitCalibration()">كمّل</button>
+      <button class="outro-btn period-continue" onclick="submitCalibration()">متابعة</button>
       <button class="back-btn" onclick="goBack()">← رجوع للسؤال السابق</button>
     </div>`;
 }
