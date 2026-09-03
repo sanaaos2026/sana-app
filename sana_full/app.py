@@ -1157,11 +1157,9 @@ class _PGConn:
 
     def commit(self):
         self._conn.commit()
-        self._schema_lock_acquired = False
 
     def rollback(self):
         self._conn.rollback()
-        self._schema_lock_acquired = False
 
     def close(self):
         self._conn.close()

@@ -105,10 +105,9 @@ def has_required_columns(db, table_columns):
 def acquire_schema_lock(db):
     """Serialize schema DDL without allowing an indefinite database wait.
 
-    The lock is transaction-scoped, so it is released automatically when the
-    caller commits or rolls back.  A short lock timeout is intentional:
-    startup must not wait forever behind either another initializer or a
-    long-running transaction holding a relation lock needed by DDL.
+    The lock is session-scoped so intermediate migration commits do not let a
+    second initializer enter.  Closing the connection releases it
+    automatically.  A short timeout prevents startup from waiting forever.
     """
     if getattr(db, "_schema_lock_acquired", False) is True:
         return
@@ -127,7 +126,7 @@ def acquire_schema_lock(db):
     deadline = time.monotonic() + timeout_seconds
     while True:
         row = db.execute(
-            "SELECT pg_try_advisory_xact_lock("
+            "SELECT pg_try_advisory_lock("
             "hashtext(? || ':' || current_schema()))",
             (SCHEMA_LOCK_NAME,),
         ).fetchone()
@@ -141,11 +140,11 @@ def acquire_schema_lock(db):
             )
         time.sleep(min(0.1, remaining))
     db.execute(
-        "SELECT set_config('lock_timeout', ?, true)",
+        "SELECT set_config('lock_timeout', ?, false)",
         (f"{timeout_seconds}s",),
     )
     db.execute(
-        "SELECT set_config('statement_timeout', ?, true)",
+        "SELECT set_config('statement_timeout', ?, false)",
         (f"{timeout_seconds}s",),
     )
     try:
