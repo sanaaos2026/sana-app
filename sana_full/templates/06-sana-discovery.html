@@ -549,7 +549,8 @@ const Q = [
      sub: 'صف ما يحدث فعليًا، لا التوقع المثالي.',
     type: 'single+text',
     key: 'q5', textKey: 'q5_text',
-     textLabel: 'ما العملية التي تتوقف أو تحتاج تدخله؟ (اختياري)',
+     textLabel: 'لو غاب صاحب القرار شهرًا، ما أول عملية ستتباطأ أو تتوقف؟ اذكر مثالًا واقعيًا يساعدنا نحدد أين يبدأ التحسين. (اختياري)',
+     textPlaceholder: 'مثال: اعتماد الأسعار أو متابعة العملاء',
     hideFollowupFor: ['😎 العمل يستمر طبيعيًا'],
     motivation: '🏖️ سؤال يكشف الكثير — شكرًا على صراحتك.',
     choices: [
@@ -1149,7 +1150,7 @@ function renderQuestion(q) {
         <div class="followup-wrap show" id="fu-wrap">
           <div class="followup-label">${q.textLabel}</div>
           <input class="followup-input" type="text"
-            placeholder="اكتب هنا..."
+            placeholder="${escHtml(q.textPlaceholder || 'اكتب هنا...')}"
             value="${escHtml(textVal)}"
             id="fu-input"
             onchange="ans['${q.textKey}']=this.value; scheduleDraftSave()"

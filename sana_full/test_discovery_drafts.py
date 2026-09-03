@@ -101,6 +101,9 @@ class DiscoveryDraftAcceptanceTest(unittest.TestCase):
         self.assertEqual(saved_data["draft_id"], resumed_data["draft_id"])
         self.assertEqual(3, resumed_data["current_step"])
         self.assertEqual("زيادة المبيعات", resumed_data["payload"]["q1"])
+        self.assertEqual(
+            "ملاحظة خاصة بالمسودة", resumed_data["payload"]["q5_text"]
+        )
         self.assertNotIn("unknown_field", resumed_data["payload"])
         page = self.client_a.get("/discovery")
         self.assertEqual(200, page.status_code)

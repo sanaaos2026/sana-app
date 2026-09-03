@@ -8,6 +8,7 @@ import json
 import uuid
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from unittest.mock import patch
 
 import app as sana_app
@@ -735,6 +736,20 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
             session_status = preview_client.get("/api/session").get_json()["data"]
             self.assertFalse(session_status["authenticated"])
             self.assertFalse(session_status["admin_preview"])
+
+    def test_decision_maker_followup_is_specific_optional_and_conditionally_hidden(self):
+        template = (
+            Path(__file__).parent / "templates" / "06-sana-discovery.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "لو غاب صاحب القرار شهرًا، ما أول عملية ستتباطأ أو تتوقف؟ "
+            "اذكر مثالًا واقعيًا يساعدنا نحدد أين يبدأ التحسين. (اختياري)",
+            template,
+        )
+        self.assertIn("مثال: اعتماد الأسعار أو متابعة العملاء", template)
+        self.assertIn("hideFollowupFor: ['😎 العمل يستمر طبيعيًا']", template)
+        self.assertIn("const showFu = shouldShowFollowup(q, chosen);", template)
 
     def test_sales_pipeline_is_not_public(self):
         anonymous = sana_app.app.test_client()
