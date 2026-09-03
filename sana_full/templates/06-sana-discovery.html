@@ -801,11 +801,16 @@ async function submitFitGate() {
   try {
     const response = await fetch(withContext(JOURNEY_URLS.fit_gate), {
       method:'POST',
-      headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken()},
+      headers:{'Content-Type':'application/json'},
       body:JSON.stringify({fit_gate:ans.fit_gate})
     });
-    const result = await response.json();
-    if (!response.ok || !result.success) throw new Error(result.message || 'تعذر التحقق الآن.');
+    let result = null;
+    try {
+      result = await response.json();
+    } catch (_) {
+      throw new Error('FIT_GATE_RESPONSE_INVALID');
+    }
+    if (!response.ok || !result || !result.success) throw new Error('FIT_GATE_CHECK_FAILED');
     if (!result.data.qualified) {
       window.location.href = result.data.redirect;
       return;
@@ -813,8 +818,8 @@ async function submitFitGate() {
     step = 1;
     scheduleDraftSave();
     transitionTo(render);
-  } catch (err) {
-    error.textContent = err.message;
+  } catch (_) {
+    error.textContent = 'تعذر التحقق الآن. حاول مرة أخرى بعد قليل.';
     button.disabled = false;
     button.textContent = 'ابدأ التقييم';
   }

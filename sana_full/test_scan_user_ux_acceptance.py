@@ -45,6 +45,21 @@ class SanaScanUserUxAcceptanceTests(unittest.TestCase):
         self.assertIn("showToast(q.motivation, goNext);", DISCOVERY)
         self.assertIn("وضوح الصورة ${pct}%", DISCOVERY)
 
+    def test_e_fit_gate_uses_template_csrf_and_shows_only_safe_arabic_failure(self):
+        fit_gate_script = DISCOVERY.split("async function submitFitGate()", 1)[1].split(
+            "\n}\n", 1
+        )[0]
+        self.assertIn("fetch(withContext(JOURNEY_URLS.fit_gate)", fit_gate_script)
+        self.assertIn("headers:{'Content-Type':'application/json'}", fit_gate_script)
+        self.assertNotIn("csrfToken()", DISCOVERY)
+        self.assertIn("await response.json()", fit_gate_script)
+        self.assertIn(
+            "error.textContent = 'تعذر التحقق الآن. حاول مرة أخرى بعد قليل.';",
+            fit_gate_script,
+        )
+        self.assertIn("button.disabled = false;", fit_gate_script)
+        self.assertIn("button.textContent = 'ابدأ التقييم';", fit_gate_script)
+
 
 if __name__ == "__main__":
     unittest.main()

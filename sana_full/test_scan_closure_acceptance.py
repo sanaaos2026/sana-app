@@ -195,6 +195,18 @@ class ScanClosureAcceptanceTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual("Build & Launch", row["service_interest"])
 
+    def test_operating_company_passes_fit_gate_and_can_start_assessment(self):
+        check = self.client.post("/api/fit-gate/check", json={"fit_gate": {
+            "operating_duration": "ONE_PLUS",
+            "paying_customers": "YES",
+            "delivery_mode": "TEAM_DELIVERY",
+        }})
+        payload = check.get_json()
+        self.assertEqual(200, check.status_code)
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["data"]["qualified"])
+        self.assertIsNone(payload["data"]["redirect"])
+
 
 if __name__ == "__main__":
     unittest.main()
