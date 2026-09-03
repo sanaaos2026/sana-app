@@ -41,6 +41,11 @@
     font-family: 'IBM Plex Mono', monospace; font-size: 11px;
     color: var(--muted); letter-spacing: .04em; text-align: left; direction: ltr;
   }
+  .journey-hint {
+    width: 100%; margin-bottom: 16px; padding: 9px 12px;
+    border: 1px solid rgba(255,255,255,.1); border-radius: 9px;
+    color: var(--muted); font-size: 12px; line-height: 1.65; text-align: center;
+  }
 
   /* ── Stage ── */
   #stage {
@@ -84,7 +89,8 @@
     background: rgba(255,255,255,.04); border: 1.5px solid var(--line);
     border-radius: 12px; padding: 13px 16px;
     font-size: 14px; font-weight: 500; color: var(--ink);
-    cursor: pointer; text-align: right;
+    cursor: pointer; text-align: right; width: 100%; font-family: inherit;
+    appearance: none; -webkit-appearance: none;
     transition: background .15s, border-color .15s, color .15s;
     user-select: none; -webkit-tap-highlight-color: transparent;
   }
@@ -423,8 +429,8 @@ const Q = [
   // Q1 — الوجهة
   {
     id: 'q1', icon: ICONS.q1,
-     title: 'وش النتيجة الأهم لك الآن؟',
-     sub: 'خلال 12 شهر، وش تبي يتغير؟',
+     title: 'وش النتيجة الأهم لشركتك الآن؟',
+     sub: 'خلال 12 شهر، وش تبي يتغير في الشركة؟',
     type: 'single',
     key: 'q1',
     motivation: '🎯 تمام، صار عندنا وجهة واضحة.',
@@ -444,8 +450,8 @@ const Q = [
   // Q2 — التحدي (لا "القرار")
   {
     id: 'q2', icon: ICONS.q2,
-     title: 'وش أكثر شيء مأثر على الشغل حاليًا؟',
-     sub: 'اختر الأقرب.',
+     title: 'وش أكثر جانب في الشركة يتعطل أو يبطئ العمل حاليًا؟',
+     sub: 'اختر ما يحدث فعليًا، ولا تحاول تشخيص السبب.',
     type: 'single',
     key: 'q2',
     motivation: '🧠 وضّحت لنا أهم تحدٍّ نبدأ فيه.',
@@ -464,8 +470,8 @@ const Q = [
   // Q3 — الأصل الأهم (5 خيارات مطابقة للأصول + ما أعرف)
   {
     id: 'q3', icon: ICONS.q3,
-     title: 'أكثر شيء تعتمد عليه شركتك اليوم؟',
-    sub: 'اختر الأقرب.',
+     title: 'ما الأصل الذي تعتمد عليه الشركة أكثر في تقديم خدمتها اليوم؟',
+    sub: 'اختر الواقع الأقرب، وسنع نستنتج ما يحتاج اهتمامًا.',
     type: 'single',
     key: 'q3',
     motivation: '⭐ بدأنا نشوف وين قوتك الحقيقية.',
@@ -482,10 +488,10 @@ const Q = [
   // Q4 — مصدر العملاء + هشاشته
   {
     id: 'q4', icon: ICONS.q4,
-     title: 'من وين يجيكم أغلب العملاء؟',
+     title: 'من أي قناة يأتي أغلب عملاء الشركة الآن؟',
     type: 'single+followup-choice',
     key: 'q4', fuKey: 'q4_fu',
-     fuLabel: 'لو توقف هذا المصدر شهرًا، وش يصير؟',
+     fuLabel: 'إذا توقفت هذه القناة شهرًا، ماذا يحدث لتدفق العملاء؟',
     motivation: '🤝 وهذا يكشف مستوى الهشاشة الحقيقي بمصدر عملائك.',
     choices: [
       '🌟 الإحالات',
@@ -509,11 +515,11 @@ const Q = [
   // Q5 — الاعتماد على المؤسس
   {
     id: 'q5', icon: ICONS.q5,
-     title: 'إذا غبت عن الشركة شهرًا، وش يصير؟',
-     sub: 'وش تتوقع يحدث؟',
+     title: 'عند غياب صاحب القرار عن الشركة شهرًا، كيف يستمر العمل؟',
+     sub: 'صف ما يحدث فعليًا، لا التوقع المثالي.',
     type: 'single+text',
     key: 'q5', textKey: 'q5_text',
-     textLabel: 'وش أكثر شيء ممكن يتعطل؟ (اختياري)',
+     textLabel: 'ما العملية التي تتوقف أو تحتاج تدخله؟ (اختياري)',
     hideFollowupFor: ['😎 العمل يستمر طبيعيًا'],
     motivation: '🏖️ سؤال يكشف الكثير — شكرًا على صراحتك.',
     choices: [
@@ -528,8 +534,8 @@ const Q = [
   // Q6 — أسلوب اتخاذ القرار
   {
     id: 'q6', icon: ICONS.q6,
-     title: 'إذا جاء قرار مهم، على وش تعتمد؟',
-     sub: 'وش يصير غالبًا؟',
+     title: 'عند اتخاذ قرار مهم يخص الشركة — مثل توظيف، تسويق، تسعير أو مصروف كبير — ما المصدر الذي تعتمد عليه غالبًا؟',
+     sub: 'اختر ما يحدث غالبًا في الشركة.',
     type: 'single',
     key: 'q6',
     motivation: '📈 صار عندنا فكرة عن أسلوبك بالقرار.',
@@ -538,16 +544,16 @@ const Q = [
       '💡 خبرتي الشخصية',
       '👥 رأي الفريق',
       '📚 رأي مستشار',
-      '❤️ الحدس',
-      '😅 حسب الموقف، بلا طريقة ثابتة'
+       '🔀 خليط من أكثر من مصدر',
+       '😅 لا توجد طريقة ثابتة'
     ]
   },
 
   // Q7 — معايير النجاح (multi، max 3) — يُحفظ في success_criteria
   {
     id: 'q7', icon: ICONS.q7,
-     title: 'بعد سنة من اليوم، وش يخليك تقول إن سنع صنع فرقًا؟',
-     sub: 'اختر حتى 3 نتائج.',
+     title: 'بعد سنة من اليوم، ما النتيجة التي تريد أن تراها الشركة؟',
+     sub: 'اختر حتى 3 نتائج فعلية.'
     type: 'multi',
     key: 'q7', maxSelect: 3,
      motivation: 'آخر نقطة ونكمل الصورة.',
@@ -591,10 +597,10 @@ const $toast    = document.getElementById('motivation');
 function updateProgress(s) {
   if (s === 0 || s >= 8) { $progress.classList.remove('visible'); return; }
   $progress.classList.add('visible');
+  // لا نعرض عدد الأسئلة؛ التقدم هنا هو تقدم المستخدم في بناء الصورة.
   const pct = Math.round((s / 7) * 100);
   $fill.style.width = pct + '%';
-  const rem = 7 - s;
-  $label.textContent = rem === 0 ? 'السؤال الأخير' : `بقي ${rem === 1 ? 'سؤال واحد' : rem + ' أسئلة'}`;
+  $label.textContent = `وضوح الصورة ${pct}%`;
 }
 
 let toastTimer;
@@ -636,8 +642,9 @@ function renderWelcome() {
   $screen.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; gap:0; width:100%; max-width:420px;">
       <div class="welcome-logo">${LOGO_LG}</div>
-      <div class="welcome-title">وش اللي ما تشوفه في شركتك؟</div>
-      <div class="welcome-sub">أدخل واقع شركتك كما هو، وسنع يرتب الصورة ويحدد أين يستحق تركيزك الآن.</div>
+       <div class="welcome-title">اعرف أين تتعطل شركتك، وما الذي يستحق أن تصلحه أولًا.</div>
+       <div class="welcome-sub">سنع يشخّص شركتك الخدمية من واقع معلوماتها، يرتب المشاكل والفرص، ويخرج لك بأولويات وقرارات واضحة بدل التخمين.</div>
+       <div class="journey-hint">احكِ لنا عن شركتك ← سنع يرتب الصورة ← يسألك فقط عما ينقص ← يعطيك التشخيص والأولويات والقرارات.</div>
       <button class="start-btn" style="width:100%;" onclick="skipWelcome()">ابدأ</button>
       <div style="color:var(--muted); font-size:12px; margin-top:12px;">دقائق قليلة · بدون نموذج طويل</div>
     </div>`;
@@ -982,6 +989,15 @@ async function saveAndFinish() {
 
 function renderQuestion(q) {
   const chosen = ans[q.key];
+  const journeyCopy = {
+    q1: 'نحدد النتيجة التي تريدها الشركة.',
+    q2: 'نفهم أين يتعطل العمل فعليًا.',
+    q3: 'نرصد ما تعتمد عليه الشركة في تقديم خدمتها.',
+    q4: 'نفهم كيف يصل العملاء وما مدى ثبات القناة.',
+    q5: 'نفهم كيف يستمر العمل عند غياب صاحب القرار.',
+    q6: 'نفهم الآن طريقة اتخاذ القرار في شركتك.',
+    q7: 'نحدد النتيجة التي سنقيسها لاحقًا.'
+  };
 
   let body = '';
   body += renderMemorySuggestion(q);
@@ -1038,6 +1054,7 @@ function renderQuestion(q) {
   $screen.innerHTML = `
     ${q.icon}
     <div class="q-title">${q.title}</div>
+    <div class="journey-hint">${journeyCopy[q.key] || 'نبني صورة واقعية عن شركتك.'}</div>
     ${q.sub ? `<div class="q-sub">${q.sub}</div>` : ''}
     ${body}`;
 }
@@ -1126,7 +1143,7 @@ function renderChoices(choices, key, mode, current, inline = false) {
       : isFu
         ? `pickFuChoice('${escJs(key)}','${escJs(c)}')`
         : `pickChoice('${escJs(key)}','${escJs(c)}')`;
-    return `<div class="choice${selectedCls}" onclick="${clickFn}">${c}</div>`;
+    return `<button type="button" class="choice${selectedCls}" aria-pressed="${selectedCls ? 'true' : 'false'}" onclick="${clickFn}">${c}</button>`;
   }).join('');
 
   return `<div class="${cls}" id="${isFu ? 'fu-choices' : 'main-choices'}">${items}</div>`;
