@@ -11,6 +11,7 @@
 *{box-sizing:border-box}body{margin:0;background:var(--paper);color:#333940;font-family:'IBM Plex Sans Arabic',sans-serif}
 nav{height:54px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:28px}
 nav a{color:var(--muted);text-decoration:none;font-size:13px;font-weight:600}nav a.active{color:var(--navy);border-bottom:2px solid var(--gold);padding:17px 0}
+.reset-experience{border:1px solid #D7A59F;background:#FFF8F7;color:#8F3027;border-radius:8px;padding:7px 10px;font:600 12px inherit;cursor:pointer}
 main{max-width:700px;margin:42px auto;padding:0 20px 60px}.eyebrow{font-size:11px;color:var(--teal);font-weight:700;letter-spacing:1px}
 h1{font-size:28px;color:var(--navy);margin:8px 0}.lead{color:var(--muted);font-size:14px;line-height:1.8;margin-bottom:22px}
 .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:24px}.label{font-size:11px;color:var(--muted);font-weight:600}.returning{margin-bottom:14px;background:var(--navy);color:#fff}.returning h2{color:#fff}.returning .reason{color:#BFC7D5}.returning .single-link{background:var(--gold);color:var(--navy)}
@@ -22,10 +23,19 @@ h2{font-size:20px;color:var(--navy);margin:6px 0}.reason{font-size:13px;line-hei
 @media(max-width:600px){.fields{grid-template-columns:1fr}.wide{grid-column:auto}}
 </style></head>
 <body>
-<nav><a class="active" href="/home">اليوم</a><a href="/passport">الأصول</a><a href="/logout">تسجيل الخروج</a></nav>
+<nav><a class="active" href="/home">اليوم</a><a href="/passport">الأصول</a><a href="/logout">تسجيل الخروج</a>{% if can_reset_experience %}<button type="button" class="reset-experience" onclick="confirmExperienceReset()" aria-label="إعادة ضبط التجربة">↺ إعادة ضبط التجربة</button>{% endif %}</nav>
 <main><div class="eyebrow">اليوم</div><h1>وش يستحق انتباهك الآن؟</h1><p class="lead">نبدأ بما عرفناه، ثم نكمل الناقص ونقرر الخطوة. وبعدها نتابع وش تغيّر.</p><div class="card returning"><div class="label">مراجعة سريعة</div><h2>وش تغير من آخر مرة؟</h2><div class="reason">سنراجع آخر صورة عندنا ونركز فقط على الجديد.</div><a class="single-link" href="/check-in">راجع التغيّر</a></div><div id="sourceReminder"></div><div id="card" class="card">نجهّز خطوتك التالية...</div></main>
 <script>
 const COMPANY_ID={{ company_id|tojson }};let currentDecision=null;
+async function confirmExperienceReset(){
+ const first=window.confirm('سيتم مسح بيانات التجربة الحالية لهذه الشركة فقط، مع إبقاء حساب الدخول والبريد وكلمة المرور. لا يمكن التراجع عن هذه العملية. هل تريد المتابعة؟');
+ if(!first)return;
+ const second=window.confirm('تأكيد أخير: هل تريد إعادة هذا الحساب إلى أول خطوة في سنع؟');
+ if(!second)return;
+ const r=await fetch('/api/testing/reset-experience',{method:'POST'}),j=await r.json();
+ if(r.ok&&j.success){window.location.assign(j.data.redirect||'/onboarding');return}
+ window.alert(j.message||'تعذر إعادة ضبط التجربة.');
+}
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const sourceReminder=document.getElementById('sourceReminder');
 function sourceApi(path='',options={}){return fetch(`/api/companies/${COMPANY_ID}/source-reminder${path}`,options)}

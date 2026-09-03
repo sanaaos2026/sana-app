@@ -596,6 +596,161 @@ def _has_test_identity_marker(*values):
     )
 
 
+def _test_reset_allowed(account=None):
+    """Keep the destructive journey reset outside ordinary production accounts."""
+    account = account or current_account()
+    if not account or not account.get("company_id") or IS_PRODUCTION:
+        return False
+    if app.config.get("TESTING"):
+        return True
+    if str(os.environ.get("SANA_ENABLE_TEST_RESET", "")).strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        return True
+    if _has_test_identity_marker(
+        account.get("account_id"), account.get("email"), account.get("company_id"),
+    ):
+        return True
+    return _admin_role() in SYSTEM_ADMIN_ROLES
+
+
+def _reset_company_experience(db, company_id):
+    """Remove one company's journey data while preserving its login and company shell."""
+    schema_rows = db.execute(
+        """SELECT table_name,column_name
+           FROM information_schema.columns
+           WHERE table_schema=current_schema()"""
+    ).fetchall()
+    table_columns = {}
+    for row in schema_rows:
+        table_columns.setdefault(row["table_name"], set()).add(row["column_name"])
+
+    # Child rows without company_id must go before their company-owned parents.
+    nested_deletes = (
+        (
+            "diagnostic_findings",
+            "DELETE FROM diagnostic_findings WHERE run_id IN "
+            "(SELECT run_id FROM diagnostic_runs WHERE company_id=?)",
+        ),
+        (
+            "decision_asset_impacts",
+            "DELETE FROM decision_asset_impacts WHERE decision_id IN "
+            "(SELECT decision_id FROM decisions WHERE company_id=?)",
+        ),
+        (
+            "gos_experiment_process",
+            "DELETE FROM gos_experiment_process WHERE experiment_id IN "
+            "(SELECT experiment_id FROM gos_experiments WHERE company_id=?)",
+        ),
+        (
+            "drive_source_excerpts",
+            "DELETE FROM drive_source_excerpts WHERE case_id IN "
+            "(SELECT case_id FROM cases WHERE company_id=?)",
+        ),
+        (
+            "drive_private_citations",
+            "DELETE FROM drive_private_citations WHERE case_id IN "
+            "(SELECT case_id FROM cases WHERE company_id=?)",
+        ),
+    )
+
+    # Fixed, dependency-safe allowlist: journey/execution data only.
+    # Auth, subscriptions, invitations, billing events and audit history are preserved.
+    company_tables = (
+        "human_review_events", "case_human_reviews",
+        "p0_impact_reviews", "returning_checkins", "task_evidence",
+        "execution_reminder_attempts", "execution_task_audit",
+        "execution_backlog_audit", "execution_sop_applications",
+        "execution_sop_versions", "execution_reminders", "execution_risks",
+        "execution_backlog", "execution_owner_bindings", "execution_sops",
+        "rc_invoices", "rc_deal_learning", "rc_opportunity_economics",
+        "rc_stage_history", "rc_projects", "sales_activities",
+        "zubair_attachments", "zubair_experiment_reviews",
+        "zubair_timeline_events", "zubair_capture_drafts", "zubair_contacts",
+        "zubair_prospect_companies",
+        "gos_learning_links", "gos_experiment_decisions", "gos_experiments",
+        "gos_bottlenecks", "gos_bottleneck_cycles", "gos_canonical_merges",
+        "gos_canonical_entities", "gos_truth_records", "gos_baselines",
+        "gos_company_profiles",
+        "tasks", "decisions", "scan_findings", "scan_runs",
+        "diagnostic_runs", "evidence_relations", "case_frameworks",
+        "diagnostic_baselines", "evidence",
+        "company_memory_items",
+        "sana_memory_entries", "cases", "assets", "users",
+        "opportunities", "leads",
+    )
+
+    delete_statements = [
+        (table_name, statement)
+        for table_name, statement in nested_deletes
+        if table_name in table_columns
+    ]
+    delete_statements.extend(
+        (
+            table_name,
+            f"DELETE FROM {table_name} WHERE company_id=?",
+        )
+        for table_name in company_tables
+        if "company_id" in table_columns.get(table_name, set())
+    )
+    deleted = {}
+    if delete_statements:
+        ctes = []
+        params = []
+        count_columns = []
+        for index, (table_name, statement) in enumerate(delete_statements):
+            cte_name = f"reset_{index}"
+            ctes.append(f"{cte_name} AS ({statement} RETURNING 1)")
+            params.append(company_id)
+            count_columns.append(
+                f"(SELECT COUNT(*) FROM {cte_name}) AS count_{index}"
+            )
+        counts = db.execute(
+            "WITH " + ", ".join(ctes) + " SELECT " + ", ".join(count_columns),
+            tuple(params),
+        ).fetchone()
+        deleted = {
+            table_name: int(counts[f"count_{index}"])
+            for index, (table_name, _) in enumerate(delete_statements)
+        }
+
+    reset_values = {
+        "name": "شركة جديدة",
+        "sector": None,
+        "sector_other": None,
+        "city": None,
+        "stage": None,
+        "employee_count": None,
+        "annual_revenue": None,
+        "vision": None,
+        "main_goal": None,
+        "sds_done": 0,
+        "success_criteria": None,
+        "website_url": None,
+        "social_media_url": None,
+        "business_reference_url": None,
+        "source_prompt_last_shown_at": None,
+        "source_prompt_dismissed_at": None,
+        "source_last_confirmed_at": None,
+        "business_description": None,
+        "goal_90_days": None,
+        "primary_challenge": None,
+        "lifecycle_status": "Active",
+    }
+    company_columns = table_columns.get("companies", set())
+    reset_values = {
+        column: value
+        for column, value in reset_values.items()
+        if column in company_columns
+    }
+    assignments = ", ".join(f"{column}=?" for column in reset_values)
+    db.execute(
+        f"UPDATE companies SET {assignments} WHERE company_id=?",
+        (*reset_values.values(), company_id),
+    )
+    return deleted
+
+
 def _admin_account_classification(account):
     """Separate production identities from explicit fixtures without deleting them."""
     email = str(account.get("email") or "").strip().lower()
@@ -755,6 +910,7 @@ def p0_template_context():
             "company_id": account["company_id"],
             "context_query": "",
             "is_admin_preview": False,
+            "can_reset_experience": _test_reset_allowed(account),
         }
     if is_admin_preview():
         params = {"admin_key": request.args["admin_key"]}
@@ -766,11 +922,13 @@ def p0_template_context():
             "company_id": default_company_id(),
             "context_query": "?" + urlencode(params),
             "is_admin_preview": True,
+            "can_reset_experience": False,
         }
     return {
         "company_id": "C001",
         "context_query": "",
         "is_admin_preview": False,
+        "can_reset_experience": False,
     }
 
 
@@ -2195,6 +2353,55 @@ def onboarding():
     return jsonify({"success": True, "data": {"redirect": "/discovery"}})
 
 
+@app.route("/api/testing/reset-experience", methods=["POST"])
+def reset_experience():
+    """Destructive test-only reset for the currently authenticated company."""
+    account = current_account()
+    if not _test_reset_allowed(account):
+        return jsonify({
+            "success": False,
+            "error": "TEST_RESET_NOT_ALLOWED",
+            "message": "إعادة ضبط التجربة غير متاحة لهذا الحساب أو في هذه البيئة.",
+        }), 403
+
+    company_id = account["company_id"]
+    db = get_db()
+    try:
+        deleted = _reset_company_experience(db, company_id)
+        _admin_audit(
+            db,
+            account["account_id"],
+            "TEST_EXPERIENCE_RESET",
+            "company",
+            company_id,
+            company_id,
+            reason="إعادة حساب اختبار إلى بداية رحلة سنع",
+            metadata={
+                "deleted_rows": sum(deleted.values()),
+                "affected_tables": [
+                    table for table, count in deleted.items() if count
+                ],
+            },
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        app.logger.exception(
+            "Test experience reset failed for company %s", company_id,
+        )
+        return jsonify({
+            "success": False,
+            "error": "TEST_RESET_FAILED",
+            "message": "تعذر إعادة ضبط التجربة. لم تُحفظ أي تغييرات.",
+        }), 500
+
+    session.modified = True
+    return jsonify({
+        "success": True,
+        "data": {"redirect": url_for("onboarding")},
+    })
+
+
 @app.route("/pricing")
 def pricing_page():
     return render_template("13-pricing.html")
@@ -2667,6 +2874,7 @@ def discovery():
         return render_template(
             "06-sana-discovery.html", full_reassessment=full_reassessment,
             company_memory=memory_context, company_id=context["company_id"],
+            can_reset_experience=False,
         )
     account = current_account()
     start = _company_start_redirect(account)
@@ -2677,6 +2885,7 @@ def discovery():
     return render_template(
         "06-sana-discovery.html", full_reassessment=full_reassessment,
         company_memory=memory_context, company_id=context["company_id"],
+        can_reset_experience=_test_reset_allowed(account),
     )
 
 

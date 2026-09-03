@@ -41,6 +41,12 @@
     font-family: 'IBM Plex Mono', monospace; font-size: 11px;
     color: var(--muted); letter-spacing: .04em; text-align: left; direction: ltr;
   }
+  .reset-experience-tool{
+    position:fixed; top:12px; left:12px; z-index:120;
+    border:1px solid rgba(178,58,46,.38); background:#fff; color:#8F3027;
+    border-radius:8px; padding:7px 10px; font:600 11.5px 'IBM Plex Sans Arabic',sans-serif;
+    cursor:pointer; box-shadow:0 4px 14px rgba(11,19,43,.08);
+  }
   .journey-hint {
     width: 100%; margin-bottom: 16px; padding: 9px 12px;
     border: 1px solid rgba(255,255,255,.1); border-radius: 9px;
@@ -315,6 +321,9 @@
 </style>
 </head>
 <body>
+{% if can_reset_experience %}
+<button type="button" class="reset-experience-tool" onclick="confirmExperienceReset()" aria-label="إعادة ضبط التجربة">↺ إعادة ضبط التجربة</button>
+{% endif %}
 
 <!-- Progress bar -->
 <div id="progress-wrap">
@@ -592,6 +601,20 @@ const $screen   = document.getElementById('screen');
 const $progress = document.getElementById('progress-wrap');
 const $fill     = document.getElementById('progress-fill');
 const $label    = document.getElementById('progress-label');
+
+async function confirmExperienceReset(){
+  const first = window.confirm('سيتم مسح بيانات التجربة الحالية لهذه الشركة فقط، مع إبقاء حساب الدخول والبريد وكلمة المرور. لا يمكن التراجع عن هذه العملية. هل تريد المتابعة؟');
+  if (!first) return;
+  const second = window.confirm('تأكيد أخير: هل تريد إعادة هذا الحساب إلى أول خطوة في سنع؟');
+  if (!second) return;
+  const response = await fetch('/api/testing/reset-experience', { method:'POST' });
+  const payload = await response.json();
+  if (response.ok && payload.success) {
+    window.location.assign(payload.data.redirect || '/onboarding');
+    return;
+  }
+  window.alert(payload.message || 'تعذر إعادة ضبط التجربة.');
+}
 const $toast    = document.getElementById('motivation');
 
 function updateProgress(s) {
