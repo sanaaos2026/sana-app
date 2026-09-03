@@ -2680,6 +2680,143 @@ def discovery():
     )
 
 
+FIT_GATE_REQUIRED_FIELDS = (
+    "operating_duration",
+    "paying_customers",
+    "delivery_mode",
+)
+
+
+def _evaluate_fit_gate(payload):
+    """بوابة صغيرة تفصل الشركات العاملة عن مرحلة الفكرة دون استخدام حجم الفريق وحده."""
+    fit = payload.get("fit_gate") if isinstance(payload, dict) else None
+    fit = fit if isinstance(fit, dict) else {}
+    missing = [key for key in FIT_GATE_REQUIRED_FIELDS if not str(fit.get(key) or "").strip()]
+    if missing:
+        return {
+            "complete": False,
+            "qualified": False,
+            "missing": missing,
+            "reason": "أكمل أسئلة الملاءمة الثلاثة قبل بدء التشخيص.",
+        }
+    duration = str(fit["operating_duration"]).strip()
+    paying_customers = str(fit["paying_customers"]).strip()
+    delivery_mode = str(fit["delivery_mode"]).strip()
+    qualified = (
+        duration != "IDEA"
+        and paying_customers == "YES"
+        and delivery_mode in {"OWNER_DELIVERY", "TEAM_DELIVERY"}
+    )
+    return {
+        "complete": True,
+        "qualified": qualified,
+        "missing": [],
+        "reason": (
+            "الشركة لديها عملاء وتشغيل فعلي، ويمكن أن تستفيد من Sana Scan."
+            if qualified
+            else "الحالة ما زالت في مرحلة بناء العرض أو الوصول لأول إيراد وتشغيل فعلي."
+        ),
+    }
+
+
+@app.route("/api/fit-gate/check", methods=["POST"])
+def fit_gate_check():
+    context = request_company_context()
+    if not context:
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+    result = _evaluate_fit_gate(request.get_json(silent=True) or {})
+    if not result["complete"]:
+        return jsonify({
+            "success": False,
+            "error": "FIT_GATE_INCOMPLETE",
+            "message": result["reason"],
+        }), 400
+    return jsonify({
+        "success": True,
+        "data": {
+            **result,
+            "redirect": None if result["qualified"] else "/fit-gate/build-launch",
+        },
+    })
+
+
+@app.route("/fit-gate/build-launch")
+def fit_gate_build_launch():
+    context = request_company_context()
+    if not context:
+        return redirect(url_for("login"))
+    account = current_account()
+    company = get_db().execute(
+        "SELECT name FROM companies WHERE company_id=?",
+        (context["company_id"],),
+    ).fetchone()
+    return render_template(
+        "26-fit-gate-build-launch.html",
+        company_name=company["name"] if company else "مشروعك",
+        account_email=(account or {}).get("email"),
+    )
+
+
+@app.route("/api/fit-gate/interest", methods=["POST"])
+def fit_gate_interest():
+    context = request_company_context()
+    account = current_account()
+    if not context or not account:
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+    body = request.get_json(silent=True) or {}
+    phone = str(body.get("phone") or "").strip() or None
+    if phone and (len(phone) > 30 or not re.fullmatch(r"[0-9+()\-\s]{6,30}", phone)):
+        return jsonify({
+            "success": False,
+            "error": "INVALID_PHONE",
+            "message": "اكتب رقم جوال صحيحًا، أو اترك الحقل فارغًا.",
+        }), 400
+    db = get_db()
+    company = db.execute(
+        "SELECT name FROM companies WHERE company_id=?",
+        (context["company_id"],),
+    ).fetchone()
+    saved = db.execute(
+        """SELECT lead_id FROM leads
+           WHERE company_id=? AND source='FIT_GATE'
+             AND service_interest='Build & Launch'
+           ORDER BY created_at DESC LIMIT 1""",
+        (context["company_id"],),
+    ).fetchone()
+    if saved:
+        if phone:
+            db.execute(
+                "UPDATE leads SET phone=? WHERE lead_id=? AND company_id=?",
+                (phone, saved["lead_id"], context["company_id"]),
+            )
+            db.commit()
+        lead_id = saved["lead_id"]
+        duplicate = True
+    else:
+        lead_id = "L-" + uuid.uuid4().hex[:10].upper()
+        company_name = company["name"] if company else "مشروع جديد"
+        db.execute(
+            """INSERT INTO leads
+               (lead_id,company_id,name,company_name,email,phone,source,
+                service_interest,status,notes)
+               VALUES (?,?,?,?,?,?,?,'Build & Launch','اهتمام',?)""",
+            (
+                lead_id, context["company_id"], company_name, company_name,
+                account["email"], phone, "FIT_GATE",
+                "مسار مستقل لتحويل الفكرة أو الخبرة إلى خدمة قابلة للبيع والتشغيل.",
+            ),
+        )
+        db.commit()
+        duplicate = False
+    return jsonify({
+        "success": True,
+        "data": {"lead_id": lead_id, "duplicate": duplicate},
+        "message": (
+            "تم تسجيل اهتمامك — شكرًا لك، ونتطلع أن يكون سنع جزءًا من نجاح مشروعك القادم."
+        ),
+    }), 200 if duplicate else 201
+
+
 @app.route("/api/discovery/save", methods=["POST"])
 def discovery_save():
     """يحفظ إجابات SDS-001 ويُنشئ أول قضية تلقائيًا."""
@@ -2711,6 +2848,22 @@ def discovery_save():
             "already_done": True,
             "scan_has_run": scan_state["has_run"],
             "scan_status": scan_state["status"],
+        }})
+
+    fit_gate = _evaluate_fit_gate(body)
+    if not full_reassessment and not fit_gate["complete"]:
+        return jsonify({
+            "success": False,
+            "error": "FIT_GATE_REQUIRED",
+            "message": fit_gate["reason"],
+        }), 400
+    if not full_reassessment and not fit_gate["qualified"]:
+        return jsonify({"success": True, "data": {
+            "qualified": False,
+            "fit_gate": fit_gate,
+            "redirect": "/fit-gate/build-launch",
+            "scan_has_run": False,
+            "scan_status": "NOT_RUN",
         }})
 
     q1    = (body.get("q1")      or "").strip()
@@ -2851,7 +3004,9 @@ def discovery_save():
         "📉 المبيعات": "Brand",
         "📣 التسويق": "Brand",
         "⚙️ التشغيل": "Operations",
-        "👥 الفريق": "Independence",
+        # «الفريق» وصف واسع؛ لا يُنسب لأصل قبل أن توضّح إجابة غياب المؤسس
+        # القدرة، الدور وملكية القرار.
+        "👥 الفريق": None,
         "💵 الأرباح والسيولة": "Data",
         "🚀 التوسع": "Operations",
     }
@@ -7526,48 +7681,125 @@ SDS_QUESTIONS = {
 
 
 def _next_sds_question(db, company_id, case_id=None):
-    """السؤال التكيفي التالي غير المجاب لنفس الشركة والقضية."""
+    """السؤال التالي يغطي فجوة حقيقية فقط، ويتوقف عندما يصبح القرار ممكنًا."""
     if case_id:
         case = db.execute(
-            "SELECT case_id FROM cases WHERE case_id=? AND company_id=?",
+            "SELECT case_id,related_asset_id FROM cases WHERE case_id=? AND company_id=?",
             (case_id, company_id),
         ).fetchone()
         if not case:
             return None
+    else:
+        case = None
     assets = db.execute(
         "SELECT * FROM assets WHERE company_id=?", (company_id,)
     ).fetchall()
     if not assets:
         return None
 
+    from sana_scan import latest_scan
+    scan = latest_scan(db, case_id) if case_id else None
+    if scan and (
+        scan.get("decision_readiness") in {"READY", "CONDITIONAL"}
+        or scan.get("status") in {"REVIEW_REQUIRED", "COMPLETE"}
+    ):
+        return None
+    score_by_type = {
+        item.get("asset_type"): item
+        for item in (scan or {}).get("asset_scores") or []
+    }
+    conflict_ids = {
+        str(source_id)
+        for conflict in (scan or {}).get("open_conflicts") or []
+        for source_id in conflict.get("source_ids") or []
+    }
+
     evidence_per_asset = {}
     for a in assets:
         client_asset = _client_asset_view(a)
-        counts = db.execute(
-            """SELECT COUNT(*) AS total,
-                      COUNT(*) FILTER (
-                        WHERE source_type='SDS-002 تشخيص تراكمي'
-                           OR source_ref LIKE 'SDS-002:%%'
-                      ) AS adaptive_answers
+        question_id = f"SDS-002:{a['asset_type']}"
+        rows = db.execute(
+            """SELECT evidence_id,date_collected,verification_status
                FROM evidence
-               WHERE company_id=? AND asset_id=?""",
-            (company_id, a["asset_id"]),
-        ).fetchone()
+               WHERE company_id=? AND asset_id=? AND source_ref=?
+               ORDER BY date_collected DESC,evidence_id DESC""",
+            (company_id, a["asset_id"], question_id),
+        ).fetchall()
+        memory = None
+        if case_id:
+            memory = db.execute(
+                """SELECT v.observed_at,v.verification_status
+                   FROM company_memory_items i
+                   JOIN company_memory_versions v
+                     ON v.version_id=i.current_version_id
+                   WHERE i.company_id=? AND i.memory_key=?""",
+                (company_id, f"adaptive:{case_id}:{question_id}"),
+            ).fetchone()
+
+        def _fresh(value):
+            if not value:
+                return False
+            try:
+                observed = value if isinstance(value, date) else date.fromisoformat(
+                    str(value).split("T", 1)[0].split(" ", 1)[0]
+                )
+            except (TypeError, ValueError):
+                return False
+            return observed >= date.today() - timedelta(days=365)
+
+        answered = any(
+            row["verification_status"] != "CONTRADICTED"
+            and str(row["evidence_id"]) not in conflict_ids
+            and _fresh(row["date_collected"])
+            for row in rows
+        ) or bool(
+            memory
+            and memory["verification_status"] != "CONTRADICTED"
+            and _fresh(memory["observed_at"])
+        )
+        score = score_by_type.get(a["asset_type"]) or {}
+        completeness = (score.get("information_completeness") or {}).get("score", 0)
+        evidence_confidence = (score.get("evidence_confidence") or {}).get("score", 0)
+        has_gap = (
+            not scan
+            or score.get("status") == "INCOMPLETE"
+            or bool(score.get("missing_evidence"))
+        )
         evidence_per_asset[a["asset_type"]] = {
-            "count":      counts["total"],
-            "answered":   counts["adaptive_answers"] > 0,
+            "count":      len(rows),
+            "answered":   answered,
+            "has_gap":    has_gap,
+            "completeness": completeness,
+            "evidence_confidence": evidence_confidence,
             "asset_id":   a["asset_id"],
             "asset_name": client_asset["asset_name"],
             "client_asset_name": client_asset["client_asset_name"],
         }
 
+    related_asset_id = case["related_asset_id"] if case else None
     valid = {
         key: value for key, value in evidence_per_asset.items()
-        if key in SDS_QUESTIONS and not value["answered"]
+        if (
+            key in SDS_QUESTIONS
+            and value["has_gap"]
+            and not value["answered"]
+            and (
+                value["count"] > 0
+                or value["asset_id"] == related_asset_id
+            )
+        )
     }
     if not valid:
         return None
-    chosen = min(valid, key=lambda key: (valid[key]["count"], key))
+    chosen = min(
+        valid,
+        key=lambda key: (
+            0 if valid[key]["asset_id"] == related_asset_id else 1,
+            valid[key]["completeness"],
+            valid[key]["evidence_confidence"],
+            key,
+        ),
+    )
     question = SDS_QUESTIONS[chosen]
     if not case_id:
         case = db.execute(
@@ -7590,6 +7822,21 @@ def _next_sds_question(db, company_id, case_id=None):
         "question": question["text"],
         "options": question["options"],
         "suggestions": question["suggestions"],
+        "gap_reason": (
+            ((score_by_type.get(chosen) or {}).get("missing_evidence") or [None])[0]
+        ),
+        "progress": {
+            "knowledge_coverage": round(
+                sum(item["completeness"] for item in evidence_per_asset.values())
+                / max(1, len(evidence_per_asset))
+            ),
+            "evidence_quality": round(
+                sum(item["evidence_confidence"] for item in evidence_per_asset.values())
+                / max(1, len(evidence_per_asset))
+            ),
+            "open_conflicts": len((scan or {}).get("open_conflicts") or []),
+            "decision_readiness": (scan or {}).get("decision_readiness") or "NOT_READY",
+        },
         "evidence_per_asset": {
             key: value["count"] for key, value in evidence_per_asset.items()
         },
@@ -7608,7 +7855,16 @@ def sds_question(company_id):
     return jsonify({
         "success": True,
         "data": data,
-        "meta": {"complete": data is None},
+        "meta": {
+            "complete": data is None,
+            "message": (
+                "التشخيص أصبح كافيًا لاتخاذ القرار."
+                if data is None else "يوجد سؤال واحد مرتبط بفجوة ستؤثر في القرار."
+            ),
+            "progress_basis": (
+                "تغطية المعرفة، جودة الأدلة، التعارضات المفتوحة، وجاهزية القرار"
+            ),
+        },
     })
 
 
@@ -8205,11 +8461,7 @@ def _build_scan_report_context(company_id, case_id=None):
                 impact_review = dict(row)
                 impact_review.update(status="MEASURED", status_label="تم القياس")
         if not impact_review:
-            impact_review = {
-                "status": "WAITING_FOR_MEASUREMENT",
-                "status_label": "بانتظار القياس",
-                "actual_value": None,
-            }
+            impact_review = None
         impact = decision.get("expected_impact") or ""
         baseline, target = _number_pair(impact)
         phase = _phase(decision.get("phase_label"))
@@ -8270,24 +8522,6 @@ def _build_scan_report_context(company_id, case_id=None):
                 linked_evidence,
                 impact,
             ]),
-        })
-
-    if not initiatives and proposed_decision:
-        proposed_sources = proposed_decision.get("source_ids") or []
-        initiatives.append({
-            "phase": "0–30 يومًا",
-            "decision_id": None,
-            "decision_title": "قرار مقترح للمراجعة البشرية",
-            "task": proposed_decision.get("statement") or "جمع الدليل واعتماد القرار",
-            "owner": "غير محدد — يلزم الاعتماد",
-            "due_date": "غير محدد — يلزم الاعتماد",
-            "kpi": "غير محدد — يلزم اعتماد مقياس نجاح",
-            "baseline": "غير موثق",
-            "target": "غير موثق",
-            "evidence": _initiative_sources(source_ids=proposed_sources),
-            "impact": opportunity.get("statement") if opportunity else "غير موثق",
-            "status": "مقترح — مراجعة بشرية مطلوبة",
-            "completeness": False,
         })
 
     phases = []
@@ -8397,6 +8631,103 @@ def _build_scan_report_context(company_id, case_id=None):
         decision_ready
         and any(item.get("decision_id") for item in initiatives)
     )
+    quality = dict(scan.get("diagnostic_quality") or {})
+    if (
+        decision_ready
+        and quality.get("evidence_strength") == "STRONG"
+        and quality.get("data_reliability") in {"HIGH", "MEDIUM"}
+        and not scan.get("open_conflicts")
+    ):
+        report_tier = "EXPANDED"
+        report_tier_label = "تشخيص موسّع مدعوم"
+    elif decision_ready:
+        report_tier = "DIAGNOSTIC"
+        report_tier_label = "تشخيص مكتمل"
+    else:
+        report_tier = "PRELIMINARY"
+        report_tier_label = "تقرير أولي مختصر"
+
+    def _decision_rank(decision):
+        try:
+            linked = len(json.loads(decision.get("evidence_ids") or "[]"))
+        except (TypeError, json.JSONDecodeError):
+            linked = 0
+        completeness = sum(bool(decision.get(key)) for key in (
+            "recommended_action", "reason", "expected_impact",
+            "owner_name", "due_date", "success_metric",
+        ))
+        status_weight = 20 if decision.get("status") == "معتمد" else 10
+        return (
+            status_weight
+            + int(decision.get("confidence_score") or 0)
+            + min(15, linked * 5)
+            + completeness * 3
+        )
+
+    report_decisions = []
+    for rank, decision in enumerate(
+        sorted(decisions, key=_decision_rank, reverse=True)[:5],
+        start=1,
+    ):
+        item = dict(decision)
+        item.update({
+            "rank": rank,
+            "priority_score": _decision_rank(decision),
+            "priority_reason": (
+                decision.get("reason")
+                or "يرتبط مباشرة بالقضية وبالمعلومات المؤهلة في Sana Scan."
+            ),
+            "expected_impact_label": (
+                decision.get("expected_impact")
+                or "أثر متوقع يحتاج معيار نجاح وقياسًا قبل/بعد."
+            ),
+        })
+        report_decisions.append(item)
+
+    asset_scores = list(scan.get("asset_scores") or [])
+    strong_assets = [
+        item for item in asset_scores
+        if item.get("status") == "COMPLETE"
+        and item.get("score") is not None
+        and item["score"] >= 60
+    ]
+    weak_assets = [
+        item for item in asset_scores
+        if item.get("status") == "COMPLETE"
+        and item.get("score") is not None
+        and item["score"] < 60
+    ]
+    swot = {
+        "strengths": [{
+            "text": f"{_client_asset_view(item)['client_asset_name']}: {item['score']}/100",
+            "certainty": "مثبت",
+        } for item in strong_assets[:3]],
+        "weaknesses": [{
+            "text": f"{_client_asset_view(item)['client_asset_name']}: {item['score']}/100",
+            "certainty": "مثبت",
+        } for item in weak_assets[:3]],
+        "opportunities": ([{
+            "text": opportunity.get("statement"),
+            "certainty": (
+                "مثبت" if bottleneck and bottleneck.get("classification") == "Inference"
+                else "محتمل / يحتاج تحقق"
+            ),
+        }] if opportunity and opportunity.get("statement") else []),
+        "threats": ([{
+            "text": bottleneck.get("statement"),
+            "certainty": (
+                "مثبت" if bottleneck.get("classification") == "Inference"
+                else "محتمل / يحتاج تحقق"
+            ),
+        }] if bottleneck and bottleneck.get("statement") else []) + [{
+            "text": conflict.get("verification_question"),
+            "certainty": "محتمل / يحتاج تحقق",
+        } for conflict in (scan.get("open_conflicts") or [])[:2]],
+    }
+    swot["priority_link"] = (
+        (report_decisions[0].get("title") if report_decisions else None)
+        or (opportunity or {}).get("statement")
+    )
     diagnostic_review = {
         "contract_version": "SANA-DIAGNOSTIC-REVIEW-v1",
         "snapshot": {
@@ -8482,6 +8813,11 @@ def _build_scan_report_context(company_id, case_id=None):
         "scan_next_action": next_action,
         "scan_decision_ready": decision_ready,
         "scan_execution_plan_available": execution_plan_available,
+        "scan_report_tier": report_tier,
+        "scan_report_tier_label": report_tier_label,
+        "scan_questions_complete": decision_ready,
+        "scan_swot": swot,
+        "scan_report_decisions": report_decisions,
         "scan_what_not_do": what_not_do,
         "scan_journey": scan_journey,
         "scan_score_progress": {
@@ -8601,6 +8937,7 @@ def _build_passport_context(company_id):
     else:
         context["human_review"] = None
     context["report_view"] = "main"
+    context["report_summary_url"] = f"/company/{company_id}/scan-report"
     context["report_details_url"] = f"/company/{company_id}/scan-report/details"
     context["execution_plan_url"] = f"/company/{company_id}/execution-plan"
     context["report_pdf_url"] = f"/api/companies/{company_id}/scan/report-pdf"
@@ -8609,6 +8946,22 @@ def _build_passport_context(company_id):
     )
     context["adaptive_questions_url"] = (
         f"/case/{case_id}#sdsSection" if case_id else "/assessment"
+    )
+    context["report_problem_url"] = (
+        f"/case/{case_id}#caseQuestion" if case_id else "/assessment"
+    )
+    context["report_evidence_url"] = (
+        f"/case/{case_id}#evidenceSection" if case_id else "/assessment"
+    )
+    context["report_decision_url"] = (
+        f"/case/{case_id}#decisionsSection" if case_id else "/assessment"
+    )
+    context["report_results_url"] = (
+        f"/case/{case_id}#resultsSection" if case_id else "/assessment"
+    )
+    context["report_next_url"] = (
+        context["report_results_url"]
+        if context.get("scan_next_action") else context["adaptive_questions_url"]
     )
     return context
 

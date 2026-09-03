@@ -147,17 +147,15 @@ function render(d, meta, sds){
         <h2>أين تحتاج أن تبدأ؟</h2>
         <p style="font-size:12px;color:#6E7580;margin:-6px 0 12px;line-height:1.7;">ابدأ بالأصل الأقل جاهزية. يمكنك فتح التقرير عند الحاجة لمراجعة التفاصيل.</p>
   `;
-  // أشرطة تقدم الأدلة: عدد الأدلة الفعلي / 5 كحد أقصى للعرض (SDS-002)
-  const evPer = (sds && sds.evidence_per_asset) || {};
+  // التقدم هو تغطية المعلومات لكل أصل، لا عدد الأسئلة.
   d.assets.slice().sort((a,b)=>(a.current_score || 0)-(b.current_score || 0)).forEach(a=>{
-    const evCount = evPer[a.asset_type] || 0;
-    const evPct   = Math.min(evCount / 5, 1) * 100;
     const scanScore = scoreByType[a.asset_type] || {};
+    const coverage = ((scanScore.information_completeness || {}).score || 0);
     const scoreText = scanScore.score == null ? 'بانتظار المعلومات' : `${scanScore.score}/100`;
     html += `<div class="asset-row">
       <span class="ar-name">${a.client_asset_name}</span>
-      <div class="ev-bar"><div class="ev-bar-fill" style="width:${evPct}%"></div></div>
-      <span class="ev-count">${evCount}</span>
+      <div class="ev-bar" title="تغطية المعلومات"><div class="ev-bar-fill" style="width:${coverage}%"></div></div>
+      <span class="ev-count">${coverage}%</span>
       <span class="ar-score" style="font-size:11px;">${scoreText}</span>
     </div>`;
   });
@@ -194,7 +192,7 @@ function render(d, meta, sds){
     sec.innerHTML = `
       <div class="sds-eyebrow">خطوة سريعة</div>
       <div class="sds-q">${sds.question} <span style="font-size:11px; color:#9AA0AB; font-weight:400;">(${sds.client_asset_name})</span></div>
-      <div style="font-size:12px;color:#6E7580;margin:-8px 0 14px;">أجب عن سؤال واحد لتوضيح أهم نقطة ناقصة الآن.</div>
+      <div style="font-size:12px;color:#6E7580;margin:-8px 0 14px;">تغطية المعرفة ${sds.progress?.knowledge_coverage || 0}% · جودة الأدلة ${sds.progress?.evidence_quality || 0}% · سؤال واحد يؤثر في القرار.</div>
       <div class="sds-options">${optHtml}</div>
       <div class="sds-msg" id="sdsMsg">تم تحديث الصورة</div>
       <div class="sds-suggestion" id="sdsSuggestion"></div>
@@ -212,6 +210,9 @@ async function sdsAnswer(choice, btn){
   // تعطيل كل الأزرار أثناء الحفظ
   document.querySelectorAll('.sds-opt').forEach(b => b.classList.add('saving'));
   btn.classList.add('selected');
+  const pendingMsg = document.getElementById('sdsMsg');
+  pendingMsg.textContent = 'جارٍ الحفظ وتحديث الصورة…';
+  pendingMsg.classList.add('show');
 
   const title = `${sds.question} — الإجابة: ${choice}`;
   const confMap = { 'نعم': 90, 'جزئيًا': 60, 'قيد الإعداد': 60, 'قليل (0-2)': 90, 'متوسط (3-6)': 60 };
@@ -240,11 +241,12 @@ async function sdsAnswer(choice, btn){
     const msg  = document.getElementById('sdsMsg');
     const sug  = document.getElementById('sdsSuggestion');
     if(res.ok && json.success){
+      msg.textContent = 'تم حفظ الإجابة وتحديث الصورة';
       msg.classList.add('show');
       setTimeout(() => {
         if(json.data.next_question) location.reload();
         else location.href = json.data.result_url || `/case/${sds.case_id}/result`;
-      }, 650);
+      }, 180);
     } else {
       msg.textContent = '⚠️ تعذر الحفظ — حاول مرة أخرى.';
       msg.classList.add('show');

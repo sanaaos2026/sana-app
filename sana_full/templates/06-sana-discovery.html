@@ -569,7 +569,9 @@ const Q = [
 // step 0 = welcome, steps 1-7 = Q1-Q7, step 8 = baseline, step 9 = outro
 // ────────────────────────────────────────────────
 let step = 0;
-const ans = {};
+const ans = {
+  fit_gate: {operating_duration:null, paying_customers:null, delivery_mode:null}
+};
 let firstCaseId = null;
 let calibrationPeriodChoice = null;
 const calibrationDraft = {
@@ -641,9 +643,77 @@ function renderWelcome() {
     </div>`;
 }
 
+const FIT_FIELDS = [
+  {key:'operating_duration', title:'من متى بدأ التشغيل الفعلي؟', options:[
+    ['IDEA','ما زلنا في مرحلة الفكرة أو التجهيز'],['UNDER_YEAR','أقل من سنة'],['ONE_PLUS','سنة أو أكثر']
+  ]},
+  {key:'paying_customers', title:'هل لديكم عملاء دفعوا مقابل الخدمة أو المنتج؟', options:[
+    ['NO','لا، لم نصل لأول إيراد بعد'],['YES','نعم، لدينا عملاء أو إيراد فعلي']
+  ]},
+  {key:'delivery_mode', title:'كيف يتم تقديم العمل اليوم؟', options:[
+    ['BUILDING','نبني العرض ولم يبدأ التسليم'],['OWNER_DELIVERY','المؤسس يقدّم العمل للعملاء'],['TEAM_DELIVERY','فريق أو نظام يقدّم العمل']
+  ]}
+];
+
+function renderFitGate() {
+  $screen.innerHTML = `
+    <div class="calibration-wrap">
+      <div class="calibration-kicker">هل Sana Scan مناسب لمرحلتك الآن؟</div>
+      <div class="calibration-note">ثلاث إجابات فقط. حجم الفريق وحده لا يحدد الملاءمة.</div>
+      ${FIT_FIELDS.map(field => `
+        <div style="margin-top:18px;">
+          <div style="font-weight:700; margin-bottom:8px;">${field.title}</div>
+          <div class="period-options" data-fit-group="${field.key}">
+            ${field.options.map(([value,label]) => `
+              <button type="button" class="period-option" onclick="selectFit('${field.key}','${value}',this)">${label}</button>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')}
+      <div id="fit-error" class="error-msg" style="margin-top:12px;"></div>
+      <button id="fit-continue" class="start-btn" style="width:100%; margin-top:18px;" onclick="submitFitGate()">ابدأ التقييم</button>
+    </div>`;
+}
+
+function selectFit(key, value, button) {
+  ans.fit_gate[key] = value;
+  document.querySelectorAll(`[data-fit-group="${key}"] .period-option`).forEach(el => el.classList.remove('selected'));
+  button.classList.add('selected');
+}
+
+async function submitFitGate() {
+  const error = document.getElementById('fit-error');
+  if (FIT_FIELDS.some(field => !ans.fit_gate[field.key])) {
+    error.textContent = 'أكمل الإجابات الثلاثة للمتابعة.';
+    return;
+  }
+  const button = document.getElementById('fit-continue');
+  button.disabled = true;
+  button.textContent = 'جارٍ التحقق…';
+  try {
+    const response = await fetch('/api/fit-gate/check', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken()},
+      body:JSON.stringify({fit_gate:ans.fit_gate})
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.message || 'تعذر التحقق الآن.');
+    if (!result.data.qualified) {
+      window.location.href = result.data.redirect;
+      return;
+    }
+    step = 1;
+    transitionTo(render);
+  } catch (err) {
+    error.textContent = err.message;
+    button.disabled = false;
+    button.textContent = 'ابدأ التقييم';
+  }
+}
+
 function skipWelcome() {
   if (_welcomeTimer) { clearInterval(_welcomeTimer); _welcomeTimer = null; }
-  goNext();
+  transitionTo(renderFitGate);
 }
 
 function renderCalibration() {
@@ -881,6 +951,10 @@ async function saveAndFinish() {
     const json = await res.json();
     if (json.success && json.data) {
       saveData    = json.data;
+      if (saveData.qualified === false && saveData.redirect) {
+        window.location.href = saveData.redirect;
+        return;
+      }
       firstCaseId = json.data.case_id;
     } else {
       throw new Error(json.message || 'تعذر حفظ جلسة الاكتشاف.');

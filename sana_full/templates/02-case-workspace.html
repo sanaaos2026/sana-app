@@ -328,7 +328,7 @@ function renderScanSection(scan){
       <div class="knowledge-finding-text">ينتظر دليلًا: ${(scan.decisions_waiting_for_evidence || []).length}</div>
     </div>`;
   }
-  return `<section class="knowledge-section">
+  return `<section class="knowledge-section" id="scanSection">
     <h2>Sana Scan — التشخيص الموحد</h2>
     <p style="font-size:12.5px;color:#6E7580;line-height:1.7;">
       SDS-001 + الأدلة + الأصول الخمسة. لا تظهر درجة بلا تفسير، ولا فرضية أو استنتاج بلا مصادر.
@@ -664,7 +664,7 @@ function render(d){
       </div>
     </section>
     <div id="insight-counter">${buildInsightCounter(d.evidence, [])}</div>
-    <div class="qbox">
+    <div class="qbox" id="caseQuestion">
       <div class="lbl">Real Question</div>
       <div class="declared">المشكلة كما وصفها المالك: "${c.declared_problem || ''}"</div>
       <div class="real">السؤال الحقيقي: ${c.real_question || ''}</div>
@@ -674,7 +674,7 @@ function render(d){
     ${renderReferenceKnowledge(d.reference_knowledge)}
     ${renderKnowledgeSection(d.knowledge_diagnostic)}
 
-    <section>
+    <section id="evidenceSection">
       <h2>الأدلة المرتبطة (${d.evidence.length})</h2>
   `;
   if(d.evidence.length === 0){ html += `<p style="color:#6E7580; font-size:13px;">لا توجد أدلة بعد.</p>`; }
@@ -710,7 +710,7 @@ function render(d){
     decCounts['معتمد'] ? `${decCounts['معتمد']} معتمد` : null,
     (decCounts['مقترح'] + decCounts['قيد التنفيذ']) ? `${decCounts['مقترح'] + decCounts['قيد التنفيذ']} بانتظار الاعتماد` : null,
   ].filter(Boolean).join(' · ');
-  html += `<section><h2>القرارات الناتجة (${d.decisions.length})</h2>${decBreakdown ? `<p style="font-size:12px; color:#9AA0AB; margin:-8px 0 12px;">${decBreakdown}</p>` : ''}`;
+  html += `<section id="decisionsSection"><h2>القرارات الناتجة (${d.decisions.length})</h2>${decBreakdown ? `<p style="font-size:12px; color:#9AA0AB; margin:-8px 0 12px;">${decBreakdown}</p>` : ''}`;
   const p0Decision = d.decisions.find(dec => dec.phase_label === 'P0');
   if(!p0Decision && d.scan && ['REVIEW_REQUIRED','COMPLETE'].includes(d.scan.status) && d.scan.proposed_decision){
     html += `<div class="decision-box" style="margin-bottom:12px;border-color:#F2B233;">
@@ -783,7 +783,7 @@ function render(d){
       const key = t.phase_label || 'مهام منجزة أخرى';
       (byPhase[key] = byPhase[key] || []).push(t);
     });
-    html += `<section><h2>المهام المنجزة (${completedTasks.length})</h2>`;
+    html += `<section id="resultsSection"><h2>المهام المنجزة (${completedTasks.length})</h2>`;
     Object.keys(byPhase).forEach(phase => {
       html += `<div style="margin-bottom:14px;">
         <div style="font-size:12.5px; font-weight:600; color:#0EA5A5; margin-bottom:8px;">تحت مرحلة: ${phase}</div>`;
@@ -793,6 +793,7 @@ function render(d){
             <span class="dot" style="background:#0B132B;"></span>
             <div>
               <div style="font-weight:600; color:#0B132B;">✓ ${t.title}</div>
+              <div style="font-size:11px;color:#9AA0AB;margin-top:2px;">تنفيذ فقط — لا يوجد قياس أثر قبل تسجيل نتيجة موثقة</div>
               ${t.value_note ? `<div style="font-size:12px; color:#6E7580; margin-top:2px;">القيمة: ${t.value_note}</div>` : ''}
             </div>
           </div>`;
@@ -803,12 +804,12 @@ function render(d){
   }
 
   const impactReviews = d.p0_impact_reviews || [];
-  html += `<section><h2>Impact Review — سجل الأثر (${impactReviews.length})</h2>`;
+  html += `<section id="impactSection"><h2>Impact Review — سجل الأثر (${impactReviews.length})</h2>`;
   if(!impactReviews.length){
     html += `<p style="color:#6E7580;font-size:13px;"><strong>بانتظار القياس:</strong> الأثر المتوقع ليس أثرًا متحققًا. أغلق المهمة فقط بعد تسجيل baseline وtarget وactual بمصادرها وتواريخها.</p>`;
   } else {
     impactReviews.forEach(r => {
-      const labels = {IMPROVED:'تحسّن',UNCHANGED:'لم يتغير',WORSE:'تراجع',INCONCLUSIVE:'غير حاسم'};
+      const labels = {IMPROVED:'أثر مثبت',UNCHANGED:'نتيجة مقاسة — لم تتغير',WORSE:'نتيجة مقاسة — تراجع',INCONCLUSIVE:'تحسن إشارة — غير حاسم'};
       html += `<div class="knowledge-finding">
         <div class="knowledge-finding-title">${escHtml(labels[r.impact_outcome] || r.impact_outcome)}</div>
         <div class="knowledge-finding-text"><strong>Baseline:</strong> ${escHtml(r.baseline_value)} — ${escHtml(r.baseline_source_ref)} (${escHtml(r.baseline_observed_at)})</div>
@@ -1323,6 +1324,9 @@ async function sdsAnswer(choice, btn){
   if(!sds || !CASE_COMPANY_ID) return;
   document.querySelectorAll('.sds-opt').forEach(b => b.classList.add('saving'));
   btn.classList.add('selected');
+  const pendingMsg = document.getElementById('sdsMsg');
+  pendingMsg.textContent = 'جارٍ الحفظ وتحديث الصورة…';
+  pendingMsg.classList.add('show');
 
   const title      = `${sds.question} — الإجابة: ${choice}`;
   const confMap    = { 'نعم': 90, 'جزئيًا': 60, 'قيد الإعداد': 60, 'قليل (0-2)': 90, 'متوسط (3-6)': 60 };
@@ -1351,12 +1355,13 @@ async function sdsAnswer(choice, btn){
     const msg  = document.getElementById('sdsMsg');
     const sug  = document.getElementById('sdsSuggestion');
     if(res.ok && json.success){
+      msg.textContent = 'تم حفظ الإجابة وتحديث الصورة';
       msg.classList.add('show');
       showToast('تم تحديث الصورة');
       setTimeout(() => {
         if(json.data.next_question) location.reload();
         else location.href = json.data.result_url || `/case/${CASE_ID}/result`;
-      }, 650);
+      }, 180);
     } else {
       msg.textContent = '⚠️ تعذر الحفظ — حاول مرة أخرى.';
       msg.classList.add('show');
@@ -1378,6 +1383,7 @@ async function addEvidence(){
     showToast('مرجع المصدر مطلوب عند تسجيل Fact');
     return;
   }
+  showToast('جارٍ حفظ الدليل وتحديث الصورة…');
   const res = await fetch(`/api/companies/${CASE_COMPANY_ID || 'C001'}/evidence`, {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
@@ -1391,8 +1397,7 @@ async function addEvidence(){
   });
   const json = await res.json();
   if(json.success){
-    const d = json.data || {};
-    showToast('تمت إضافة الدليل — أعد Sana Scan لتحديث التشخيص');
+    showToast('تم حفظ الدليل وتحديث الصورة');
     input.value=''; loadCase();
   }
 }

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>مسار Build & Launch — سنع</title>
+  <style>
+    *{box-sizing:border-box} body{margin:0;background:#f6f7f9;color:#0b132b;font-family:Arial,sans-serif}
+    main{min-height:100vh;display:grid;place-items:center;padding:24px}.card{max-width:620px;background:#fff;border:1px solid #e2e5ea;border-radius:18px;padding:34px;box-shadow:0 14px 38px rgba(11,19,43,.08)}
+    .k{color:#0a8f8e;font-size:12px;font-weight:700}.mark{font-size:26px;font-weight:800;margin:12px 0}h1{font-size:25px;line-height:1.5;margin:0 0 12px}
+    p{line-height:1.9;color:#5f6876}.next{background:#fff8e7;border:1px solid #ebcb79;border-radius:12px;padding:14px;margin:20px 0;color:#0b132b}
+    label{display:block;font-size:13px;font-weight:700;margin-bottom:7px}input{width:100%;padding:12px;border:1px solid #d8dde5;border-radius:9px;font:inherit}
+    button,a{display:inline-flex;justify-content:center;border-radius:9px;padding:11px 16px;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}
+    button{border:0;background:#0b132b;color:#fff;margin-top:12px}a{color:#0a8f8e}.msg{margin-top:12px;color:#0a8f8e;font-weight:700;line-height:1.7}
+  </style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <div class="mark">سنع</div>
+    <div class="k">نتيجة الملاءمة</div>
+    <h1>{{ company_name }} في مرحلة تسبق Sana Scan</h1>
+    <p>التشخيص يعطي قيمة أكبر عندما توجد خدمة تُقدّم لعملاء فعليين وبيانات تشغيل يمكن تتبعها. هذا ليس رفضًا للفكرة؛ بل اختيار للمسار الأنسب لمرحلتها.</p>
+    <div class="next"><strong>الأنسب الآن: Build & Launch</strong><br>مسار مستقل يساعدك على تحويل الخبرة أو الفكرة إلى عرض واضح، الوصول لأول عميل، وبناء تشغيل أولي قابل للقياس.</div>
+    <form id="interestForm">
+      <label for="phone">رقم الجوال (اختياري)</label>
+      <input id="phone" inputmode="tel" autocomplete="tel" placeholder="+966 …">
+      <button id="submitBtn" type="submit">سجّل اهتمامي بالمسار</button>
+      <a href="/home">العودة للرئيسية</a>
+      <div id="message" class="msg"></div>
+    </form>
+  </div>
+</main>
+<script>
+document.getElementById('interestForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button=document.getElementById('submitBtn'), message=document.getElementById('message');
+  button.disabled=true; button.textContent='جارٍ التسجيل…'; message.textContent='';
+  try{
+    const response=await fetch('/api/fit-gate/interest',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':document.querySelector('meta[name="csrf-token"]').content},
+      body:JSON.stringify({phone:document.getElementById('phone').value})
+    });
+    const result=await response.json();
+    if(!response.ok||!result.success) throw new Error(result.message||'تعذر التسجيل الآن.');
+    message.textContent=result.message;
+    button.hidden=true;
+  }catch(error){message.textContent=error.message;button.disabled=false;button.textContent='سجّل اهتمامي بالمسار';}
+});
+</script>
+</body>
+</html>

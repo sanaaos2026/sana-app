@@ -158,6 +158,15 @@
   .report-action{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:8px;padding:8px 12px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}
   .report-action.primary{background:var(--navy);border-color:var(--navy);color:#fff}
   .report-action.small{padding:7px 10px;font-size:11px;color:var(--muted)}
+  .report-details .report-actions{position:sticky;top:0;z-index:20;box-shadow:0 5px 16px rgba(11,19,43,.08)}
+  .local-action{display:inline-flex;margin-top:8px;color:#087e7d;text-decoration:none;font-size:11.5px;font-weight:700}
+  .tier-label{display:inline-flex;margin-top:9px;padding:4px 9px;border-radius:20px;background:#EAF8F7;color:#087e7d;font-size:11px;font-weight:700}
+  .swot-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .swot-card{border:1px solid var(--line);border-radius:10px;padding:13px;background:#fff}
+  .swot-card h3{font-family:'Cairo';font-size:13px;color:var(--navy);margin-bottom:7px}
+  .swot-item{font-size:12px;line-height:1.65;padding:6px 0;border-bottom:1px solid #EEF0F4}
+  .swot-item:last-child{border-bottom:0}
+  .certainty{display:block;color:var(--muted);font-size:10.5px;margin-top:2px}
   .compact-review{margin:10px 28px 0;padding:12px;border:1px solid var(--line);background:#fff;border-radius:9px}
   .executive-stack{display:grid;gap:12px}
   .executive-block{border-bottom:1px solid var(--line);padding-bottom:12px}
@@ -178,7 +187,9 @@
     .next-step{ margin:18px 18px 0; padding:18px; }
     .review-card,.compact-review{margin:14px 18px 0}
     .report-actions{padding:12px 18px}
-    .answer-grid,.initiative-grid,.confidence-grid{ grid-template-columns:1fr; }
+    .answer-grid,.initiative-grid,.confidence-grid,.swot-grid{ grid-template-columns:1fr; }
+    .report-details .report-actions{bottom:0;top:auto;border-top:1px solid var(--line);border-bottom:0}
+    .report-details .report-action{flex:1;min-width:105px}
   }
 
   @media print{
@@ -192,7 +203,7 @@
   }
 </style>
 </head>
-<body>
+<body class="report-{{ report_view }}" data-report-tier="{{ scan_report_tier }}">
 <div class="wrap" data-testid="executive-report">
 
   <header>
@@ -206,6 +217,7 @@
     <div class="report-kicker">{% if report_view == 'plan' %}خطة التنفيذ{% elif report_view == 'details' %}تفاصيل Sana Scan{% else %}تقرير Sana Scan التنفيذي{% endif %}</div>
     <h1>{% if report_view == 'plan' %}خطة التنفيذ{% elif report_view == 'details' %}تفاصيل الصورة التشخيصية{% else %}ما القرار والخطوة التالية؟{% endif %}</h1>
     <div class="company-name">{{ company.name }}{% if company.sector %} — {{ company.sector }}{% endif %}</div>
+    {% if report_view != 'plan' %}<div class="tier-label">{{ scan_report_tier_label }}</div>{% endif %}
   </header>
 
   {% set current_review = human_review.review if human_review else none %}
@@ -228,7 +240,9 @@
       <a class="report-action primary" href="{{ execution_plan_pdf_url }}">تحميل خطة التنفيذ</a>
       <a class="report-action" href="/company/{{ company.company_id }}/scan-report">الملخص التنفيذي</a>
     {% else %}
-      <a class="report-action" href="/company/{{ company.company_id }}/scan-report">الملخص التنفيذي</a>
+      <a class="report-action primary" href="{{ report_summary_url }}">العودة للملخص</a>
+      <a class="report-action" href="{{ adaptive_questions_url }}">زد الوضوح</a>
+      <a class="report-action" href="{{ report_next_url }}">تابع الخطوة التالية</a>
     {% endif %}
   </div>
   {% if report_view == 'main' and human_review and human_review.settings.available and not current_review %}
@@ -246,11 +260,13 @@
       <div class="executive-block">
         <h2>الصورة الآن</h2>
         <p class="two-lines">{% if scan_case %}{{ scan_case.declared_problem or scan_case.case_title }}{% if scan_case.real_question %} — {{ scan_case.real_question }}{% endif %}{% else %}ابدأ بتوصيف القضية حتى تتكوّن صورة قابلة للمراجعة.{% endif %}</p>
+        <a class="local-action" href="{{ report_problem_url }}">زد الوضوح</a>
       </div>
       {% if scan_bottleneck or scan_opportunity %}
       <div class="executive-block">
         <h2>أهم اختناق / أولوية</h2>
         <p class="two-lines">{{ (scan_bottleneck or scan_opportunity).statement }}</p>
+        <a class="local-action" href="{{ adaptive_questions_url }}">كمّل الصورة</a>
       </div>
       {% endif %}
       {% if scan_executive_signals %}
@@ -273,6 +289,7 @@
       <div class="executive-block">
         <h2>القرار الآن</h2>
         <p class="two-lines">{{ scan_current_decision.title or scan_current_decision.statement }}</p>
+        <a class="local-action" href="{{ report_decision_url }}">ابدأ التنفيذ</a>
       </div>
       {% if scan_next_action %}
       <div class="executive-block">
@@ -321,6 +338,7 @@
         <div class="finding-text">{{ conflict.verification_question }}</div>
       </div>
       {% endfor %}
+      <a class="local-action" href="{{ adaptive_questions_url }}">زد الوضوح</a>
     {% endif %}
     <div class="answer-grid" style="margin-top:12px;">
       <div class="answer-card"><div class="answer-label">قرارات ممكنة الآن</div><div class="answer-value">{{ scan_decisions_available_now|length }}</div></div>
@@ -354,6 +372,7 @@
     <div class="quality-box" style="margin-top:14px;">
       <div class="quality-top"><span class="t">المعلومات المطلوبة</span><span class="v">{{ scan_client_missing_evidence|length }} بند</span></div>
       <ul class="missing-list">{% for item in scan_client_missing_evidence %}<li>{{ item }}</li>{% endfor %}</ul>
+      <a class="local-action" href="{{ adaptive_questions_url }}">كمّل الصورة</a>
     </div>
     {% endif %}
   </section>
@@ -365,6 +384,7 @@
       <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M12 7 H30 L37 14 V41 H12 Z" stroke="#0B132B" stroke-width="3"/><path d="M30 7 V15 H37" stroke="#F2B233" stroke-width="3"/><path d="M17 23 H32 M17 30 H32" stroke="#0EA5A5" stroke-width="2.5" stroke-linecap="round"/></svg>
       <div class="sec-title">الأدلة ومصادرها</div>
       <div class="sec-note">كل استنتاج قابل للتتبع</div>
+      <a class="local-action" href="{{ report_evidence_url }}">أضف دليلًا</a>
     </div>
     <ul class="source-list">
       {% for source in scan_citations %}
@@ -377,7 +397,7 @@
   {% endif %}
 
   <!-- الأولويات وما لا نفعله -->
-  {% if reference_knowledge.references or reference_knowledge.conflicts or reference_knowledge.knowledge_gap %}
+  {% if scan_report_tier != 'PRELIMINARY' and (reference_knowledge.references or reference_knowledge.conflicts or reference_knowledge.knowledge_gap) %}
   <section>
     <div class="sec-head">
       <div class="sec-title">معلومات عامة ذات صلة</div>
@@ -409,25 +429,48 @@
   {% endif %}
 
   <!-- الأولويات وما لا نفعله -->
+  {% if scan_report_tier != 'PRELIMINARY' and scan_opportunity %}
   <section>
     <div class="sec-head">
       <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M8 12 H40 M8 24 H40 M8 36 H40" stroke="#0B132B" stroke-width="3"/><circle cx="14" cy="12" r="4" fill="#F2B233"/><circle cx="30" cy="24" r="4" fill="#0EA5A5"/><circle cx="22" cy="36" r="4" fill="#F2B233"/></svg>
       <div class="sec-title">الأولوية والانضباط</div>
     </div>
-    {% if scan_opportunity %}
     <div class="finding inference">
       <div class="finding-head"><div class="finding-title">الأولوية: {{ scan_opportunity.priority or 'تحتاج مراجعة' }}</div><div class="classification">خطوة مقترحة</div></div>
       <div class="finding-text">{{ scan_opportunity.statement }}</div>
       <div class="report-meta"><span><b>الأثر:</b> {{ scan_opportunity.impact or 'غير موثق' }}</span><span><b>الجهد:</b> {{ scan_opportunity.effort or 'غير موثق' }}</span><span><b>الثقة:</b> {{ scan_opportunity.confidence if scan_opportunity.confidence is not none else 'غير متاحة' }}</span></div>
+      <a class="local-action" href="{{ report_decision_url }}">ابدأ التنفيذ</a>
     </div>
-    {% else %}
-    <div class="no-data">لا توجد أولوية تنفيذية مثبتة بعد.</div>
-    {% endif %}
     <div style="margin-top:15px;">
       <div class="answer-label">ما لا نفعله الآن</div>
       {% for item in scan_what_not_do %}<div class="not-do">{{ item }}</div>{% endfor %}
     </div>
   </section>
+  {% endif %}
+
+  {% if scan_report_tier == 'EXPANDED' and (scan_swot.strengths or scan_swot.weaknesses or scan_swot.opportunities or scan_swot.threats) %}
+  <section data-testid="smart-swot">
+    <div class="sec-head">
+      <div class="sec-title">SWOT مستخرج من معلومات الشركة</div>
+      <div class="sec-note">لا يحتاج نموذجًا منفصلًا</div>
+    </div>
+    <div class="swot-grid">
+      {% for key, title in [('strengths','نقاط القوة'),('weaknesses','نقاط الضعف'),('opportunities','الفرص'),('threats','التحديات والتهديدات')] %}
+        {% if scan_swot[key] %}
+        <div class="swot-card">
+          <h3>{{ title }}</h3>
+          {% for item in scan_swot[key] %}
+          <div class="swot-item">{{ item.text }}<span class="certainty">{{ item.certainty }}</span></div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% if scan_swot.priority_link %}
+    <div class="quality-hint">يرتبط بالأولوية والقرار الأعلى: {{ scan_swot.priority_link }}</div>
+    {% endif %}
+  </section>
+  {% endif %}
   {% endif %}
 
   {% if report_view == 'plan' %}
@@ -486,7 +529,7 @@
   </section>
   {% endif %}
 
-  {% if report_view == 'details' %}
+  {% if report_view == 'details' and scan_report_tier != 'PRELIMINARY' %}
   <!-- ملحق جواز الشركة للحفاظ على المخرج السابق -->
   <section class="report-page-break">
     <div class="appendix-label">تفاصيل صورة الشركة</div>
@@ -527,11 +570,13 @@
   </section>
 
   <!-- 2. خريطة الأصول -->
+  {% if scan_report_tier == 'EXPANDED' %}
   <section>
     <div class="sec-head">
       <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><rect x="8" y="10" width="22" height="17" rx="2" stroke="#0B132B" stroke-width="2.8" fill="none"/><rect x="14" y="16" width="7" height="7" fill="#F2B233"/><path d="M33 20 H42 M33 27 H42 M33 34 H42" stroke="#0B132B" stroke-width="2.4" stroke-linecap="round"/></svg>
       <div class="sec-title">خريطة الأصول</div>
       <div class="sec-note">من الأضعف للأقوى</div>
+      <a class="local-action" href="{{ report_evidence_url }}">أضف دليلًا للأصل</a>
     </div>
     {% if scan.asset_scores %}
       {% for a in scan.asset_scores %}
@@ -545,6 +590,7 @@
       <div class="no-data">لا توجد أصول مسجَّلة بعد.</div>
     {% endif %}
   </section>
+  {% endif %}
 
   <!-- 3. الإنجازات -->
   {% if tasks_by_phase %}
@@ -552,6 +598,7 @@
     <div class="sec-head">
       <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="18" stroke="#0B132B" stroke-width="3" fill="none"/><path d="M17 24 L22 29 L32 18" stroke="#F2B233" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <div class="sec-title">الإنجازات المنجزة</div>
+      <a class="local-action" href="{{ report_results_url }}">سجّل النتيجة</a>
     </div>
       {% for phase, tasks in tasks_by_phase.items() %}
       <div class="ach-group">
@@ -571,16 +618,18 @@
   {% endif %}
 
   <!-- 4. القرارات -->
-  {% if decisions %}
+  {% if scan_report_decisions %}
   <section style="border-bottom:none;">
     <div class="sec-head">
       <svg class="sec-icon" viewBox="0 0 48 48" fill="none"><path d="M8 10 H40 V32 H22 L14 40 V32 H8 Z" stroke="#0B132B" stroke-width="3" fill="none" stroke-linejoin="round"/><rect x="19" y="17" width="9" height="9" fill="#F2B233"/></svg>
-      <div class="sec-title">القرارات</div>
+      <div class="sec-title">{% if scan_report_decisions|length >= 3 %}القرارات الأعلى أولوية{% else %}القرارات المتاحة الآن{% endif %}</div>
+      <div class="sec-note">{{ scan_report_decisions|length }} من 5 كحد أقصى</div>
+      <a class="local-action" href="{{ report_decision_url }}">ابدأ التنفيذ</a>
     </div>
-      {% for d in decisions %}
+      {% for d in scan_report_decisions %}
       <div class="decision">
         <div class="decision-top">
-          <div class="decision-title">{{ d.title }}</div>
+          <div class="decision-title">{{ d.rank }}. {{ d.title }}</div>
           {% if d.status == 'معتمد' %}
             <div class="badge approved">معتمد</div>
           {% elif d.status == 'مقترح' %}
@@ -592,9 +641,8 @@
         {% if d.recommended_action %}
         <div class="decision-field"><b>الإجراء الموصى به:</b> {{ d.recommended_action }}</div>
         {% endif %}
-        {% if d.reason %}
-        <div class="decision-field"><b>السبب:</b> {{ d.reason }}</div>
-        {% endif %}
+        <div class="decision-field"><b>لماذا هو أولوية:</b> {{ d.priority_reason }}</div>
+        <div class="decision-field"><b>الأثر المتوقع:</b> {{ d.expected_impact_label }}</div>
         {% if d.owner_name or d.due_date %}
         <div class="decision-meta">
           {% if d.owner_name %}المسؤول: {{ d.owner_name }}{% endif %}
