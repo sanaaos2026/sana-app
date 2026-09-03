@@ -1,6 +1,10 @@
 import unittest
 from pathlib import Path
 
+from acquisition_concentration import (
+    ACQUISITION_CHANNEL_RISK_IMPACTS,
+    is_acquisition_channel_risk_impact,
+)
 from sana_scan import BOTTLENECK_RULES, _matching_sources
 
 
@@ -49,6 +53,26 @@ class AcquisitionConcentrationTest(unittest.TestCase):
         for answer in ("😰 نعم، بشكل كبير", "🙂 نعم، بدرجة متوسطة"):
             with self.subTest(answer=answer):
                 self.assertEqual(2, len(self.matching(answer)))
+
+    def test_framework_mapping_and_scan_share_the_same_risk_values(self):
+        answers = ACQUISITION_CHANNEL_RISK_IMPACTS + (
+            "😌 تأثير محدود",
+            "🙂 لا تأثير",
+            "🤷 معلومات غير كافية",
+            "قيمة مستقبلية غير مصنفة",
+            "😰 انخفاض كبير جداً",
+            "تنبيه: 😰 انخفاض كبير",
+            "😟 انخفاض متوسط مع ملاحظة",
+            "  😰 انخفاض كبير  ",
+        )
+        for answer in answers:
+            with self.subTest(answer=answer):
+                framework_is_linked = is_acquisition_channel_risk_impact(answer)
+                scan_detects_risk = bool(self.matching(answer))
+                self.assertEqual(framework_is_linked, scan_detects_risk)
+
+    def test_scan_rule_exposes_the_shared_risk_vocabulary(self):
+        self.assertIs(RULE["tokens"], ACQUISITION_CHANNEL_RISK_IMPACTS)
 
     def test_discovery_question_and_all_five_answers_are_clear(self):
         template = (

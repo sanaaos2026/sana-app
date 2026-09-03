@@ -9,6 +9,10 @@ import hashlib
 import uuid
 from datetime import datetime
 
+from acquisition_concentration import (
+    ACQUISITION_CHANNEL_RISK_IMPACTS,
+    is_acquisition_channel_risk_evidence,
+)
 from database_config import acquire_schema_lock
 from sana_reliability import (
     diagnostic_quality,
@@ -80,13 +84,7 @@ BOTTLENECK_RULES = [
     {
         "rule_id": "SCAN-ACQUISITION-CONCENTRATION",
         "asset_type": "Brand",
-        "tokens": (
-            "انخفاض كبير",
-            "انخفاض متوسط",
-            "نعم، بشكل كبير",
-            "نعم، بدرجة متوسطة",
-            "هشاشة مصدر العملاء",
-        ),
+        "tokens": ACQUISITION_CHANNEL_RISK_IMPACTS,
         "title": "اعتماد اكتساب العملاء على مصدر واحد",
         "hypothesis": "قد يكون تركّز اكتساب العملاء في مصدر واحد سببًا لهشاشة المبيعات.",
         "inference": "توضح الأدلة المرتبطة أن توقف مصدر العملاء الرئيسي سيؤثر في المبيعات.",
@@ -763,15 +761,7 @@ def _matching_sources(rule, sources):
         impact = [
             item for item in raw
             if _source_is(item, "Q4", "هشاشة مصدر العملاء:")
-            and _contains_any(
-                item,
-                (
-                    "انخفاض كبير",
-                    "انخفاض متوسط",
-                    "نعم، بشكل كبير",
-                    "نعم، بدرجة متوسطة",
-                ),
-            )
+            and is_acquisition_channel_risk_evidence(item.get("statement"))
         ]
         corroborating = [
             item for item in raw

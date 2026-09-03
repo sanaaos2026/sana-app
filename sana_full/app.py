@@ -26,6 +26,7 @@ from flask.json.provider import DefaultJSONProvider
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import CSRFError, CSRFProtect
 import resend
+from acquisition_concentration import is_acquisition_channel_risk_impact
 from database_config import (
     acquire_schema_lock,
     BILLING_TEST_SCHEMA_PREFIX,
@@ -3980,14 +3981,7 @@ def discovery_save():
         add_ev(f"مصدر اكتساب العملاء: {q4}", "Brand", "SDS-001 Q4")
     if q4_fu:
         add_ev(f"هشاشة مصدر العملاء: {q4_fu}", "Brand", "SDS-001 Q4 follow-up")
-        # اقبل الصياغات الجديدة، وحافظ على تشغيل الإجابات التاريخية القديمة.
-        HIGH_RISK = (
-            "😰 انخفاض كبير",
-            "😟 انخفاض متوسط",
-            "😰 نعم، بشكل كبير",
-            "🙂 نعم، بدرجة متوسطة",
-        )
-        if q4_fu in HIGH_RISK:
+        if is_acquisition_channel_risk_impact(q4_fu):
             cf_id = "CF" + uuid.uuid4().hex[:8].upper()
             db.execute(
                 """INSERT INTO case_frameworks
