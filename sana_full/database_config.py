@@ -2,6 +2,7 @@
 
 import os
 import re
+import time
 from urllib.parse import quote
 
 
@@ -124,16 +125,22 @@ def acquire_schema_lock(db):
         timeout_seconds = DEFAULT_SCHEMA_LOCK_TIMEOUT_SECONDS
     timeout_seconds = max(1, min(timeout_seconds, 30))
 
-    # set_config(..., true) is transaction-local and works through the
-    # _PGConn compatibility wrapper as well as a native psycopg connection.
-    db.execute(
-        "SELECT set_config('lock_timeout', ?, true)",
-        (f"{timeout_seconds}s",),
-    )
-    db.execute(
-        "SELECT pg_advisory_xact_lock(hashtext(? || ':' || current_schema()))",
-        (SCHEMA_LOCK_NAME,),
-    )
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        row = db.execute(
+            "SELECT pg_try_advisory_xact_lock("
+            "hashtext(? || ':' || current_schema()))",
+            (SCHEMA_LOCK_NAME,),
+        ).fetchone()
+        if row and bool(row[0]):
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(
+                "Schema initialization lock was not available within "
+                f"{timeout_seconds} seconds"
+            )
+        time.sleep(min(0.1, remaining))
     try:
         db._schema_lock_acquired = True
     except AttributeError:
