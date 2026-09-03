@@ -592,6 +592,43 @@ def approve_decision_with_task(
             company_id,
         ),
     )
+    from sana_company_memory import record_memory
+    record_memory(
+        db, company_id, memory_key=f"decision:{decision_id}",
+        memory_type="decision",
+        value={
+            "decision_id": decision_id,
+            "title": decision["title"],
+            "next_action": next_action,
+            "success_metric": success_metric,
+            "owner": owner_name,
+            "due_date": due_date,
+            "status": "معتمد",
+        },
+        source_ref=f"decision:{decision_id}", source_type="decision",
+        observed_at=date.today(), case_id=decision["case_id"],
+        decision_id=decision_id, owner_id=owner_name,
+        verification_status="VERIFIED", freshness_class="SLOW",
+        source_strength=80, verification_confidence=85, freshness_confidence=80,
+        context={"kpi": success_metric},
+        reason="قرار معتمد داخل غرفة القرار.",
+    )
+    record_memory(
+        db, company_id, memory_key=f"execution:{task_id}",
+        memory_type="execution",
+        value={
+            "task_id": task_id, "next_action": next_action, "owner": owner_name,
+            "approver": approver_user_id, "due_date": due_date,
+            "kpi": success_metric, "status": "لم تبدأ",
+        },
+        source_ref=f"task:{task_id}", source_type="task",
+        observed_at=date.today(), case_id=decision["case_id"],
+        decision_id=decision_id, task_id=task_id, owner_id=owner_name,
+        verification_status="VERIFIED", freshness_class="FAST",
+        source_strength=80, verification_confidence=85, freshness_confidence=90,
+        context={"kpi": success_metric},
+        reason="مهمة التنفيذ المنشأة ذريًا مع اعتماد القرار.",
+    )
     return {"decision_id": decision_id, "task_id": task_id, "status": "معتمد"}
 def create_risk(db, company_id, payload):
     evidence_ids = _validate_evidence(db, company_id, payload.get("evidence_ids"))

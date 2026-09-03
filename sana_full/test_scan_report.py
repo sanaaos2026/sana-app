@@ -861,6 +861,214 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
             "FIRSTDEC",
             {item.get("decision_id") for item in second_context["scan_initiatives"]},
         )
+        }
+        self.assertTrue(initiatives[f"LINKED{suffix}"]["evidence"])
+        self.assertTrue(initiatives[f"LINKED{suffix}"]["completeness"])
+        self.assertEqual([], initiatives[f"UNLINKED{suffix}"]["evidence"])
+        self.assertFalse(initiatives[f"UNLINKED{suffix}"]["completeness"])
+        self.assertEqual([], initiatives[f"NONFACT{suffix}"]["evidence"])
+        self.assertFalse(initiatives[f"NONFACT{suffix}"]["completeness"])
+
+    def test_text_alias_and_case_api_use_the_same_snapshot_and_cta(self):
+        scan = run_scan(self.db, self.case_id)
+        context = sana_app._build_passport_context(self.company_id)
+        review = context["diagnostic_review"]
+        self.assertEqual(scan["scan_id"], review["snapshot"]["scan_id"])
+
+        with sana_app.app.test_request_context():
+            response = sana_app.passport_report_text(self.company_id)
+            payload = response.get_json()
+        text = payload["data"]["report_text"]
+        self.assertIn(review["journey"]["action_label"], text)
+        self.assertIn("الثقة عبر مراحل القرار", text)
+        self.assertIn("قبل القرار: مشروط", text)
+        self.assertIn("قياس الأثر: غير جاهز", text)
+        for private_text in (
+            "SELF_REPORTED",
+            "UNVERIFIED",
+            scan["scan_id"],
+            self.company_id,
+            self.case_id,
+            "Evidence",
+            "Fact",
+            "SDS-001",
+            "ops-log:test",
+        ):
+            self.assertNotIn(private_text, text)
+
+        with patch(
+            "sana_knowledge.contextual_reference_knowledge",
+            side_effect=RuntimeError("provider unavailable"),
+        ):
+            fallback = sana_app._build_scan_report_context(
+                self.company_id, case_id=self.case_id
+            )
+        self.assertFalse(
+            fallback["diagnostic_review"]["fallback"]["reference_knowledge_available"]
+        )
+        self.assertTrue(
+            fallback["diagnostic_review"]["fallback"]["deterministic"]
+        )
+        self.assertIn(
+            "تبقى نتيجة Scan قابلة للمراجعة",
+            fallback["reference_knowledge"]["knowledge_gap"],
+        )
+
+    def test_scan_excludes_other_open_cases_and_latest_rescan_is_stable(self):
+        suffix = self.company_id.removeprefix("RPT")
+        other_case_id = f"OPEN{suffix}"
+        self.db.execute(
+            """INSERT INTO cases
+               (case_id,company_id,case_title,case_status,declared_problem,real_question)
+               VALUES (?,?,?,?,?,?)""",
+            (
+                other_case_id, self.company_id, "قضية مفتوحة أخرى", "مفتوح",
+                "تعطل مختلف لا يخص القضية الحالية", "كيف نعالج التعطل الآخر؟",
+            ),
+        )
+        self.db.commit()
+
+        first = run_scan(self.db, self.case_id)
+        second = run_scan(self.db, self.case_id)
+        self.assertNotIn(
+            f"CASE:{other_case_id}:DECLARED_PROBLEM",
+            {item["source_id"] for item in second["classified_inputs"]},
+        )
+        latest = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual(second["scan_id"], latest["scan"]["scan_id"])
+        self.assertNotEqual(first["scan_id"], second["scan_id"])
+
+    def test_self_reported_capacity_creates_low_risk_conditional_experiment(self):
+        suffix = self.company_id.removeprefix("RPT")
+        self.db.execute(
+            """UPDATE evidence SET title=?, confidence=?, information_type='Actual',
+                      verification_status='UNVERIFIED', source_category='SELF_REPORTED',
+                      period_start=?, period_end=?, normalized_value=?, unit=?,
+                      topic_key=?, source_ref=?
+               WHERE evidence_id=?""",
+            (
+                "عدد الطلاب الحالي 20", 70, "2026-08-01", "2026-08-31",
+                20, "student", "students", "founder:capacity", f"E1{suffix}",
+            ),
+        )
+        self.db.execute(
+            """UPDATE evidence SET title=?, confidence=?, information_type='Target',
+                      verification_status='UNVERIFIED', source_category='SELF_REPORTED',
+                      period_start=?, period_end=?, normalized_value=?, unit=?,
+                      topic_key=?, source_ref=?
+               WHERE evidence_id=?""",
+            (
+                "السعة المتاحة 100 طالب", 70, "2026-08-01", "2026-08-31",
+                100, "student", "capacity", "founder:capacity", f"E2{suffix}",
+            ),
+        )
+        self.db.commit()
+
+        scan = run_scan(self.db, self.case_id)
+
+        self.assertEqual("CONDITIONAL", scan["decision_readiness"])
+        self.assertEqual("REVIEW_REQUIRED", scan["status"])
+        self.assertEqual(70, scan["decision_confidence"]["score"])
+        self.assertEqual(1, scan["decision_confidence"]["source_family_count"])
+        self.assertEqual("SELF_REPORTED_ONLY", scan["diagnostic_quality"]["independence"])
+        self.assertEqual(20.0, scan["proposed_decision"]["kpi"]["baseline"])
+        self.assertFalse(scan["proposed_decision"]["causal_claim"])
+        self.assertIn("7–14", scan["proposed_decision"]["statement"])
+
+        with sana_app.app.test_request_context():
+            response, status_code = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, status_code)
+        decision = response.get_json()["data"]
+        self.assertEqual(70, decision["confidence_score"])
+        self.assertIn("تجربة قياس آمنة", decision["title"])
+
+    def test_human_p0_review_transitions_snapshot_to_complete(self):
+        scan = run_scan(self.db, self.case_id)
+        self.assertEqual("REVIEW_REQUIRED", scan["status"])
+
+        with sana_app.app.test_request_context():
+            response, status_code = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, status_code)
+        decision = response.get_json()["data"]
+
+        completed = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        review = completed["diagnostic_review"]
+        self.assertEqual("COMPLETE", review["journey"]["status"])
+        self.assertEqual(scan["scan_id"], review["snapshot"]["scan_id"])
+        self.assertFalse(completed["scan"]["human_review_required"])
+        self.assertEqual(
+            decision["decision_id"],
+            completed["scan"]["human_review"]["decision_id"],
+        )
+        self.assertFalse(review["evidence_gate"]["final_score_allowed"])
+        self.assertEqual("N/A — Deferred", review["financial_value"]["label"])
+
+    def test_rescan_requires_and_completes_a_new_snapshot_review(self):
+        first_scan = run_scan(self.db, self.case_id)
+        with sana_app.app.test_request_context():
+            first_response, first_status = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, first_status)
+        first_decision = first_response.get_json()["data"]
+
+        second_scan = run_scan(self.db, self.case_id)
+        self.assertNotEqual(first_scan["scan_id"], second_scan["scan_id"])
+        before_review = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual("REVIEW_REQUIRED", before_review["scan_status"])
+
+        with sana_app.app.test_request_context():
+            second_response, second_status = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, second_status)
+        second_decision = second_response.get_json()["data"]
+        self.assertNotEqual(first_decision["decision_id"], second_decision["decision_id"])
+        self.assertEqual(first_scan["scan_id"], first_decision["scan_id"])
+        self.assertEqual(second_scan["scan_id"], second_decision["scan_id"])
+
+        after_review = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual("COMPLETE", after_review["scan_status"])
+        self.assertEqual(second_scan["scan_id"], after_review["scan"]["scan_id"])
+
+    def test_snapshot_stays_immutable_when_case_changes_and_decisions_are_rescoped(self):
+        first_scan = run_scan(self.db, self.case_id)
+        original_problem = first_scan["diagnostic_problem"]["statement"]
+        self.db.execute(
+            """INSERT INTO decisions
+               (decision_id,company_id,case_id,title,status,phase_label,scan_id)
+               VALUES (?,?,?,?,?,?,?)""",
+            ("FIRSTDEC", self.company_id, self.case_id, "قرار أول", "مقترح", "0-30", first_scan["scan_id"]),
+        )
+        self.db.execute(
+            "UPDATE cases SET declared_problem=?, real_question=? WHERE case_id=?",
+            ("مشكلة بعد الفحص", "سؤال بعد الفحص", self.case_id),
+        )
+        self.db.commit()
+        first_context = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual(original_problem, first_context["diagnostic_review"]["problem"]["statement"])
+        self.assertNotEqual("مشكلة بعد الفحص", first_context["diagnostic_review"]["problem"]["statement"])
+        self.assertIn(
+            "FIRSTDEC",
+            {item.get("decision_id") for item in first_context["scan_initiatives"]},
+        )
+
+        # A decision from the earlier snapshot must not enter the new snapshot's plan.
+        second_scan = run_scan(self.db, self.case_id)
+        second_context = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual(second_scan["scan_id"], second_context["scan"]["scan_id"])
+        self.assertNotIn(
+            "FIRSTDEC",
+            {item.get("decision_id") for item in second_context["scan_initiatives"]},
+        )
 
 @unittest.skipUnless(
     os.environ.get("RUN_SANA_SCAN_BROWSER_TESTS") == "1"

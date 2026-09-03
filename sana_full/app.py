@@ -1377,6 +1377,8 @@ def init_db(force=False):
         from sana_growth_os import ensure_schema as ensure_growth_schema, seed_growth_os
         ensure_growth_schema(conn)
         seed_growth_os(conn)
+        from sana_company_memory import ensure_schema as ensure_company_memory_schema
+        ensure_company_memory_schema(conn)
         from sana_growth_engine import ensure_schema as ensure_growth_engine_schema, seed_growth_engine
         seed_growth_engine(conn)
         ensure_growth_engine_schema(conn)
@@ -2543,10 +2545,18 @@ def discovery():
     ).fetchone()
     if not company:
         abort(404)
+    from sana_company_memory import retrieve_memory
+    memory_context = retrieve_memory(
+        db, context["company_id"], memory_keys=[
+            "goal:primary", "problem:declared", "acquisition:source",
+            "founder:dependency", "decision:style",
+        ],
+    )
     full_reassessment = request.args.get("full") == "1"
     if context["admin_preview"]:
         return render_template(
-            "06-sana-discovery.html", full_reassessment=full_reassessment
+            "06-sana-discovery.html", full_reassessment=full_reassessment,
+            company_memory=memory_context, company_id=context["company_id"],
         )
     account = current_account()
     start = _company_start_redirect(account)
@@ -2555,7 +2565,8 @@ def discovery():
     if start == url_for("ceo_home") and not full_reassessment:
         return redirect(start)
     return render_template(
-        "06-sana-discovery.html", full_reassessment=full_reassessment
+        "06-sana-discovery.html", full_reassessment=full_reassessment,
+        company_memory=memory_context, company_id=context["company_id"],
     )
 
 
@@ -2660,6 +2671,11 @@ def discovery_save():
            VALUES (?,?,?,?,?,?,?,?)""",
         (case_id, company_id, case_title, "تشخيص", "مفتوح",
          q2 or None, real_question, datetime.utcnow().isoformat())
+    )
+    from sana_company_memory import capture_discovery
+    capture_discovery(
+        db, company_id, case_id=case_id,
+        answers={**body, "q7": q7}, owner_id=(current_account() or {}).get("account_id"),
     )
 
     # خريطة الأصول حسب النوع (5 أصول معتمدة فقط)
@@ -3460,7 +3476,21 @@ def _admin_companies(db, mode="production"):
 
 
 def _admin_ops_queue(db, mode="production"):
+    from sana_billing import billing_cleanup_health
+
     items = []
+    cleanup_health = billing_cleanup_health(db)
+    if cleanup_health["is_stale"]:
+        items.append({
+            "priority": "CRITICAL",
+            "type": "billing_cleanup",
+            "company_id": None,
+            "entity_id": "billing_cleanup_schedule",
+            "title": "تنظيف الدفع لم يسجل تشغيلًا موثوقًا حديثًا",
+            "reason": (
+                "تحقق من خدمة الجدولة قبل أن تتراكم جلسات الدفع المعلقة."
+            ),
+        })
     for company in _admin_companies(db, mode):
         cid = company["company_id"]
         progress = company["progress"]
@@ -5627,6 +5657,9 @@ def company_summary(company_id):
     company = db.execute("SELECT * FROM companies WHERE company_id=?", (company_id,)).fetchone()
     if not company:
         return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
 
     assets = db.execute("SELECT * FROM assets WHERE company_id=? ORDER BY current_score ASC",
                          (company_id,)).fetchall()
@@ -5644,6 +5677,8 @@ def company_summary(company_id):
 
     avg_score = round(sum(a["current_score"] for a in assets) / len(assets)) if assets else 0
     client_assets = [_client_asset_view(asset) for asset in assets]
+    from sana_company_memory import retrieve_memory
+    memory = retrieve_memory(db, company_id)
 
     return jsonify({
         "success": True,
@@ -5664,15 +5699,62 @@ def company_summary(company_id):
             "next_task": dict(active_tasks[0]) if active_tasks else None,
             "tasks": [dict(t) for t in tasks],
             "evidence_count": len(evidence),
+            "company_memory": memory,
         },
         "meta": {"generated_at": datetime.utcnow().isoformat() + "Z"}
     })
 
-
-# ------------------------------------------------------------------
-# غرفة القرار والتنفيذ
-# ------------------------------------------------------------------
-
+@app.route("/api/companies/<company_id>/memory", methods=["GET", "POST"])
+def company_memory_api(company_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    db = get_db()
+    company = db.execute(
+        "SELECT company_id FROM companies WHERE company_id=?", (company_id,)
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    from sana_company_memory import record_memory, retrieve_memory
+    if request.method == "GET":
+        keys = [key for key in request.args.getlist("memory_key") if key]
+        data = retrieve_memory(
+            db, company_id, case_id=request.args.get("case_id"),
+            problem=request.args.get("problem"), kpi=request.args.get("kpi"),
+            decision_id=request.args.get("decision_id"),
+            task_id=request.args.get("task_id"), memory_keys=keys or None,
+            include_history=request.args.get("include_history") == "1",
+        )
+        return jsonify({"success": True, "data": data})
+    payload = request.get_json(silent=True) or {}
+    actor = current_account() or {}
+    try:
+        data = record_memory(
+            db, company_id,
+            memory_key=payload.get("memory_key"),
+            memory_type=payload.get("memory_type"),
+            value=payload.get("value"),
+            source_ref=payload.get("source_ref"),
+            source_type=payload.get("source_type", "account-input"),
+            observed_at=payload.get("observed_at") or date.today(),
+            period_start=payload.get("period_start"),
+            period_end=payload.get("period_end"),
+            context=payload.get("context"),
+            verification_status=payload.get("verification_status", "UNVERIFIED"),
+            freshness_class=payload.get("freshness_class", "MEDIUM"),
+            source_strength=payload.get("source_strength", 35),
+            verification_confidence=payload.get("verification_confidence", 0),
+            freshness_confidence=payload.get("freshness_confidence", 50),
+            owner_id=actor.get("account_id"), case_id=payload.get("case_id"),
+            asset_id=payload.get("asset_id"), decision_id=payload.get("decision_id"),
+            task_id=payload.get("task_id"), result_ref=payload.get("result_ref"),
+            reason=payload.get("reason"),
+        )
+        db.commit()
+        return jsonify({"success": True, "data": data}), 201
+    except (LookupError, ValueError) as exc:
+        db.rollback()
+        return jsonify({"success": False, "error": str(exc)}), 400
 def _execution_actor():
     account = current_account()
     if not account:
@@ -6396,6 +6478,7 @@ def case_detail(case_id):
     scan = review_context.get("scan") or {}
     reference_knowledge = review_context.get("reference_knowledge") or _reference_knowledge_fallback()
     from sana_decision_room import decision_execution_loop
+    from sana_company_memory import retrieve_memory
     loops = []
     for decision in decisions:
         try:
@@ -6424,6 +6507,11 @@ def case_detail(case_id):
             "scan_journey":     review_context.get("scan_journey"),
             "knowledge_diagnostic": latest_diagnostic(db, case_id),
             "reference_knowledge": reference_knowledge,
+            "company_memory": retrieve_memory(
+                db, case["company_id"], case_id=case_id,
+                problem=case["declared_problem"],
+                include_history=False,
+            ),
         }
     })
 
@@ -6654,10 +6742,13 @@ def passport_summary(company_id):
         _client_asset_view(asset) for asset in scan_scores
     ]
     client_assets = [_client_asset_view(asset) for asset in assets]
+    from sana_company_memory import retrieve_memory
+    memory = retrieve_memory(db, company_id)
     return jsonify({
         "success": True,
         "data": {
             "company": dict(company),
+            "company_memory": memory,
             "journey": journey,
             "scan": client_scan,
             "diagnostic_review": (scan_context or {}).get("diagnostic_review"),
@@ -8367,6 +8458,34 @@ def add_evidence(company_id):
     )
     if not result["success"]:
         return jsonify({"success": False, "error": result["error"]}), 400
+    from sana_company_memory import record_memory
+    memory_key = calibrated.get("topic_key") or f"evidence:{result['evidence_id']}"
+    try:
+        record_memory(
+            db, company_id, memory_key=memory_key, memory_type="evidence",
+            value={
+                "title": title, "raw_value": calibrated.get("raw_value"),
+                "normalized_value": calibrated.get("normalized_value"),
+                "unit": calibrated.get("unit"),
+            },
+            source_ref=source_ref, source_type=source_type,
+            observed_at=calibrated.get("observed_at") or date.today(),
+            period_start=calibrated.get("period_start"),
+            period_end=calibrated.get("period_end"),
+            context={"information_type": calibrated.get("information_type"),
+                     "topic_key": calibrated.get("topic_key")},
+            verification_status=calibrated.get("verification_status", "UNVERIFIED"),
+            freshness_class="FAST" if calibrated.get("normalized_value") is not None else "MEDIUM",
+            source_strength=confidence,
+            verification_confidence=confidence if calibrated.get("verification_status") == "VERIFIED" else 0,
+            freshness_confidence=50, owner_id=(current_account() or {}).get("account_id"),
+            case_id=case_id, asset_id=asset_id, source_id=result["evidence_id"],
+            reason="إصدار ذاكرة مشتق من سجل الدليل الأصلي؛ لا يستبدل الدليل.",
+        )
+    except ValueError as exc:
+        db.rollback()
+        return jsonify({"success": False, "error": "MEMORY_RECORDING_FAILED",
+                        "message": str(exc)}), 400
 
     reevaluated_scan = run_scan(
         db,
@@ -8972,6 +9091,23 @@ def record_p0_task_result(task_id):
                            ensure_ascii=False),
                 "p0-impact-review",
             ),
+        )
+        from sana_company_memory import record_learning
+        record_learning(
+            db, task["company_id"], case_id=task["case_id"],
+            decision_id=task["decision_id"], task_id=task_id, result_ref=review_id,
+            changed=[result_summary] if impact_outcome == "IMPROVED" else [],
+            unchanged=[result_summary] if impact_outcome == "UNCHANGED" else [],
+            hypothesis_correct=(
+                True if impact_outcome == "IMPROVED" else
+                False if impact_outcome == "WORSE" else None
+            ),
+            decision_useful=(
+                True if impact_outcome == "IMPROVED" else
+                False if impact_outcome == "WORSE" else None
+            ),
+            execution_complete=True, remember=impact_notes,
+            source_ref=result_source_ref, owner_id=reviewed_by,
         )
         db.commit()
     except Exception:
@@ -11580,6 +11716,30 @@ def _finish_billing_notification_retry(db, row, *, sent, error_code=None):
         )
     db.commit()
 
+@app.route("/api/companies/<company_id>/memory/<memory_id>/confirm", methods=["POST"])
+def company_memory_confirm_api(company_id, memory_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    actor = current_account() or {}
+    db = get_db()
+    from sana_company_memory import confirm_memory
+    try:
+        data = confirm_memory(
+            db, company_id, memory_id,
+            actor_id=actor.get("account_id") or "admin-preview",
+            observed_at=payload.get("observed_at"),
+            reason=payload.get("reason"),
+            presented_version_id=payload.get("presented_version_id"),
+        )
+        db.commit()
+        return jsonify({"success": True, "data": data})
+    except (LookupError, ValueError) as exc:
+        db.rollback()
+        status = 404 if isinstance(exc, LookupError) else 400
+        return jsonify({"success": False, "error": str(exc)}), status
+
 
 if __name__ == "__main__":
     _enforce_web_process_invariants()
@@ -11590,3 +11750,36 @@ if __name__ == "__main__":
         debug=False,
         use_reloader=False,
     )
+
+@app.route("/api/companies/<company_id>/memory/conflicts/<conflict_id>/resolve", methods=["POST"])
+def company_memory_conflict_api(company_id, conflict_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    actor = current_account() or {}
+    db = get_db()
+    from sana_company_memory import resolve_memory_conflict
+    try:
+        data = resolve_memory_conflict(
+            db, company_id, conflict_id, action=payload.get("action"),
+            actor_id=actor.get("account_id") or "admin-preview",
+            reason=payload.get("reason"),
+        )
+        db.commit()
+        return jsonify({"success": True, "data": data})
+    except (LookupError, ValueError) as exc:
+        db.rollback()
+        status = 404 if isinstance(exc, LookupError) else 400
+        return jsonify({"success": False, "error": str(exc)}), status
+
+@app.route("/api/companies/<company_id>/memory/<memory_id>/history")
+def company_memory_history_api(company_id, memory_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    from sana_company_memory import list_memory_history
+    data = list_memory_history(get_db(), company_id, memory_id)
+    if not data:
+        return jsonify({"success": False, "error": "MEMORY_NOT_FOUND"}), 404
+    return jsonify({"success": True, "data": data})

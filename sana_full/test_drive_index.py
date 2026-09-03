@@ -40,7 +40,6 @@ from drive_index import (
 )
 from sana_knowledge import ensure_schema as ensure_knowledge_schema, search_knowledge
 
-
 _BROWSER_DIAGNOSTICS_RETENTION_ENV = "SANA_BROWSER_DIAGNOSTICS_RETENTION"
 _BROWSER_DIAGNOSTICS_RETENTION = "google_drive"
 _BROWSER_DIAGNOSTICS_FOLDER = "03 - Browser Failure Diagnostics"

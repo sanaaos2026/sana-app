@@ -156,6 +156,21 @@
     font-size: 15px; color: var(--muted); text-align: center;
     margin-bottom: 28px; line-height: 1.7; max-width: 340px;
   }
+  .memory-card {
+    width:100%; box-sizing:border-box; margin:0 0 18px; padding:14px 16px;
+    border:1px solid rgba(45,212,191,.32); border-radius:14px;
+    background:rgba(45,212,191,.07); color:var(--ink); text-align:right;
+  }
+  .memory-card-title { color:var(--teal); font-weight:700; font-size:12px; margin-bottom:6px; }
+  .memory-card-value { color:#fff; font-size:14px; line-height:1.6; }
+  .memory-card-meta { color:var(--muted); font-size:11px; margin-top:5px; }
+  .memory-card-actions { display:flex; gap:8px; margin-top:11px; }
+  .memory-card-actions button {
+    flex:1; padding:9px 10px; border-radius:9px; cursor:pointer;
+    font-family:'IBM Plex Sans Arabic',sans-serif; font-weight:600;
+  }
+  .memory-confirm { border:0; background:var(--teal); color:var(--navy); }
+  .memory-update { border:1px solid rgba(255,255,255,.18); background:transparent; color:var(--ink); }
   .start-btn {
     background: var(--gold); color: var(--navy);
     font-family: 'Cairo', sans-serif; font-weight: 800; font-size: 16px;
@@ -247,6 +262,14 @@ const PREVIEW_QUERY = (() => {
   return `?${new URLSearchParams({admin_key: adminKey, company_id: companyId}).toString()}`;
 })();
 const FULL_REASSESSMENT = {{ (full_reassessment|default(false))|tojson }};
+const COMPANY_MEMORY = {{ (company_memory|default({"items": []}))|tojson }};
+const MEMORY_KEY_BY_QUESTION = {
+  q1: 'goal:primary',
+  q2: 'problem:declared',
+  q4: 'acquisition:source',
+  q5: 'founder:dependency',
+  q6: 'decision:style'
+};
 
 // ────────────────────────────────────────────────
 // SANA LOGO SVG
@@ -694,6 +717,7 @@ function renderQuestion(q) {
   const chosen = ans[q.key];
 
   let body = '';
+  body += renderMemorySuggestion(q);
 
   if (q.type === 'single') {
     body += renderChoices(q.choices, q.key, 'single', chosen);
@@ -749,6 +773,73 @@ function renderQuestion(q) {
     <div class="q-title">${q.title}</div>
     ${q.sub ? `<div class="q-sub">${q.sub}</div>` : ''}
     ${body}`;
+}
+
+function memoryValueText(value) {
+  if (value === null || value === undefined) return 'غير معروف';
+  if (Array.isArray(value)) return value.join('، ');
+  if (typeof value === 'object') {
+    if (value.value !== undefined) return `${value.value}${value.unit ? ` ${value.unit}` : ''}`;
+    return Object.values(value).filter(v => v !== null && v !== '').join('، ');
+  }
+  return String(value);
+}
+
+function memoryForQuestion(q) {
+  const key = MEMORY_KEY_BY_QUESTION[q.key];
+  if (!key) return null;
+  return (COMPANY_MEMORY.items || []).find(item => item.memory_key === key) || null;
+}
+
+function renderMemorySuggestion(q) {
+  const item = memoryForQuestion(q);
+  if (!item) return '';
+  const hasConflict = item.conflict_status === 'OPEN';
+  const freshness = item.freshness === 'STALE' ? 'قديمة وتحتاج تحديثًا' :
+    hasConflict ? 'يوجد تعارض مفتوح ويتطلب مراجعة' :
+    item.reusable ? 'موثقة وحديثة' : 'تحتاج تأكيدًا سريعًا';
+  return `<div class="memory-card" id="memory-${escHtml(q.key)}">
+    <div class="memory-card-title">معلومة سابقة من ذاكرة شركتك</div>
+    <div class="memory-card-value">${escHtml(memoryValueText(item.value))}</div>
+    <div class="memory-card-meta">${escHtml(freshness)} · آخر تحقق ${escHtml(item.observed_at || 'غير معروف')}</div>
+    <div class="memory-card-actions">
+      ${hasConflict
+        ? '<button class="memory-confirm" disabled style="opacity:.55;cursor:not-allowed">راجع التعارض أولًا</button>'
+        : `<button class="memory-confirm" onclick="confirmMemory('${escHtml(q.key)}','${escHtml(item.memory_id)}','${escHtml(item.version_id)}')">صحيحة، استخدمها</button>`}
+      <button class="memory-update" onclick="updateMemory('${escHtml(q.key)}')">تغيّرت، سأحدّثها</button>
+    </div>
+  </div>`;
+}
+
+async function confirmMemory(questionKey, memoryId, displayedVersionId) {
+  const item = (COMPANY_MEMORY.items || []).find(row => row.memory_id === memoryId);
+  if (!item) return;
+  try {
+    const response = await fetch(`/api/companies/{{ company_id|default('') }}/memory/${encodeURIComponent(memoryId)}/confirm${PREVIEW_QUERY}`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        reason:'تأكيد من تدفق Discovery',
+        presented_version_id:displayedVersionId
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) throw new Error(payload.error || 'تعذر التأكيد');
+    if (!payload.data || payload.data.status !== 'ACTIVE' ||
+        payload.data.current_version_id !== payload.data.version_id) {
+      throw new Error('لم تصبح المعلومة مؤكدة؛ راجع التعارض قبل استخدامها.');
+    }
+    ans[questionKey] = item.value;
+    showToast('تم التأكيد؛ ستُستخدم المعلومة في هذه الإجابة.', () => render());
+  } catch (error) {
+    showToast(error.message || 'تعذر تأكيد المعلومة الآن.');
+  }
+}
+
+function updateMemory(questionKey) {
+  const card = document.getElementById(`memory-${questionKey}`);
+  if (card) card.remove();
+  delete ans[questionKey];
+  showToast('لن نستخدم القيمة القديمة؛ اختر الإجابة الحالية.');
 }
 
 function renderChoices(choices, key, mode, current, inline = false) {

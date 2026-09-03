@@ -944,6 +944,72 @@ CREATE TABLE IF NOT EXISTS sana_memory_entries (
     CHECK (shared_scope IN ('private','company','shared')),
     CHECK (shared_scope <> 'shared' OR verification_status = 'reviewed')
 );
+
+-- Company Memory — طبقة إضافية إصدارّية وخاصة بالشركة فوق الأدلة والقضايا والقرارات.
+-- لا تُستخدم كبديل للسجلات المصدرية ولا تسمح بترقية Client Learning تلقائيًا.
+CREATE TABLE IF NOT EXISTS company_memory_governance (
+    governance_id TEXT PRIMARY KEY,
+    storage_destination TEXT NOT NULL,
+    case_link TEXT NOT NULL,
+    asset_link TEXT NOT NULL,
+    framework_link TEXT NOT NULL,
+    business_event TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT 'v1.0',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO company_memory_governance
+    (governance_id,storage_destination,case_link,asset_link,framework_link,business_event)
+VALUES
+    ('CM-COMPANY-MEMORY','company_memory_items/company_memory_versions',
+     'case_id → cases','asset_id → assets','framework:B2B-OS-001',
+     'company.memory.version.recorded')
+ON CONFLICT (governance_id) DO NOTHING;
+CREATE TABLE IF NOT EXISTS company_memory_items (
+    memory_id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(company_id) ON DELETE CASCADE,
+    memory_key TEXT NOT NULL, memory_type TEXT NOT NULL, current_version_id TEXT,
+    current_status TEXT NOT NULL DEFAULT 'UNKNOWN', owner_id TEXT,
+    access_level TEXT NOT NULL DEFAULT 'company', confidentiality TEXT NOT NULL DEFAULT 'private',
+    retention_policy TEXT NOT NULL DEFAULT 'retain_history',
+    usage_rights TEXT NOT NULL DEFAULT 'no_cross_company',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(company_id,memory_key)
+);
+CREATE TABLE IF NOT EXISTS company_memory_versions (
+    version_id TEXT PRIMARY KEY, memory_id TEXT NOT NULL REFERENCES company_memory_items(memory_id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL, memory_type TEXT NOT NULL,
+    value_json TEXT NOT NULL, context_json TEXT NOT NULL DEFAULT '{}',
+    period_start DATE, period_end DATE, observed_at DATE NOT NULL, source_ref TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'unknown', case_id TEXT,
+    asset_id TEXT, decision_id TEXT,
+    task_id TEXT, result_ref TEXT, reason TEXT,
+    lifecycle_status TEXT NOT NULL DEFAULT 'CAPTURED',
+    verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED',
+    freshness_class TEXT NOT NULL DEFAULT 'MEDIUM',
+    source_strength INTEGER NOT NULL DEFAULT 0, verification_confidence INTEGER NOT NULL DEFAULT 0,
+    freshness_confidence INTEGER NOT NULL DEFAULT 0, owner_id TEXT,
+    governance_id TEXT NOT NULL REFERENCES company_memory_governance(governance_id),
+    supersedes_version_id TEXT REFERENCES company_memory_versions(version_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS company_memory_links (
+    link_id TEXT PRIMARY KEY, company_id TEXT NOT NULL,
+    version_id TEXT NOT NULL REFERENCES company_memory_versions(version_id) ON DELETE CASCADE,
+    source_type TEXT NOT NULL, source_id TEXT NOT NULL,
+    relationship TEXT NOT NULL DEFAULT 'supports', created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(company_id,version_id,source_type,source_id,relationship)
+);
+CREATE TABLE IF NOT EXISTS company_memory_conflicts (
+    conflict_id TEXT PRIMARY KEY, company_id TEXT NOT NULL,
+    memory_id TEXT NOT NULL REFERENCES company_memory_items(memory_id) ON DELETE CASCADE,
+    existing_version_id TEXT NOT NULL REFERENCES company_memory_versions(version_id),
+    incoming_version_id TEXT NOT NULL REFERENCES company_memory_versions(version_id),
+    status TEXT NOT NULL DEFAULT 'OPEN', conflict_reason TEXT NOT NULL,
+    resolution_action TEXT, resolved_version_id TEXT REFERENCES company_memory_versions(version_id),
+    resolved_by TEXT, resolved_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_memory_items_company ON company_memory_items(company_id,updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_versions_company ON company_memory_versions(company_id,observed_at DESC,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_conflicts_company ON company_memory_conflicts(company_id,status,created_at DESC);
 CREATE TABLE IF NOT EXISTS drive_provenance_links (
     provenance_id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
     drive_file_id TEXT NOT NULL REFERENCES drive_files(drive_file_id), source_id TEXT,

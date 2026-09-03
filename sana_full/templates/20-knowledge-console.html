@@ -379,6 +379,9 @@
         const r=await fetch('/api/knowledge/drive/excerpts/'+encodeURIComponent(excerptId)+'/review',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),j=await r.json();
         if(!r.ok||!j.success)throw new Error(j.message||j.error||'REVIEW_FAILED');
         msg.textContent=decision==='approved'?`تم الاعتماد وإنشاء ${j.knowledge_objects.length} كائنات صغيرة.`:'تم تسجيل الرفض.';
+        // نجاح الخادم هو لحظة الحسم؛ أزل العنصر فورًا بدل ربط الواجهة
+        // بزمن إعادة تحميل Drive المتغير، ثم سوِّ القائمة من المصدر.
+        card.remove();
         await loadDriveExcerpts();
         if(decision==='approved')searchKnowledge();
       }catch(e){msg.textContent='تعذرت المراجعة: '+e.message}
