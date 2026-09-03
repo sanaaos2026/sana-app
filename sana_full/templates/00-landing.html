@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light">
-<title>سنع — وضوح يصنع النمو</title>
+<title>{{ seo_title }}</title>
+{% include '_seo-head.html' %}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -74,6 +75,11 @@
   .why-item p{ font-size:14.5px; }
   .why-item b{ font-family:'Cairo'; color:var(--navy); }
 
+  .faq{ display:grid; gap:12px; margin-top:34px; }
+  .faq-item{ background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px 20px; }
+  .faq-item h3{ font-family:'Cairo'; font-size:16px; color:var(--navy); margin-bottom:6px; }
+  .faq-item p{ font-size:14px; color:var(--muted); }
+
   .cta-final{ background:var(--navy); color:#fff; text-align:center; border-radius:20px; padding:56px 32px; max-width:820px; margin:20px auto 0; }
   .cta-final h2{ color:#fff; }
   .cta-final p{ color:#B9C1D6; margin-bottom:30px; }
@@ -94,8 +100,8 @@
 
 <header class="hero">
   <svg class="mark" viewBox="0 0 100 100"><path d="M76 20 H24 V80 H76 V64" stroke="#F5F6F8" stroke-width="6" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/><path d="M76 20 V36" stroke="#F5F6F8" stroke-width="6" stroke-linecap="butt" fill="none"/><rect x="50" y="42" width="16" height="16" fill="#F2B233"/></svg>
-   <h1>اعرف ما يحتاجه عملك الآن</h1>
-   <p>اكتب واقع شركتك، وسنع يساعدك على تحديد خطوتك التالية.</p>
+   <h1>شخّص ما يعطّل نمو شركتك الخدمية</h1>
+   <p>سنع يرتب واقع المبيعات والتشغيل والأداء لتعرف أولويتك التالية وتتخذ قرارًا مبنيًا على البيانات.</p>
    <a href="/signup" class="btn btn-primary">ابدأ الآن</a>
    <div style="color:#9FAAC2; font-size:13px; margin-top:14px;">يستغرق الأمر دقائق قليلة</div>
 </header>
@@ -104,16 +110,16 @@
   <div class="section-inner">
      <div class="eyebrow">وضوح العمل</div>
      <h2>كل شيء مهم، لكن من أين تبدأ؟</h2>
-     <p class="lead">سنع يرتب واقع شركتك لتعرف ما يحتاج قرارك اليوم.</p>
+     <p class="lead">سنع يساعد أصحاب الشركات الخدمية والخبراء والمكاتب والوكالات على كشف تسرب المبيعات، ضعف متابعة العملاء، وتعطل التشغيل قبل اختيار الخطوة التالية.</p>
 
     <div class="split">
       <div class="card problem">
          <div class="tag">وسط ضغط العمل</div>
-         <p>تتراكم التفاصيل، ويتأخر القرار المهم.</p>
+         <p>تتراكم مؤشرات الأداء، وتضيع الأولويات بين زيادة المبيعات، الربحية، التسعير، وتجربة العميل.</p>
       </div>
       <div class="card solution">
          <div class="tag">مع سنع</div>
-         <p>نحدد الأولوية ثم نتابع أثر الخطوة.</p>
+         <p>نرتب المعلومات، نحدد الاختناق، ثم نتابع أثر الخطوة على الأداء.</p>
       </div>
     </div>
   </div>
@@ -145,6 +151,39 @@
         <div class="icon"><svg viewBox="0 0 48 48" fill="none"><path d="M24 4 L44 24 L24 44 L4 24 Z" stroke="#0B132B" stroke-width="3" fill="none" transform="scale(0.42) translate(4,4)"/><rect x="19" y="19" width="10" height="10" fill="#F2B233" transform="scale(0.42) translate(4,4)"/></svg></div>
         <div class="t">يقيس</div>
          <div class="d">يتابع أثر خطوتك</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq" style="background:#fff; border-top:1px solid var(--line);">
+  <div class="section-inner">
+    <div class="eyebrow">أسئلة شائعة</div>
+    <h2>ما الذي يقدمه سنع لشركتك؟</h2>
+    <div class="faq">
+      <div class="faq-item">
+        <h3>ما هو سنع؟</h3>
+        <p>سنع أداة تشخيص وترتيب أولويات تساعدك على فهم ما يعطّل نمو الإيرادات وتحويل واقع شركتك إلى قرار وخطوة عملية.</p>
+      </div>
+      <div class="faq-item">
+        <h3>لمن سنع؟</h3>
+        <p>لأصحاب الشركات الخدمية والخبراء والمكاتب المهنية والوكالات والفرق التي تريد وضوحًا أكبر في المبيعات والتشغيل والقرارات.</p>
+      </div>
+      <div class="faq-item">
+        <h3>ماذا يفعل؟</h3>
+        <p>يرتب سنع المعلومات، يكشف الاختناق، يوضح ما ينقص من بيانات، ويساعدك على ترتيب الأولويات وقياس الأداء بدل معالجة كل شيء معًا.</p>
+      </div>
+      <div class="faq-item">
+        <h3>هل هو CRM؟</h3>
+        <p>لا. سنع لا يستبدل نظام CRM؛ بل يساعدك على تشخيص مشكلات متابعة العملاء وتسرب المبيعات وتجربة العميل قبل تحديد الإجراء المناسب.</p>
+      </div>
+      <div class="faq-item">
+        <h3>ماذا أحصل عليه؟</h3>
+        <p>صورة منظمة عن وضع الشركة، أولوية واضحة، قرار مقترح، خطوة تنفيذ، وطريقة لمتابعة النتيجة عبر مؤشرات الأداء المناسبة.</p>
+      </div>
+      <div class="faq-item">
+        <h3>ما نوع الشركات الأنسب؟</h3>
+        <p>الشركات الخدمية العاملة التي تريد زيادة المبيعات أو تحسين التشغيل والربحية والتسعير، وتقليل الاعتماد على المؤسس عبر توثيق العمليات وقرارات مبنية على البيانات.</p>
       </div>
     </div>
   </div>

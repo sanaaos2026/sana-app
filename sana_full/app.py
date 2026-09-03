@@ -520,6 +520,7 @@ ADMIN_PREVIEW_KEY = os.environ.get("ADMIN_PREVIEW_KEY")
 # وليس فقط عبر صفحات HTML.
 PUBLIC_ENDPOINTS = {
     "entry", "login", "signup", "logout", "api_session",
+    "robots_txt", "sitemap_xml", "llms_txt",
     "pricing_page", "billing_offer_api", "billing_quote_api",
     "billing_success_page", "billing_stripe_webhook",
     "methodology_page", "methodology_detail",
@@ -534,6 +535,112 @@ PUBLIC_ENDPOINTS = {
 }
 # ملاحظة: "companies_list" أُزيل عمداً من القائمة العامة (P0-1)
 # المسار /api/companies مقيَّد الآن بـ admin_key فقط
+
+PUBLIC_SITE_URL = "https://sanaclarity.com"
+
+
+def public_seo_context(path, title, description, schema=None, og_type="website"):
+    """Metadata for public, indexable pages only."""
+    canonical = f"{PUBLIC_SITE_URL}{path}"
+    return {
+        "seo_title": title,
+        "seo_description": description,
+        "seo_canonical": canonical,
+        "seo_og_type": og_type,
+        "seo_json_ld": schema,
+    }
+
+
+def public_home_schema():
+    faq = [
+        {
+            "@type": "Question",
+            "name": "ما هو سنع؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "سنع أداة تشخيص وترتيب أولويات تساعد الشركات الخدمية على فهم ما يعطل النمو واتخاذ خطوة عملية مبنية على المعلومات المتاحة.",
+            },
+        },
+        {
+            "@type": "Question",
+            "name": "لمن سنع؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "سنع مناسب لأصحاب الشركات الخدمية والخبراء والمكاتب المهنية والوكالات والفرق التي تريد وضوحًا أكبر في المبيعات والتشغيل والقرارات.",
+            },
+        },
+        {
+            "@type": "Question",
+            "name": "ماذا يفعل سنع؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "يرتب سنع واقع الشركة، يحدد الاختناق والأولوية، يوضح المعلومات الناقصة، ويحوّل التشخيص إلى قرار وخطوة يمكن متابعة أثرها.",
+            },
+        },
+        {
+            "@type": "Question",
+            "name": "هل سنع نظام CRM؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "لا. سنع ليس بديلًا عن CRM؛ بل يساعد على تشخيص مشكلات مثل متابعة العملاء وتسرب المبيعات وترتيب الأولويات قبل اختيار الإجراء المناسب.",
+            },
+        },
+        {
+            "@type": "Question",
+            "name": "ماذا أحصل عليه من سنع؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "تحصل على صورة منظمة عن وضع الشركة، وأولوية واضحة، وقرار مقترح، وخطوة تنفيذ، وطريقة لمتابعة النتيجة وقياس الأداء.",
+            },
+        },
+        {
+            "@type": "Question",
+            "name": "ما نوع الشركات الأنسب لسنع؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "الشركات الخدمية العاملة التي لديها عملاء أو تشغيل فعلي وتريد تحسين المبيعات أو الربحية أو التسعير أو تجربة العميل أو تقليل الاعتماد على المؤسس.",
+            },
+        },
+    ]
+    return {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "Organization",
+                "@id": f"{PUBLIC_SITE_URL}/#organization",
+                "name": "سنع",
+                "alternateName": "Sana",
+                "url": f"{PUBLIC_SITE_URL}/",
+                "description": "سنع يساعد الشركات الخدمية على تشخيص الاختناقات وترتيب الأولويات وتحويل المعلومات إلى قرارات وخطوات قابلة للمتابعة.",
+            },
+            {
+                "@type": "WebSite",
+                "@id": f"{PUBLIC_SITE_URL}/#website",
+                "name": "سنع",
+                "alternateName": "Sana Clarity",
+                "url": f"{PUBLIC_SITE_URL}/",
+                "inLanguage": ["ar", "en"],
+                "publisher": {"@id": f"{PUBLIC_SITE_URL}/#organization"},
+            },
+            {
+                "@type": "SoftwareApplication",
+                "@id": f"{PUBLIC_SITE_URL}/#software",
+                "name": "سنع",
+                "url": f"{PUBLIC_SITE_URL}/",
+                "applicationCategory": "BusinessApplication",
+                "operatingSystem": "Web",
+                "inLanguage": "ar",
+                "description": "أداة ويب لتشخيص مشكلات الشركات الخدمية، ترتيب الأولويات، ودعم القرارات المبنية على البيانات.",
+                "provider": {"@id": f"{PUBLIC_SITE_URL}/#organization"},
+            },
+            {
+                "@type": "FAQPage",
+                "@id": f"{PUBLIC_SITE_URL}/#faq",
+                "mainEntity": faq,
+                "inLanguage": "ar",
+            },
+        ],
+    }
 
 
 def is_admin_preview():
@@ -2184,7 +2291,87 @@ def entry():
     account = current_account()
     if account:
         return redirect(_company_start_redirect(account))
-    return render_template("00-landing.html")
+    return render_template(
+        "00-landing.html",
+        **public_seo_context(
+            "/",
+            "سنع للشركات الخدمية — تشخيص وترتيب أولويات",
+            "سنع يساعد الشركات الخدمية والخبراء والمكاتب والوكالات على تشخيص اختناقات المبيعات والتشغيل، ترتيب الأولويات، واتخاذ قرارات مبنية على البيانات.",
+            schema=public_home_schema(),
+        ),
+    )
+
+
+@app.route("/robots.txt")
+def robots_txt():
+    content = """User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /signup
+Disallow: /logout
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /accept-invitation
+Disallow: /admin
+Disallow: /api/
+Disallow: /home
+Disallow: /onboarding
+Disallow: /discovery
+Disallow: /case/
+Disallow: /passport
+Disallow: /assessment
+Disallow: /services
+Disallow: /growth-os
+Disallow: /sop-builder
+Disallow: /sector-select
+Disallow: /check-in
+Disallow: /sales
+Disallow: /zubair/
+Disallow: /e/
+Disallow: /billing/
+Disallow: /fit-gate/
+
+Sitemap: https://sanaclarity.com/sitemap.xml
+"""
+    return Response(content, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    paths = ["/", "/pricing", "/guide", "/articles"]
+    articles = get_db().execute(
+        "SELECT slug FROM methodology_docs WHERE doc_type='article' ORDER BY slug"
+    ).fetchall()
+    paths.extend(url_for("article_page", slug=row["slug"]) for row in articles)
+    urls = "".join(
+        f"<url><loc>{html.escape(PUBLIC_SITE_URL + path)}</loc></url>"
+        for path in paths
+    )
+    content = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"{urls}</urlset>"
+    )
+    return Response(content, mimetype="application/xml")
+
+
+@app.route("/llms.txt")
+def llms_txt():
+    content = """# سنع | Sana Clarity
+
+سنع أداة عربية تساعد الشركات الخدمية والخبراء والمكاتب المهنية والوكالات على تشخيص اختناقات المبيعات والتشغيل، ترتيب الأولويات، واتخاذ قرارات مبنية على البيانات. سنع ليس نظام CRM ولا يعد بنتائج رقمية؛ بل ينظم المعلومات المتاحة ويحوّلها إلى أولوية وقرار وخطوة قابلة للمتابعة.
+
+Sana Clarity is an Arabic business clarity tool for service companies, experts, professional firms, and agencies. It helps diagnose sales and operations bottlenecks, prioritize work, and turn available evidence into decisions and trackable next steps. Sana is not a CRM and does not promise numeric outcomes.
+
+## Public pages
+- Home: https://sanaclarity.com/
+- Pricing: https://sanaclarity.com/pricing
+- Guide: https://sanaclarity.com/guide
+- Articles: https://sanaclarity.com/articles
+
+Private account, diagnostic, company, admin, and API routes are intentionally excluded.
+"""
+    return Response(content, mimetype="text/plain")
 
 
 @app.route("/home")
@@ -2721,7 +2908,14 @@ def reset_experience():
 
 @app.route("/pricing")
 def pricing_page():
-    return render_template("13-pricing.html")
+    return render_template(
+        "13-pricing.html",
+        **public_seo_context(
+            "/pricing",
+            "باقة سنع للشركات الخدمية — الأسعار والمزايا",
+            "تعرّف على باقة سنع للشركات الخدمية وما تتضمنه من تشخيص للأولويات، دعم للقرار، وخطوات تنفيذ قابلة للمتابعة دون وعود نتائج غير مثبتة.",
+        ),
+    )
 
 
 @app.route("/api/billing/offer")
@@ -6178,7 +6372,14 @@ def admin_update_company(company_id):
 
 @app.route("/guide")
 def guide_page():
-    return render_template("13-guide.html")
+    return render_template(
+        "13-guide.html",
+        **public_seo_context(
+            "/guide",
+            "دليل سنع — كيف تبدأ تشخيص شركتك الخدمية",
+            "دليل مبسط يشرح ما هو سنع، وكيف تبدأ تشخيص شركتك الخدمية، وترتب الأولويات، وتحوّل المعلومات إلى قرار وخطوة قابلة للقياس.",
+        ),
+    )
 
 
 def _knowledge_admin_account_allowed():
@@ -6211,7 +6412,15 @@ def articles_list():
     articles = db.execute(
         "SELECT slug, title, subtitle FROM methodology_docs WHERE doc_type='article' ORDER BY created_at DESC"
     ).fetchall()
-    return render_template("15-articles-list.html", articles=[dict(a) for a in articles])
+    return render_template(
+        "15-articles-list.html",
+        articles=[dict(a) for a in articles],
+        **public_seo_context(
+            "/articles",
+            "مقالات سنع للشركات الخدمية — مبيعات وتشغيل",
+            "مقالات عملية للشركات الخدمية حول زيادة المبيعات، تحسين التشغيل، الربحية، التسعير، مؤشرات الأداء، وتجربة العميل وقرارات النمو.",
+        ),
+    )
 
 
 @app.route("/articles/<slug>")
@@ -6222,7 +6431,37 @@ def article_page(slug):
     ).fetchone()
     if not doc:
         return "المقال غير موجود", 404
-    return render_template("16-article.html", doc=dict(doc))
+    article = dict(doc)
+    description = (
+        article.get("subtitle")
+        or f"مقال من سنع يشرح {article['title']} للشركات الخدمية بخطوات عملية قابلة للتطبيق."
+    ).strip()
+    description = description[:157].rstrip()
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": article["title"],
+        "description": description,
+        "url": f"{PUBLIC_SITE_URL}{url_for('article_page', slug=slug)}",
+        "mainEntityOfPage": f"{PUBLIC_SITE_URL}{url_for('article_page', slug=slug)}",
+        "inLanguage": "ar",
+        "publisher": {
+            "@type": "Organization",
+            "name": "سنع",
+            "url": f"{PUBLIC_SITE_URL}/",
+        },
+    }
+    return render_template(
+        "16-article.html",
+        doc=article,
+        **public_seo_context(
+            url_for("article_page", slug=slug),
+            f"{article['title']} — سنع",
+            description,
+            schema=schema,
+            og_type="article",
+        ),
+    )
 
 
 @app.route("/api/articles")
