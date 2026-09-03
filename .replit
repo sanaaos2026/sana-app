@@ -47,7 +47,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd sana_full && python3 -m unittest test_b2b_service_os.py -v"
+args = "cd sana_full && python3 -m playwright install chromium && SANA_REQUIRE_BROWSER_TESTS=1 python3 -m unittest test_b2b_service_os.py test_csrf_browser_release.CsrfBrowserReleaseTest -v"
 
 [workflows.workflow.metadata]
 isValidation = true

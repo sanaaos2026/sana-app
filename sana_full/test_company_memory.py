@@ -344,10 +344,14 @@ class CompanyMemoryTest(unittest.TestCase):
                 )
 
     def test_shared_csrf_fetch_guard_runs_in_browser(self):
+        browser_required = os.environ.get("SANA_REQUIRE_BROWSER_TESTS") == "1"
         try:
             from playwright.sync_api import sync_playwright
-        except ImportError:
-            self.skipTest("Playwright is not installed")
+        except ImportError as exc:
+            message = "Playwright is not installed"
+            if browser_required:
+                self.fail(f"{message}; browser verification is required for release")
+            self.skipTest(message)
 
         template = (
             Path(sana_app.app.template_folder) / "_csrf-fetch.html"
@@ -362,7 +366,12 @@ class CompanyMemoryTest(unittest.TestCase):
             try:
                 browser = playwright.chromium.launch(headless=True)
             except Exception as exc:
-                self.skipTest(f"Playwright Chromium is unavailable: {exc}")
+                message = f"Playwright Chromium is unavailable: {exc}"
+                if browser_required:
+                    self.fail(
+                        f"{message}; browser verification is required for release"
+                    )
+                self.skipTest(message)
             page = browser.new_page()
 
             def handle_route(route):
