@@ -86,9 +86,6 @@
 
 <div class="concept-nav">
   <a href="/home{{ context_query }}">اليوم</a>
-  {% if is_admin_preview %}
-  <a href="/case/new{{ context_query }}" id="caseNavLink">ملف القرار</a>
-  {% endif %}
   <a href="/passport{{ context_query }}" class="active">الأصول</a>
   <a href="/logout">تسجيل الخروج</a>
 </div>
@@ -171,7 +168,7 @@ function render(d, meta, sds){
       </section>
       ${d.weakest_asset_case_id ? `
       <section style="text-align:center;">
-        <a href="/case/${d.weakest_asset_case_id}${CQS}" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح القضية المرتبطة به</a>
+        <a href="/case/${d.weakest_asset_case_id}/result${CQS}" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح نتيجة التشخيص</a>
       </section>` : ''}
       <section style="text-align:center;">
         <div style="font-size:11.5px;color:#6E7580;margin-bottom:8px;">راجع التفاصيل قبل اتخاذ قرار كبير.</div>

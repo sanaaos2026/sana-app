@@ -229,7 +229,7 @@ async function buildDecision(){const r=await fetch(`/api/cases/${CASE_ID}/p0-dec
 fetch(`/api/cases/${CASE_ID}`).then(r=>r.json()).then(j=>{
   if(!j.success) throw new Error();
   render(j.data);
-}).catch(()=>{document.getElementById('app').innerHTML='<p class="empty">تعذر تحميل النتيجة الآن. حدّث الصفحة وحاول مرة أخرى.</p>';});
+}).catch(()=>{document.getElementById('app').innerHTML='<div class="empty"><p>ما فيه قرار حتى الآن. نكمل من الأولوية الحالية.</p><a class="btn" href="/case/'+encodeURIComponent(CASE_ID)+'/next-step">تابع الخطوة التالية</a><a class="btn secondary" href="/home">ارجع لليوم</a></div>';});
 </script>
 </body>
 </html>

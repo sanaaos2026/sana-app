@@ -839,7 +839,7 @@ function renderPassport(data) {
     '📊 البيانات والتقارير':      'البيانات',
     '👤 وجود المؤسس ومتابعته':   'الاستقلالية',
   };
-  const dest = data.case_id ? `/case/${data.case_id}` : '/home';
+  const dest = data.case_id ? `/case/${data.case_id}/result` : '/home';
 
   const rows = [
     data.sector        ? `<div class="pp-row"><span class="pp-icon">🏢</span><div><span class="pp-label">القطاع</span><span class="pp-val">${data.sector}</span></div></div>` : '',

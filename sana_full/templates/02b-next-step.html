@@ -122,13 +122,12 @@
 <div class="concept-nav">
   <a href="/">① الدخول</a>
   <a href="/home">② اليوم</a>
-  <a href="/case/{{ case_id }}">③ ملف القرار</a>
-  <a href="/case/{{ case_id }}/next-step" class="active">④ الخطوة التالية</a>
-  <a href="/passport">⑤ جواز الشركة</a>
+  <a href="/case/{{ case_id }}/next-step" class="active">③ الخطوة التالية</a>
+  <a href="/passport">④ الأصول</a>
 </div>
 
 <header>
-  <a href="/case/{{ case_id }}" class="back" id="backLink">← ملف القرار</a>
+  <a href="/home" class="back" id="backLink">← اليوم</a>
   <div class="hd-title" id="pageTitle">الخطوة التالية...</div>
   <span class="hd-conf num" id="confBadge"></span>
 </header>
@@ -147,8 +146,8 @@
   </div>
 
   <div class="foot-nav" id="footNav" style="display:none">
-    <a href="/case/{{ case_id }}" class="foot-link primary">← ارجع لملف القرار</a>
-    <a href="/home" class="foot-link">اليوم</a>
+    <a href="/home" class="foot-link primary">← ارجع لليوم</a>
+    <a href="/passport" class="foot-link">صورة الشركة</a>
   </div>
 </main>
 
@@ -208,7 +207,7 @@ async function load() {
   const json = await res.json();
 
   if (!json.success) {
-    document.getElementById('app').innerHTML = '<p style="color:#B23A2E;padding:20px">تعذّر تحميل البيانات.</p>';
+    document.getElementById('app').innerHTML = '<div class="empty-state"><div class="big">↩</div><p>ما قدرنا نحدد الخطوة الآن.</p><a class="foot-link primary" href="/home">ارجع لليوم</a></div>';
     return;
   }
 
@@ -240,7 +239,10 @@ async function load() {
   document.getElementById('footNav').style.display = '';
 }
 
-load();
+load().catch(() => {
+  document.getElementById('app').innerHTML = '<div class="empty-state"><div class="big">↩</div><p>ما قدرنا نكمل الصورة الآن.</p><a class="foot-link primary" href="/home">ارجع لليوم</a></div>';
+  document.getElementById('footNav').style.display = '';
+});
 </script>
 </body>
 </html>

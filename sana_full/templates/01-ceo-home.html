@@ -178,7 +178,7 @@
 
 <div class="concept-nav">
   <a href="/home{{ context_query }}" class="active">اليوم</a>
-  <a href="/case/new{{ context_query }}" id="caseNavLink">ملف القرار</a>
+  <a href="/case/new{{ context_query }}" id="caseNavLink">التشخيص</a>
   <a href="/passport{{ context_query }}">الأصول</a>
   <a href="/logout">تسجيل الخروج</a>
 </div>
@@ -418,7 +418,7 @@ function render(d){
     document.getElementById('gb-evidence').textContent  = d.evidence_count || 0;
     const btn = document.getElementById('gb-btn');
     if(firstCase){
-      btn.onclick = () => { window.location.href = `/case/${firstCase.case_id}${CQS}`; };
+      btn.onclick = () => { window.location.href = `/case/${firstCase.case_id}/result${CQS}`; };
     } else {
       btn.textContent = 'ابدأ قضية جديدة ←';
       btn.onclick = () => { window.location.href = `/case/new${CQS}`; };
@@ -431,7 +431,7 @@ function render(d){
   const caseNavLink = document.getElementById('caseNavLink');
   if(caseNavLink){
     const firstCase = d.cases && d.cases[0];
-    caseNavLink.href = firstCase ? `/case/${firstCase.case_id}${CQS}` : `/case/new${CQS}`;
+    caseNavLink.href = firstCase ? `/case/${firstCase.case_id}/result${CQS}` : `/case/new${CQS}`;
   }
 
   let html = '';
@@ -512,7 +512,7 @@ function render(d){
       <button class="btn btn-primary" onclick="approveDecision('${topDecision.decision_id}')" ${alreadyApproved?'disabled':''}>
         ${alreadyApproved ? 'تم الاعتماد ✓' : 'اعتماد القرار'}
       </button>
-      ${topDecision.case_id ? `<a href="/case/${topDecision.case_id}${CQS}" class="link-out" style="display:block; margin-top:12px;">← افتح القضية الكاملة لرؤية التفاصيل والأدلة</a>` : ''}
+      ${topDecision.case_id ? `<a href="/case/${topDecision.case_id}/result${CQS}" class="link-out" style="display:block; margin-top:12px;">← تابع نتيجة التشخيص والقرار</a>` : ''}
     </section>`;
   } else {
     // Section 17: لا يوجد قرار مقترح أو قيد التنفيذ

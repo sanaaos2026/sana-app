@@ -1801,8 +1801,6 @@ def case_next_step(case_id):
         abort(404)
     if account and case["company_id"] != account["company_id"]:
         abort(403)
-    if account and not is_admin_preview():
-        return redirect(url_for("case_workspace", case_id=case_id))
     return render_template("02b-next-step.html", case_id=case_id)
 
 
@@ -1962,20 +1960,31 @@ def case_next_step_data(case_id):
 
 @app.route("/case/<case_id>")
 def case_workspace(case_id):
-    # 1. يجب أن يكون المستخدم مسجّلاً (أو وضع العرض الداخلي)
+    """مسار legacy: لا يعرض ملفًا؛ يوجّه إلى نتيجة التشخيص الحالية."""
     account = current_account()
     if not account and not is_admin_preview():
         return redirect(url_for("login", next=request.full_path))
-
-    # 2. التحقق من أن القضية موجودة وتخص الشركة الصحيحة.
-    # القضايا الجديدة الناتجة من Discovery مسموحة؛ لا تقييد بمعرّف Demo ثابت.
     db = get_db()
     case = db.execute("SELECT company_id FROM cases WHERE case_id=?", (case_id,)).fetchone()
     if not case:
         abort(404)
     if account and case["company_id"] != account["company_id"]:
         abort(403)
+    return redirect(url_for("case_result", case_id=case_id))
 
+
+@app.route("/case/<case_id>/result")
+def case_result(case_id):
+    """نتيجة التشخيص الحالية؛ القرار الغائب حالة طبيعية داخل هذه الصفحة."""
+    account = current_account()
+    if not account and not is_admin_preview():
+        return redirect(url_for("login", next=request.full_path))
+    db = get_db()
+    case = db.execute("SELECT company_id FROM cases WHERE case_id=?", (case_id,)).fetchone()
+    if not case:
+        abort(404)
+    if account and case["company_id"] != account["company_id"]:
+        abort(403)
     if account and not is_admin_preview():
         return render_template(
             "02-case-workspace-client.html",
@@ -8582,7 +8591,7 @@ def add_evidence(company_id):
             return jsonify({
                 "success": False,
                 "error": "CASE_NOT_FOUND",
-                "message": "تعذر العثور على ملف القرار ضمن شركتك.",
+                "message": "تعذر العثور على القضية ضمن شركتك.",
             }), 404
         scan = latest_scan(db, case_id) or {}
         cycle = scan.get("evidence_request_cycle") or {}
@@ -8626,7 +8635,7 @@ def add_evidence(company_id):
             return jsonify({
                 "success": False,
                 "error": "CASE_NOT_FOUND",
-                "message": "تعذر العثور على ملف القرار ضمن شركتك.",
+                "message": "تعذر العثور على القضية ضمن شركتك.",
             }), 404
         scan = latest_scan(db, case_id) or {}
         matching_request = next(
