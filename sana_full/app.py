@@ -1058,6 +1058,23 @@ def handle_csrf_error(error):
     }), 400
 
 
+@app.errorhandler(404)
+def handle_not_found(error):
+    """Render Sana's 404 page and retain only safe navigation context."""
+    referrer = request.referrer
+    if referrer:
+        parsed_referrer = urlparse(referrer)
+        referrer = parsed_referrer.path or "/"
+    app.logger.warning(
+        "[404] path=%s referrer=%s account_id=%s company_id=%s",
+        request.path[:500],
+        (referrer or "-")[:500],
+        str(session.get("account_id") or "-")[:100],
+        str(session.get("company_id") or "-")[:100],
+    )
+    return render_template("404.html"), 404
+
+
 @app.before_request
 def enforce_company_auth():
     # واجهة الخبير العامة — نظام مصادقة مستقل (access_code في الجلسة) لا علاقة له بحسابات الشركات

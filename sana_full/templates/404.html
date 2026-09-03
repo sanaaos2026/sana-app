@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>الصفحة غير موجودة — سنع</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800&family=IBM+Plex+Sans+Arabic:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F5F6FB;color:#0B132B;font-family:'IBM Plex Sans Arabic',sans-serif;padding:24px}
+    main{width:min(100%,560px);background:#fff;border:1px solid #DEE1EC;border-radius:18px;padding:40px 28px;text-align:center;box-shadow:0 18px 50px rgba(11,19,43,.08)}
+    .brand{font-family:Cairo,sans-serif;font-size:24px;font-weight:800;margin-bottom:24px}
+    .code{color:#0EA5A5;font-size:13px;font-weight:600;letter-spacing:1px}
+    h1{font-family:Cairo,sans-serif;font-size:28px;margin:8px 0}
+    p{color:#6E7580;line-height:1.8;margin:0 auto 26px}
+    .actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+    button,a{min-width:180px;border-radius:9px;padding:12px 18px;font:600 14px 'IBM Plex Sans Arabic',sans-serif;cursor:pointer;text-decoration:none}
+    button{background:#fff;color:#0B132B;border:1px solid #DEE1EC}
+    a{background:#0B132B;color:#fff;border:1px solid #0B132B}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand">سنع</div>
+    <div class="code">404</div>
+    <h1>هذه الصفحة غير موجودة</h1>
+    <p>قد يكون الرابط قديمًا أو غير مكتمل. ارجع للمسار السابق أو إلى صفحة اليوم.</p>
+    <div class="actions">
+      <button type="button" onclick="goBack()">ارجع للخطوة السابقة</button>
+      <a href="/home">ارجع لليوم</a>
+    </div>
+  </main>
+  <script>
+    function goBack(){
+      if(window.history.length > 1) window.history.back();
+      else window.location.assign('/home');
+    }
+  </script>
+</body>
+</html>
