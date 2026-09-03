@@ -2562,11 +2562,6 @@ def onboarding():
            FROM companies WHERE company_id=?""",
         (account["company_id"],),
     ).fetchone()
-    if company and company["sector"] and company["name"] != "شركة جديدة":
-        return redirect(
-            url_for("ceo_home") if company["sds_done"] else url_for("discovery")
-        )
-
     if request.method == "GET":
         return render_template(
             "11-onboarding.html",

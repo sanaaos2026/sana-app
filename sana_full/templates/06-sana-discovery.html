@@ -1373,19 +1373,34 @@ function escJs(str) { return (str||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")
 // dev: ?step=N يفتح سؤالًا محددًا مباشرة (للمعاينة فقط)
 // ────────────────────────────────────────────────
 const _devStep = parseInt(new URL(location.href).searchParams.get('step') || '0');
-if (_devStep > 0 && _devStep <= 8) step = _devStep;
-if (!_devStep) restoreDiscoveryDraft(INITIAL_DISCOVERY_DRAFT);
-if (
-  !_devStep &&
-  INITIAL_DISCOVERY_DRAFT &&
-  INITIAL_DISCOVERY_DRAFT.payload &&
-  INITIAL_DISCOVERY_DRAFT.current_step === 0 &&
-  INITIAL_DISCOVERY_DRAFT.payload.fit_gate &&
-  Object.values(INITIAL_DISCOVERY_DRAFT.payload.fit_gate).some(Boolean)
-) {
-  renderFitGate();
-} else {
-  render();
+function showDiscoveryLoadError(error) {
+  console.error('Discovery failed to render', error);
+  $progress.classList.remove('visible');
+  $screen.innerHTML = `
+    <div class="journey-state-panel dark error">
+      <div>تعذر فتح أسئلة الاكتشاف الآن.</div>
+      <button type="button" class="journey-retry" onclick="window.location.reload()">أعد المحاولة</button>
+      <a class="journey-retry" href="${JOURNEY_URLS.onboarding}">ارجع للبيانات الأساسية</a>
+    </div>`;
+}
+
+try {
+  if (_devStep > 0 && _devStep <= 8) step = _devStep;
+  if (!_devStep) restoreDiscoveryDraft(INITIAL_DISCOVERY_DRAFT);
+  if (
+    !_devStep &&
+    INITIAL_DISCOVERY_DRAFT &&
+    INITIAL_DISCOVERY_DRAFT.payload &&
+    INITIAL_DISCOVERY_DRAFT.current_step === 0 &&
+    INITIAL_DISCOVERY_DRAFT.payload.fit_gate &&
+    Object.values(INITIAL_DISCOVERY_DRAFT.payload.fit_gate).some(Boolean)
+  ) {
+    renderFitGate();
+  } else {
+    render();
+  }
+} catch (error) {
+  showDiscoveryLoadError(error);
 }
 window.addEventListener('pagehide', () => {
   if (DRAFT_ENABLED && !discoveryFinalizing) saveDraftNow(true);
