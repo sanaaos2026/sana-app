@@ -151,7 +151,7 @@
   .review-copy{font-size:12px;color:var(--muted);margin:5px 0 12px}
   .review-action{border:0;background:var(--navy);color:#fff;border-radius:8px;padding:10px 15px;font-family:inherit;font-weight:700;cursor:pointer}
   .review-action.secondary{background:#fff;color:var(--navy);border:1px solid var(--line)}
-  .review-fields{display:grid;gap:10px;margin-top:12px}.review-fields select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;font-family:inherit}
+  .review-fields{display:grid;gap:10px;margin-top:12px}.review-fields select,.review-fields textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;font-family:inherit}.review-fields textarea{min-height:84px;resize:vertical}
   .review-status{font-size:12px;color:#08745F;font-weight:700;margin-top:8px}
   .review-result{margin-top:10px;padding:11px;border-right:3px solid var(--teal);background:#fff;font-size:12px}
   @media(max-width:560px){
@@ -203,7 +203,14 @@
   {% if human_review %}
   <div class="review-card{% if human_review.needs_emphasis %} emphasis{% endif %}" data-testid="human-review-card">
     {% set current_review = human_review.review %}
-    {% if current_review and current_review.status == 'COMPLETED' %}
+    {% if current_review and current_review.expert_summary_status == 'APPROVED' %}
+      <div class="review-title">ملخص مراجعة الخبير جاهز</div>
+      <div class="review-copy">اعتمد الخبير/الإدارة الورقة النهائية. ملاحظات الخبير تبقى مراجعة بشرية ولا تتحول تلقائيًا إلى حقيقة.</div>
+      <div>
+        <a class="review-action" href="{{ current_review.summary_url }}">عرض الملخص</a>
+        <a class="review-action secondary" href="{{ current_review.summary_pdf_url }}">تنزيل PDF</a>
+      </div>
+    {% elif current_review and current_review.status == 'COMPLETED' %}
       <div class="review-title">تمت مراجعة القرار مع خبير سنع</div>
       <div class="review-copy">حُفظ القرار السابق ونتيجة المراجعة في سجل مستقل.</div>
       <div class="review-result">
@@ -212,30 +219,21 @@
         <b>الخطوة التالية:</b> {{ current_review.next_action }}
       </div>
     {% elif current_review and current_review.status in ['REQUESTED','SCHEDULED'] %}
-      <div class="review-title">مراجعة القرار مؤكدة</div>
-      <div class="review-copy">موعدك: {{ current_review.scheduled_at }}. التقرير والتنزيل متاحان كالمعتاد.</div>
-      <div class="review-status">سيصل طلبك وملخص الحالة إلى المراجع.</div>
+      <div class="review-title">وصل طلب المراجعة البشرية</div>
+      <div class="review-copy">سيطّلع الخبير على الحالة. التقرير والتنزيل متاحان كالمعتاد.</div>
+      <div class="review-status">ستظهر ورقة «ملخص مراجعة الخبير» هنا بعد اعتمادها.</div>
     {% else %}
-      <div class="review-title">راجع القرار مع خبير سنع</div>
-      <div class="review-copy">{{ human_review.settings.client_copy }}. المراجعة اختيارية ولا توقف التقرير أو القرار الحالي.</div>
-      {% if human_review.settings.available and human_review.slots %}
-      <button class="review-action" id="openReview">راجع القرار مع خبير سنع</button>
+      <div class="review-title">التواصل مع خبير</div>
+      <div class="review-copy">اطلب مراجعة بشرية للحالة. المراجعة اختيارية ولا توقف التقرير أو القرار الحالي.</div>
+      {% if human_review.settings.available %}
+      <button class="review-action" id="openReview">اطلب مراجعة بشرية</button>
       <div class="review-fields" id="reviewFields" hidden>
-        <select id="reviewReason" aria-label="سبب المراجعة">
-          <option value="">اختر سبب المراجعة</option>
-          {% for code,label in human_review.reasons.items() %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
-        </select>
-        <select id="reviewSlot" aria-label="موعد المراجعة">
-          <option value="">اختر موعدًا</option>
-          {% for slot in human_review.slots %}<option value="{{ slot.slot_id }}">{{ slot.starts_at }} — {{ slot.duration_minutes }} دقيقة</option>{% endfor %}
-        </select>
-        <div><button class="review-action" id="confirmReview">تأكيد الموعد</button> <button class="review-action secondary" id="cancelReview">رجوع</button></div>
+        <textarea id="reviewClientNote" maxlength="500" aria-label="ملاحظة قصيرة اختيارية" placeholder="ملاحظة قصيرة للخبير (اختياري)"></textarea>
+        <div><button class="review-action" id="confirmReview">إرسال طلب المراجعة</button> <button class="review-action secondary" id="cancelReview">رجوع</button></div>
         <div id="reviewMessage" class="review-copy"></div>
       </div>
       {% elif not human_review.settings.available %}
-      <div class="review-copy">هذا الخيار غير متاح للحجز حاليًا. يمكنك متابعة التقرير دون مراجعة.</div>
-      {% else %}
-      <div class="review-copy">لا توجد مواعيد متاحة الآن. يمكنك متابعة التقرير دون مراجعة.</div>
+      <div class="review-copy">هذا الخيار غير متاح حاليًا. يمكنك متابعة التقرير دون مراجعة.</div>
       {% endif %}
     {% endif %}
   </div>
@@ -627,7 +625,7 @@
   <footer>سنع — ملخص يمكن الرجوع إلى تفاصيله · القيمة المالية تحتاج معلومات موثقة</footer>
 
 </div>
-{% if human_review and human_review.settings.available and human_review.slots and not human_review.review %}
+{% if human_review and human_review.settings.available and not human_review.review %}
 <script>
 const reviewCaseId={{ (scan_case.case_id if scan_case else '')|tojson }};
 const csrf=document.querySelector('meta[name="csrf-token"]').content;
@@ -635,12 +633,11 @@ const fields=document.getElementById('reviewFields');
 document.getElementById('openReview').onclick=()=>{fields.hidden=false;document.getElementById('openReview').hidden=true};
 document.getElementById('cancelReview').onclick=()=>{fields.hidden=true;document.getElementById('openReview').hidden=false};
 document.getElementById('confirmReview').onclick=async()=>{
-  const reason_code=document.getElementById('reviewReason').value,slot_id=document.getElementById('reviewSlot').value,msg=document.getElementById('reviewMessage');
-  if(!reason_code||!slot_id){msg.textContent='اختر السبب والموعد أولًا.';return}
+  const client_note=document.getElementById('reviewClientNote').value.trim(),msg=document.getElementById('reviewMessage');
   try{
-    const response=await fetch(`/api/cases/${encodeURIComponent(reviewCaseId)}/human-review`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf},body:JSON.stringify({reason_code,slot_id})});
+    const response=await fetch(`/api/cases/${encodeURIComponent(reviewCaseId)}/human-review`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf},body:JSON.stringify({client_note})});
     const result=await response.json();
-    if(!response.ok||!result.success)throw new Error(result.message||'تعذر تأكيد الموعد');
+    if(!response.ok||!result.success)throw new Error(result.message||'تعذر إرسال طلب المراجعة');
     location.reload();
   }catch(error){msg.textContent=error.message}
 };

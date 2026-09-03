@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="csrf-token" content="{{ csrf_token() }}">
-<script>(function(){var m=document.querySelector('meta[name="csrf-token"]');if(!m)return;var t=m.content;var S=new Set(['POST','PUT','PATCH','DELETE']);var F=window.fetch.bind(window);window.fetch=function(u,o){o=o||{};if(S.has((o.method||'GET').toUpperCase())){o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});}return F(u,o);};})();</script>
+<script>(function(){var m=document.querySelector('meta[name="csrf-token"]');if(!m)return;var t=m.content;var S=new Set(['POST','PUT','PATCH','DELETE']);var F=window.fetch.bind(window);window.fetch=async function(u,o){o=o||{};if(S.has((o.method||'GET').toUpperCase())){o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});}var r=await F(u,o);if(r.status===401){try{var j=await r.clone().json();if(j.redirect)window.location.assign(j.redirect);}catch(_){}}return r;};})();</script>
 <title>جلسة الاكتشاف — سنع</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -119,6 +119,77 @@
   }
   .followup-input:focus { border-bottom-color: var(--gold); }
   .followup-input::placeholder { color: var(--muted); }
+  .followup-input[type="date"] { direction: ltr; text-align: left; }
+
+  /* ── Mobile-first period picker ── */
+  .calibration-wrap {
+    width: 100%; max-width: 420px; text-align: right; direction: rtl;
+  }
+  .calibration-kicker {
+    color: #fff; font-family: 'Cairo', sans-serif; font-weight: 800;
+    font-size: clamp(20px, 5.4vw, 25px); line-height: 1.45;
+    text-align: center;
+  }
+  .calibration-note {
+    color: var(--muted); font-size: 13px; text-align: center;
+    margin: 4px 0 24px;
+  }
+  .calibration-question {
+    color: var(--ink); font-family: 'Cairo', sans-serif; font-size: 17px;
+    font-weight: 800; margin-bottom: 12px;
+  }
+  .period-options {
+    display: flex; flex-direction: column; gap: 10px; width: 100%;
+  }
+  .period-option {
+    width: 100%; min-height: 58px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px; direction: rtl;
+    background: rgba(255,255,255,.04); border: 1.5px solid var(--line);
+    border-radius: 14px; padding: 13px 16px; color: var(--ink);
+    font-family: inherit; text-align: right; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background .15s, border-color .15s, transform .1s;
+  }
+  .period-option:active { transform: scale(.985); }
+  .period-option.selected {
+    background: var(--gold-dim); border-color: var(--gold);
+  }
+  .period-option-copy { display: flex; flex-direction: column; gap: 2px; }
+  .period-option-title { font-size: 15px; font-weight: 700; color: #fff; }
+  .period-option.selected .period-option-title { color: var(--gold); }
+  .period-option-hint { color: var(--muted); font-size: 11px; line-height: 1.4; }
+  .period-radio {
+    width: 19px; height: 19px; flex: 0 0 19px; border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,.32); position: relative;
+  }
+  .period-option.selected .period-radio { border-color: var(--gold); }
+  .period-option.selected .period-radio::after {
+    content: ""; position: absolute; inset: 4px; border-radius: 50%;
+    background: var(--gold);
+  }
+  .period-confirmation {
+    color: rgba(255,255,255,.52); font-size: 11px; line-height: 1.6;
+    margin-top: 12px; text-align: right;
+  }
+  .period-custom-fields {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line);
+  }
+  .period-field { min-width: 0; }
+  .period-field label {
+    display: block; color: var(--ink); font-size: 13px; font-weight: 700;
+    margin-bottom: 5px; text-align: right;
+  }
+  .period-field .followup-input {
+    background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.2);
+    border-radius: 10px; padding: 11px 10px; min-height: 45px;
+  }
+  .period-error {
+    color: #ffb4a8; font-size: 12px; min-height: 20px; margin-top: 9px;
+  }
+  .period-continue {
+    margin-top: 18px; opacity: 1; pointer-events: auto; transform: none;
+  }
 
   /* ── Next / submit button ── */
   .next-btn {
@@ -500,6 +571,11 @@ const Q = [
 let step = 0;
 const ans = {};
 let firstCaseId = null;
+let calibrationPeriodChoice = null;
+const calibrationDraft = {
+  baseline_start: '',
+  baseline_end: ''
+};
 
 // ────────────────────────────────────────────────
 // HELPERS
@@ -572,58 +648,174 @@ function skipWelcome() {
 
 function renderCalibration() {
   const baseline = ans.diagnostic_baseline || {};
+  if (!calibrationPeriodChoice) {
+    calibrationPeriodChoice = baseline.baseline_start && baseline.baseline_end
+      ? 'custom' : 'last_3_months';
+  }
+  const isCustom = calibrationPeriodChoice === 'custom';
+  const period = isCustom
+    ? {
+        start: calibrationDraft.baseline_start || baseline.baseline_start || '',
+        end: calibrationDraft.baseline_end || baseline.baseline_end || ''
+      }
+    : getPresetPeriod(calibrationPeriodChoice);
   $screen.innerHTML = `
-    <div class="outro-wrap" style="align-items:stretch;max-width:520px;">
-      <div class="outro-title">نكمل الصورة</div>
-      <div class="outro-body">نحدد الفترة التي سنقارن بها لاحقًا. الأرقام تظل غير مؤكدة حتى يكون لها مصدر.</div>
-      <label class="followup-label">الفترة التي نبدأ منها</label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <input class="followup-input" type="date" id="baseline-start" value="${escHtml(baseline.baseline_start || '')}">
-        <input class="followup-input" type="date" id="baseline-end" value="${escHtml(baseline.baseline_end || '')}">
+    <div class="calibration-wrap">
+      <div class="calibration-kicker">على أي فترة نبني الصورة؟</div>
+      <div class="calibration-note">اختر الفترة الأقرب لوضع شركتك الآن</div>
+      <div class="period-options" role="radiogroup" aria-label="الفترة التي تمثل وضع الشركة">
+        ${renderPeriodOption('last_30_days', 'آخر 30 يوم', 'صورة سريعة عن الوضع الحالي')}
+        ${renderPeriodOption('last_3_months', 'آخر 3 أشهر', 'الاختيار المقترح')}
+        ${renderPeriodOption('last_6_months', 'آخر 6 أشهر', 'لصورة أوسع عن الأداء')}
+        ${renderPeriodOption('last_12_months', 'آخر 12 شهر', 'لرؤية دورة سنة كاملة')}
+        ${renderPeriodOption('custom', 'أحدد بنفسي', 'إذا عندك فترة محددة')}
       </div>
-      <label class="followup-label" style="margin-top:12px;">فترة سابقة للمقارنة <span style="font-weight:400;opacity:.65">(اختياري)</span></label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <input class="followup-input" type="date" id="comparison-start" value="${escHtml(baseline.comparison_start || '')}">
-        <input class="followup-input" type="date" id="comparison-end" value="${escHtml(baseline.comparison_end || '')}">
-      </div>
-      <label class="followup-label" style="margin-top:12px;">هل الفترة عادية أو موسمية؟</label>
-      <select class="followup-input" id="seasonality-context">
-        <option value="فترة تشغيل اعتيادية">فترة تشغيل اعتيادية</option>
-        <option value="موسم مرتفع">موسم مرتفع</option>
-        <option value="موسم منخفض">موسم منخفض</option>
-        <option value="غير معروف — يحتاج تحقق">لسنا متأكدين بعد — نحتاج نتأكد</option>
-      </select>
-      <div id="calibration-error" style="color:#ffb4a8;font-size:12px;min-height:20px;margin-top:8px;"></div>
-      <button class="outro-btn" onclick="submitCalibration()">حفظ السياق وكمّل</button>
+      ${isCustom ? `
+        <div class="period-custom-fields" aria-label="حدد الفترة بنفسك">
+          <div class="period-field">
+            <label for="baseline-start">من</label>
+            <input class="followup-input" type="date" id="baseline-start" value="${escHtml(period.start)}"
+              onchange="refreshCustomPeriod()">
+          </div>
+          <div class="period-field">
+            <label for="baseline-end">إلى</label>
+            <input class="followup-input" type="date" id="baseline-end" value="${escHtml(period.end)}"
+              onchange="refreshCustomPeriod()">
+          </div>
+        </div>` : ''}
+      ${period.start && period.end ? `
+        <div class="period-confirmation">الفترة: ${formatPeriodForDisplay(period.start, period.end)}</div>
+        ` : ''}
+      <div id="calibration-error" class="period-error"></div>
+      <button class="outro-btn period-continue" onclick="submitCalibration()">كمّل</button>
       <button class="back-btn" onclick="goBack()">← رجوع للسؤال السابق</button>
     </div>`;
-  document.getElementById('seasonality-context').value =
-    baseline.seasonality_context || 'فترة تشغيل اعتيادية';
+}
+
+function renderPeriodOption(key, title, hint) {
+  const selected = calibrationPeriodChoice === key;
+  return `<button type="button" class="period-option${selected ? ' selected' : ''}"
+      role="radio" aria-checked="${selected}" onclick="selectCalibrationPeriod('${key}')">
+    <span class="period-option-copy">
+      <span class="period-option-title">${title}</span>
+      <span class="period-option-hint">${hint}</span>
+    </span>
+    <span class="period-radio" aria-hidden="true"></span>
+  </button>`;
+}
+
+function isoDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function shiftCalendarMonths(date, months) {
+  const shifted = new Date(date);
+  const originalDay = shifted.getDate();
+  shifted.setDate(1);
+  shifted.setMonth(shifted.getMonth() + months);
+  const lastDay = new Date(
+    shifted.getFullYear(), shifted.getMonth() + 1, 0
+  ).getDate();
+  shifted.setDate(Math.min(originalDay, lastDay));
+  return shifted;
+}
+
+function getPresetPeriod(choice) {
+  const end = new Date();
+  end.setHours(12, 0, 0, 0);
+  let start = new Date(end);
+  if (choice === 'last_30_days') {
+    start.setDate(start.getDate() - 29);
+  } else {
+    const months = choice === 'last_6_months' ? 6 :
+      choice === 'last_12_months' ? 12 : 3;
+    start = shiftCalendarMonths(start, -months);
+    start.setDate(start.getDate() + 1);
+  }
+  return { start: isoDate(start), end: isoDate(end) };
+}
+
+function getMatchingPreviousPeriod(start, end) {
+  if (!start || !end) return { start: '', end: '' };
+  const startDate = new Date(`${start}T12:00:00`);
+  const endDate = new Date(`${end}T12:00:00`);
+  const duration = Math.round((endDate - startDate) / 86400000) + 1;
+  const previousEnd = new Date(startDate);
+  previousEnd.setDate(previousEnd.getDate() - 1);
+  const previousStart = new Date(previousEnd);
+  previousStart.setDate(previousStart.getDate() - duration + 1);
+  return { start: isoDate(previousStart), end: isoDate(previousEnd) };
+}
+
+function formatPeriodForDisplay(start, end) {
+  const format = value => {
+    const date = new Date(`${value}T12:00:00`);
+    return new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', {
+      day: 'numeric', month: 'short', year: 'numeric'
+    }).format(date);
+  };
+  return `من ${format(start)} إلى ${format(end)}`;
+}
+
+function captureCalibrationDraft() {
+  [
+    ['baseline-start', 'baseline_start'],
+    ['baseline-end', 'baseline_end']
+  ].forEach(([id, key]) => {
+    const input = document.getElementById(id);
+    if (input) calibrationDraft[key] = input.value;
+  });
+}
+
+function refreshCustomPeriod() {
+  captureCalibrationDraft();
+  if (calibrationDraft.baseline_start && calibrationDraft.baseline_end) {
+    renderCalibration();
+  }
+}
+
+function selectCalibrationPeriod(choice) {
+  captureCalibrationDraft();
+  calibrationPeriodChoice = choice;
+  renderCalibration();
 }
 
 function submitCalibration() {
-  const baseline = {
-    baseline_start: document.getElementById('baseline-start').value,
-    baseline_end: document.getElementById('baseline-end').value,
-    comparison_start: document.getElementById('comparison-start').value,
-    comparison_end: document.getElementById('comparison-end').value,
-    seasonality_context: document.getElementById('seasonality-context').value
-  };
   const error = document.getElementById('calibration-error');
-  if (!baseline.baseline_start || !baseline.baseline_end) {
-    error.textContent = 'حدد بداية ونهاية الفترة التي عندك عنها بيانات.';
+  const previous = ans.diagnostic_baseline || {};
+  let period;
+  if (calibrationPeriodChoice === 'custom') {
+    period = {
+      start: document.getElementById('baseline-start')?.value || '',
+      end: document.getElementById('baseline-end')?.value || ''
+    };
+    if (!period.start || !period.end) {
+      error.textContent = 'حدد تاريخ البداية والنهاية.';
+      return;
+    }
+  } else {
+    period = getPresetPeriod(calibrationPeriodChoice || 'last_3_months');
+  }
+  if (period.end < period.start) {
+    error.textContent = 'تأكد أن تاريخ «إلى» بعد تاريخ «من».';
     return;
   }
-  if (!!baseline.comparison_start !== !!baseline.comparison_end) {
-    error.textContent = 'حدد بداية ونهاية الفترة السابقة، أو اتركهما فارغتين.';
+  const comparison = getMatchingPreviousPeriod(period.start, period.end);
+  if (comparison.end >= period.start) {
+    error.textContent = 'خلّ فترة المقارنة قبل الفترة الحالية.';
     return;
   }
-  if (baseline.baseline_end < baseline.baseline_start ||
-      baseline.comparison_end < baseline.comparison_start) {
-    error.textContent = 'تأكد أن نهاية كل فترة بعد بدايتها.';
-    return;
-  }
-  ans.diagnostic_baseline = baseline;
+  ans.diagnostic_baseline = {
+    ...previous,
+    baseline_start: period.start,
+    baseline_end: period.end,
+    comparison_start: comparison.start,
+    comparison_end: comparison.end,
+    seasonality_context: previous.seasonality_context || 'غير معروف — يحتاج تحقق'
+  };
   goNext();
 }
 

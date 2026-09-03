@@ -322,7 +322,7 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         self.assertNotIn("Research Library", today_html)
         self.assertNotIn("Deal Brain", today_html)
         self.assertIn("اليوم", today_html)
-        self.assertIn("ملف القرار", today_html)
+        self.assertNotIn(">ملف القرار</a>", today_html)
 
         legacy_new_case = client_a.get("/case/new")
         self.assertEqual(302, legacy_new_case.status_code)
@@ -335,6 +335,8 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         decision_file = client_a.get(f"/case/{customer_a['case_id']}")
         self.assertEqual(200, decision_file.status_code)
         decision_html = decision_file.get_data(as_text=True)
+        self.assertNotIn(">ملف القرار</a>", decision_html)
+        self.assertIn("نتيجة التشخيص", decision_html)
         self.assertIn("وش عرفنا؟", decision_html)
         self.assertIn("رتّب المعلومات", decision_html)
         self.assertIn("احفظ وكمل", decision_html)
@@ -662,15 +664,37 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         )
 
         client_a.get("/logout")
+        invalid_login = client_a.post(
+            "/login",
+            json={
+                "email": customer_a["email"],
+                "password": "definitely-wrong-password",
+                "next": f"/case/{customer_a['case_id']}",
+            },
+        )
+        self.assertEqual(401, invalid_login.status_code)
+        self.assertEqual(
+            "INVALID_CREDENTIALS",
+            invalid_login.get_json()["error"],
+        )
         login = client_a.post(
             "/login",
             json={
                 "email": customer_a["email"],
                 "password": customer_a["password"],
+                "next": f"/case/{customer_a['case_id']}",
             },
         )
         self.assertEqual(200, login.status_code)
-        self.assertEqual("/home", login.get_json()["data"]["redirect"])
+        self.assertEqual(
+            f"/case/{customer_a['case_id']}",
+            login.get_json()["data"]["redirect"],
+        )
+        self.assertEqual(
+            200,
+            client_a.get(f"/case/{customer_a['case_id']}").status_code,
+        )
+        self.assertEqual(200, client_a.get("/home").status_code)
 
     def test_internal_preview_does_not_create_customer_session(self):
         customer = self._new_customer("preview")

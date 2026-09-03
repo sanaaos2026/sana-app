@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="{{ csrf_token() }}">
-<script>(function(){var m=document.querySelector('meta[name="csrf-token"]'),t=m.content,F=window.fetch.bind(window);window.fetch=function(u,o){o=o||{};if(['POST','PUT','PATCH','DELETE'].includes((o.method||'GET').toUpperCase()))o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});return F(u,o)}})();</script>
+<script>(function(){var m=document.querySelector('meta[name="csrf-token"]'),t=m.content,F=window.fetch.bind(window);window.fetch=async function(u,o){o=o||{};if(['POST','PUT','PATCH','DELETE'].includes((o.method||'GET').toUpperCase()))o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});var r=await F(u,o);if(r.status===401){try{var j=await r.clone().json();if(j.redirect)window.location.assign(j.redirect)}catch(_){}}return r}})();</script>
 <meta name="color-scheme" content="light">
-<title>سنع — ملف القرار</title>
+<title>سنع — نتيجة التشخيص</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -28,11 +28,10 @@ h2{font-size:14px;color:var(--navy);margin:0 0 8px}.item{padding:8px 0;border-bo
 <body>
 <nav>
   <a href="/home">اليوم</a>
-  <a href="/case/{{ case_id }}" class="active">ملف القرار</a>
   <a href="/passport">الأصول</a>
   <a href="/logout">تسجيل الخروج</a>
 </nav>
-<main id="app"><p class="empty">يجري تجهيز ملف القرار...</p></main>
+<main id="app"><p class="empty">يجري تجهيز النتيجة...</p></main>
 <script>
 const CASE_ID={{ case_id|tojson }},COMPANY_ID={{ company_id|tojson }};let caseData=null;
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -149,7 +148,7 @@ function render(d){
   const refs=(review.reference_knowledge||{}).references||[];
   document.getElementById('app').innerHTML=`
      <div class="eyebrow">نشوف الصورة · موضوع واحد</div>
-    <h1>${esc(d.case.title||'ملف القرار')}</h1>
+    <h1>${esc(d.case.title||'نتيجة التشخيص')}</h1>
     <p class="lead">${esc(d.case.real_question||d.case.declared_problem||'هذا ما نعرفه الآن. وما يحتاج تأكيد يبقى واضحًا.')}</p>
      <section><h2>وش عرفنا؟</h2>
        <div class="item"><strong>ما نعرفه:</strong> ${esc(clientText((review.problem||{}).statement||d.case.declared_problem||'لم تتضح الصورة بعد'))}</div>
@@ -161,7 +160,7 @@ function render(d){
       <section><h2>وش ناقص؟</h2>${nextRequest?`<div class="gate"><strong>الطلب التالي فقط</strong><div>${esc(clientText(nextRequest.label||nextRequest.question))}</div><div class="meta">التقدم ${progress.completed}/${progress.total}</div></div>`:terminalUnknown?'<div class="deferred">المعلومة غير متاحة الآن، ولن نعيد طلبها في هذه الدورة.</div>':'<div class="deferred">استلمنا كل المعلومات المطلوبة لهذه المرحلة. ما يحتاج تحققًا مستقلًا سيبقى واضحًا للمراجع.</div>'}</section>
      <section><h2>المعلومات التي شاركتها</h2>${rows(review.client_evidence||[],e=>`<div class="item"><strong>${esc(clientText(e.statement))}</strong><div class="meta">من وين جبتها؟ ${esc(e.source_ref||'غير محدد')}</div></div>`,'لا توجد معلومة موثقة بعد.')}</section>
      <section class="reference"><h2>معلومات عامة تساعدنا نفهم</h2><div class="deferred">تفيدنا هذه المعلومات في الفهم، لكنها لا تغيّر ما نعرفه عن شركتك.</div>${rows(refs,r=>`<div class="item"><strong>${esc(r.title)}</strong><div>${esc(r.original_summary||r.problem||'')}</div><div class="meta">الإصدار ${esc(r.source_version||r.version||'—')} · سبب الصلة: ${esc((r.match_reasons||[]).join(' · ')||'معلومة عامة')}<br>ما نحتاجه منك: ${esc(r.required_client_evidence||'رقم أو معلومة خاصة بالشركة')}</div></div>`,esc((review.reference_knowledge||{}).knowledge_gap||'لا توجد معلومات عامة مناسبة الآن؛ نكمل بما نعرفه عن شركتك.'))}</section>
-      <section><h2>وش القرار؟</h2>${activeDecision?`<div class="item"><strong>${esc(clientText(activeDecision.title))}</strong><div>${esc(clientText(activeDecision.reason||'ننتظر وضوحًا كافيًا قبل أن نبدأ.'))}</div><div class="meta">الحالة: ${esc(humanLabel(activeDecision.status))}</div></div>`:'<p class="empty">باقي معلومة أو اثنتان قبل أن نقترح قرارًا.</p>'}</section>
+      <section><h2>وش القرار؟</h2>${activeDecision?`<div class="item"><strong>${esc(clientText(activeDecision.title))}</strong><div>${esc(clientText(activeDecision.reason||'ننتظر وضوحًا كافيًا قبل أن نبدأ.'))}</div><div class="meta">الحالة: ${esc(humanLabel(activeDecision.status))}</div></div>`:'<p class="empty">ما فيه قرار حتى الآن.</p>'}</section>
       <section class="next"><h2>وش تسوي الآن؟</h2>${activeTask?`<div class="item"><strong>${esc(activeTask.title)}</strong><div class="meta">الحالة: ${esc(humanLabel(activeTask.status))}${activeTask.due_date?' · الموعد: '+esc(activeTask.due_date):''}</div></div>`:'<p class="empty">أضف الرقم أو المعلومة ومصدرها، ونرتب لك الخطوة التالية.</p>'}${action}</section>
       <section class="state ${journey.status==='INCOMPLETE'?'warning':''}"><h2>وش تغيّر؟</h2><strong>${esc(clientText(humanLabel(journey.label)))}</strong><div class="lead" style="margin:4px 0 0">${esc(clientText(journey.message))}</div></section>`;
   if(!(scan||{}).diagnostic_baseline)initPeriodForm({});
@@ -230,7 +229,7 @@ async function buildDecision(){const r=await fetch(`/api/cases/${CASE_ID}/p0-dec
 fetch(`/api/cases/${CASE_ID}`).then(r=>r.json()).then(j=>{
   if(!j.success) throw new Error();
   render(j.data);
-}).catch(()=>{document.getElementById('app').innerHTML='<p class="empty">تعذر تحميل ملف القرار.</p>';});
+}).catch(()=>{document.getElementById('app').innerHTML='<p class="empty">تعذر تحميل النتيجة الآن. حدّث الصفحة وحاول مرة أخرى.</p>';});
 </script>
 </body>
 </html>

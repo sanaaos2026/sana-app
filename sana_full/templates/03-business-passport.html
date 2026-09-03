@@ -86,7 +86,9 @@
 
 <div class="concept-nav">
   <a href="/home{{ context_query }}">اليوم</a>
+  {% if is_admin_preview %}
   <a href="/case/new{{ context_query }}" id="caseNavLink">ملف القرار</a>
+  {% endif %}
   <a href="/passport{{ context_query }}" class="active">الأصول</a>
   <a href="/logout">تسجيل الخروج</a>
 </div>

@@ -24,7 +24,7 @@ from datetime import datetime, date, timedelta
 from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for, Response, abort, send_file
 from flask.json.provider import DefaultJSONProvider
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFError, CSRFProtect
 import resend
 from database_config import (
     acquire_schema_lock,
@@ -395,7 +395,14 @@ if not _session_secret:
         flush=True,
     )
 app.secret_key = _session_secret or secrets.token_hex(32)
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
+app.config.update(
+    MAX_CONTENT_LENGTH=50 * 1024 * 1024,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=IS_PRODUCTION,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+    SESSION_REFRESH_EACH_REQUEST=True,
+)
 
 # CSRF Protection — تحمي كل POST/PUT/PATCH/DELETE تلقائياً
 app.config["WTF_CSRF_TIME_LIMIT"] = 3600   # ساعة واحدة
@@ -454,6 +461,70 @@ def current_account():
         "account_status": session.get("account_status", "active"),
         "admin_company_id": session.get("admin_company_id"),
     }
+
+
+SESSION_EXPIRED_MESSAGE = "انتهت الجلسة، سجّل دخولك للمتابعة"
+
+
+def _safe_next_path(value):
+    """Preserve only same-site paths when returning after login."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if (
+        not value
+        or not value.startswith("/")
+        or value.startswith("//")
+        or "\\" in value
+    ):
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme or parsed.netloc:
+        return None
+    target = parsed.path or "/"
+    if parsed.query:
+        target += f"?{parsed.query}"
+    return target
+
+
+def _session_return_path():
+    """Use the page that initiated an API request when available."""
+    if request.referrer:
+        referrer = urlparse(request.referrer)
+        if (
+            referrer.scheme in {"http", "https"}
+            and referrer.netloc == request.host
+        ):
+            target = referrer.path or "/"
+            if referrer.query:
+                target += f"?{referrer.query}"
+            safe_target = _safe_next_path(target)
+            if safe_target:
+                return safe_target
+    if not request.path.startswith("/api/"):
+        return _safe_next_path(request.full_path.rstrip("?"))
+    return url_for("ceo_home")
+
+
+def _authentication_required_response():
+    cookie_name = app.config.get("SESSION_COOKIE_NAME", "session")
+    expired = bool(request.cookies.get(cookie_name))
+    next_path = _session_return_path() or url_for("ceo_home")
+    login_args = {"next": next_path}
+    if expired:
+        login_args["reason"] = "session_expired"
+    login_url = url_for("login", **login_args)
+    if request.path.startswith("/api/"):
+        return jsonify({
+            "success": False,
+            "error": "SESSION_EXPIRED" if expired else "AUTHENTICATION_REQUIRED",
+            "message": (
+                SESSION_EXPIRED_MESSAGE
+                if expired else "سجّل دخولك للمتابعة"
+            ),
+            "redirect": login_url,
+        }), 401
+    return redirect(login_url)
 
 
 ADMIN_ROLES = {
@@ -731,6 +802,17 @@ def _client_only_alias(target):
     return None
 
 
+@app.errorhandler(CSRFError)
+def handle_csrf_error(error):
+    if request.endpoint not in PUBLIC_ENDPOINTS and not current_account():
+        return _authentication_required_response()
+    return jsonify({
+        "success": False,
+        "error": "CSRF_FAILED",
+        "message": "تعذر إكمال الطلب. حدّث الصفحة وحاول مرة أخرى.",
+    }), 400
+
+
 @app.before_request
 def enforce_company_auth():
     # واجهة الخبير العامة — نظام مصادقة مستقل (access_code في الجلسة) لا علاقة له بحسابات الشركات
@@ -766,12 +848,7 @@ def enforce_company_auth():
     #    أو مفتاح العرض الداخلي للمشرف. بدون أحدهما لا وصول إطلاقًا،
     #    سواء عبر المتصفح أو عبر استدعاء API مباشر.
     if not account and not is_admin_preview():
-        if request.path.startswith("/api/"):
-            return jsonify({
-                "success": False, "error": "UNAUTHORIZED",
-                "message": "يلزم تسجيل الدخول للوصول لهذه البيانات."
-            }), 401
-        return redirect(url_for("login", next=request.full_path))
+        return _authentication_required_response()
 
     # 2) أي مسار API يحمل company_id في الرابط نفسه — لا يمكن لحساب مسجَّل
     #    الوصول إلا لشركته هو، حتى لو عدّل الرابط يدويًا
@@ -2020,6 +2097,7 @@ def signup():
     session["account_id"] = account_id
     session["company_id"] = company_id
     session["email"] = email
+    session.permanent = True
 
     return jsonify({"success": True, "data": {"redirect": "/onboarding", "company_id": company_id}}), 201
 
@@ -2270,6 +2348,7 @@ def login():
     body = request.get_json(silent=True) or request.form
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
+    next_path = _safe_next_path(body.get("next"))
 
     if not email or not password:
         return jsonify({"success": False, "error": "MISSING_FIELDS", "message": "البريد الإلكتروني وكلمة المرور مطلوبان."}), 400
@@ -2294,6 +2373,7 @@ def login():
         "SUPER_ADMIN" if account.get("is_admin") else "USER"
     )
     session["account_status"] = account.get("account_status") or "active"
+    session.permanent = True
     db.execute(
         "UPDATE user_accounts SET last_login_at=now() WHERE account_id=?",
         (account["account_id"],),
@@ -2307,14 +2387,19 @@ def login():
         )
     db.commit()
 
+    if session["admin_role"] in {"ADMIN", "SUPER_ADMIN"}:
+        redirect_path = next_path or "/admin"
+    else:
+        start_path = _company_start_redirect(account)
+        redirect_path = (
+            start_path
+            if start_path != url_for("ceo_home")
+            else (next_path or start_path)
+        )
     return jsonify({
         "success": True,
         "data": {
-            "redirect": (
-                "/admin"
-                if session["admin_role"] in {"ADMIN", "SUPER_ADMIN"}
-                else _company_start_redirect(account)
-            )
+            "redirect": redirect_path
         },
     })
 
@@ -4475,17 +4560,22 @@ def admin_human_reviews():
     if failure:
         return failure
     db = get_db()
+    from sana_human_review import ensure_schema as ensure_human_review_schema
+    ensure_human_review_schema(db)
     rows = db.execute(
         """SELECT r.review_id,r.company_id,r.case_id,r.decision_id,r.reason_label,
                   r.status,r.scheduled_at,r.requested_at,r.decision_changed,
                   c.name AS company_name,ca.case_title,d.title AS decision_title,
                   d.confidence_score,d.success_metric,
                   r.before_snapshot_json,r.final_decision,r.approved_kpi,
-                  r.next_action,r.reviewer_note
+                   r.next_action,r.client_note,r.reviewer_note,
+                   r.expert_summary_status,r.notes_updated_at,r.formatted_at,
+                   r.approved_at,u.email AS reviewer_email
            FROM case_human_reviews r
            JOIN companies c ON c.company_id=r.company_id
            JOIN cases ca ON ca.case_id=r.case_id
            LEFT JOIN decisions d ON d.decision_id=r.decision_id
+            LEFT JOIN user_accounts u ON u.account_id=r.reviewer_account_id
            ORDER BY CASE r.status WHEN 'SCHEDULED' THEN 0 WHEN 'REQUESTED' THEN 1 ELSE 2 END,
                     r.scheduled_at,r.requested_at DESC LIMIT 200"""
     ).fetchall()
@@ -4495,8 +4585,22 @@ def admin_human_reviews():
                   COUNT(*) FILTER (WHERE decision_changed=true) AS changed
            FROM case_human_reviews"""
     ).fetchone()
+    reviews = []
+    for row in rows:
+        item = dict(row)
+        query = (
+            f"?view=expert-summary&case_id={item['case_id']}"
+            f"&review_id={item['review_id']}"
+        )
+        item["summary_url"] = (
+            f"/company/{item['company_id']}/scan-report{query}"
+        )
+        item["summary_pdf_url"] = (
+            f"/api/companies/{item['company_id']}/passport/report-pdf{query}"
+        )
+        reviews.append(item)
     return jsonify({"success": True, "data": {
-        "reviews": [dict(row) for row in rows],
+        "reviews": reviews,
         "metrics": dict(totals),
     }})
 
@@ -4621,6 +4725,165 @@ def admin_complete_human_review(review_id):
     )
     db.commit()
     return jsonify({"success": True, "data": after})
+
+
+@app.route("/api/admin/human-reviews/<review_id>/notes", methods=["PATCH"])
+def admin_save_expert_review_notes(review_id):
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    notes = str(body.get("notes") or "").strip()
+    if not notes:
+        return jsonify({
+            "success": False,
+            "message": "اكتب ملاحظات الخبير أولًا.",
+        }), 400
+    if len(notes) > 6000:
+        return jsonify({
+            "success": False,
+            "message": "اختصر الملاحظات إلى 6000 حرف أو أقل.",
+        }), 400
+    db = get_db()
+    review = db.execute(
+        "SELECT * FROM case_human_reviews WHERE review_id=? FOR UPDATE",
+        (review_id,),
+    ).fetchone()
+    if not review:
+        return jsonify({"success": False, "error": "REVIEW_NOT_FOUND"}), 404
+    if review["expert_summary_status"] == "APPROVED":
+        return jsonify({
+            "success": False,
+            "message": "الملخص معتمد. أنشئ طلب مراجعة جديدًا إذا لزم تعديل جديد.",
+        }), 409
+    action = (
+        "expert_review_notes_updated"
+        if str(review["reviewer_note"] or "").strip()
+        else "expert_review_notes_saved"
+    )
+    actor_id = current_account()["account_id"]
+    db.execute(
+        """UPDATE case_human_reviews
+           SET reviewer_note=?,reviewer_account_id=?,notes_updated_at=now(),
+               expert_summary_json=NULL,expert_summary_status='DRAFT',
+               formatted_at=NULL,approved_at=NULL,approved_by=NULL
+           WHERE review_id=?""",
+        (notes, actor_id, review_id),
+    )
+    _admin_audit(
+        db, actor_id, action, "case_human_review", review_id,
+        review["company_id"], reason="حفظ ملاحظات الخبير",
+        metadata={"case_id": review["case_id"], "character_count": len(notes)},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "review_id": review_id,
+        "expert_summary_status": "DRAFT",
+    }})
+
+
+@app.route(
+    "/api/admin/human-reviews/<review_id>/format-summary",
+    methods=["POST"],
+)
+def admin_format_expert_review_summary(review_id):
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    from sana_human_review import format_expert_summary
+    db = get_db()
+    review = db.execute(
+        "SELECT * FROM case_human_reviews WHERE review_id=? FOR UPDATE",
+        (review_id,),
+    ).fetchone()
+    if not review:
+        return jsonify({"success": False, "error": "REVIEW_NOT_FOUND"}), 404
+    if review["expert_summary_status"] == "APPROVED":
+        return jsonify({
+            "success": False,
+            "message": "الملخص معتمد بالفعل.",
+        }), 409
+    try:
+        summary = format_expert_summary(db, review_id)
+    except ValueError as exc:
+        message = (
+            "اكتب ملاحظات الخبير واحفظها قبل التنسيق."
+            if str(exc) == "EXPERT_NOTES_REQUIRED"
+            else "تعذر العثور على طلب المراجعة."
+        )
+        return jsonify({"success": False, "message": message}), 400
+    actor_id = current_account()["account_id"]
+    db.execute(
+        """UPDATE case_human_reviews
+           SET expert_summary_json=?,expert_summary_status='FORMATTED',
+               formatted_at=now(),approved_at=NULL,approved_by=NULL
+           WHERE review_id=?""",
+        (json.dumps(summary, ensure_ascii=False, default=str), review_id),
+    )
+    _admin_audit(
+        db, actor_id, "expert_review_summary_formatted",
+        "case_human_review", review_id, review["company_id"],
+        reason="تنسيق ملخص الخبير من بيانات الحالة والملاحظات فقط",
+        metadata={"case_id": review["case_id"]},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "review_id": review_id,
+        "expert_summary_status": "FORMATTED",
+        "summary": summary,
+    }})
+
+
+@app.route(
+    "/api/admin/human-reviews/<review_id>/approve-summary",
+    methods=["POST"],
+)
+def admin_approve_expert_review_summary(review_id):
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    from sana_human_review import add_event
+    db = get_db()
+    review = db.execute(
+        "SELECT * FROM case_human_reviews WHERE review_id=? FOR UPDATE",
+        (review_id,),
+    ).fetchone()
+    if not review:
+        return jsonify({"success": False, "error": "REVIEW_NOT_FOUND"}), 404
+    if (
+        review["expert_summary_status"] != "FORMATTED"
+        or not review["expert_summary_json"]
+    ):
+        return jsonify({
+            "success": False,
+            "message": "نسّق ملخص الخبير قبل اعتماده.",
+        }), 409
+    actor_id = current_account()["account_id"]
+    previous_status = review["status"]
+    db.execute(
+        """UPDATE case_human_reviews
+           SET expert_summary_status='APPROVED',approved_at=now(),
+               approved_by=?,status='COMPLETED',completed_at=COALESCE(completed_at,now()),
+               started_at=COALESCE(started_at,notes_updated_at,now())
+           WHERE review_id=?""",
+        (actor_id, review_id),
+    )
+    if previous_status != "COMPLETED":
+        add_event(
+            db, review_id, review["company_id"], previous_status, "COMPLETED",
+            actor_id, {"expert_summary_approved": True},
+        )
+    _admin_audit(
+        db, actor_id, "expert_review_summary_approved",
+        "case_human_review", review_id, review["company_id"],
+        reason="اعتماد ملخص مراجعة الخبير للعميل",
+        metadata={"case_id": review["case_id"]},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "review_id": review_id,
+        "expert_summary_status": "APPROVED",
+    }})
 
 
 @app.route("/api/admin/system-health")
@@ -7849,6 +8112,20 @@ def scan_report_html(company_id):
     guard = enforce_entity_company_scope(company["company_id"])
     if guard:
         return guard
+    if request.args.get("view") == "expert-summary":
+        from sana_human_review import summary_for_review
+        case_id = (request.args.get("case_id") or "").strip()
+        review_id = (request.args.get("review_id") or "").strip() or None
+        summary = summary_for_review(
+            get_db(), company_id, case_id, review_id,
+            allow_unapproved=_admin_role() in SYSTEM_ADMIN_ROLES,
+        )
+        if not summary:
+            return jsonify({
+                "success": False,
+                "error": "EXPERT_SUMMARY_NOT_AVAILABLE",
+            }), 404
+        return render_template("25-expert-review-summary.html", summary=summary)
     ctx = _build_passport_context(company_id)
     from flask_wtf.csrf import generate_csrf
     ctx["csrf_value"] = generate_csrf()
@@ -7858,7 +8135,7 @@ def scan_report_html(company_id):
 @app.route("/api/cases/<case_id>/human-review", methods=["GET", "POST", "DELETE"])
 def case_human_review(case_id):
     from sana_human_review import (
-        REVIEW_REASONS, add_event, client_payload, snapshot_for_case,
+        add_event, client_payload, snapshot_for_case,
     )
     db = get_db()
     case = db.execute(
@@ -7893,29 +8170,18 @@ def case_human_review(case_id):
             db, case["company_id"], case_id
         )})
     body = request.get_json(silent=True) or {}
-    reason_code = (body.get("reason_code") or "").strip()
-    slot_id = (body.get("slot_id") or "").strip()
-    if reason_code not in REVIEW_REASONS or not slot_id:
-        return jsonify({"success": False, "message": "اختر سبب المراجعة وموعدًا متاحًا."}), 400
+    client_note = str(body.get("client_note") or "").strip()
+    if len(client_note) > 500:
+        return jsonify({
+            "success": False,
+            "message": "اختصر الملاحظة إلى 500 حرف أو أقل.",
+        }), 400
     payload = client_payload(db, case["company_id"], case_id)
     if not payload["settings"]["available"]:
         return jsonify({"success": False, "message": "الحجز المدفوع غير مفعّل حاليًا."}), 409
     active = payload.get("review")
     if active and active["status"] in {"REQUESTED", "SCHEDULED"}:
         return jsonify({"success": False, "message": "يوجد طلب مراجعة مفتوح لهذه القضية."}), 409
-    slot = db.execute(
-        """SELECT * FROM human_review_slots
-           WHERE slot_id=? AND is_active=true AND starts_at>now() FOR UPDATE""",
-        (slot_id,),
-    ).fetchone()
-    if not slot:
-        return jsonify({"success": False, "message": "هذا الموعد لم يعد متاحًا."}), 409
-    taken = db.execute(
-        """SELECT 1 FROM case_human_reviews WHERE slot_id=?
-           AND status IN ('REQUESTED','SCHEDULED')""", (slot_id,)
-    ).fetchone()
-    if taken:
-        return jsonify({"success": False, "message": "حُجز هذا الموعد للتو. اختر موعدًا آخر."}), 409
     account = current_account()
     snapshot = snapshot_for_case(db, case["company_id"], case_id)
     decision = snapshot.get("decision") or {}
@@ -7923,35 +8189,24 @@ def case_human_review(case_id):
     db.execute(
         """INSERT INTO case_human_reviews
            (review_id,company_id,case_id,decision_id,requested_by,
-            reviewer_account_id,reason_code,reason_label,status,slot_id,
-            scheduled_at,before_snapshot_json)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+             reason_code,reason_label,status,before_snapshot_json,client_note,
+             expert_summary_status)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (
             review_id, case["company_id"], case_id, decision.get("decision_id"),
-            account["account_id"], slot["reviewer_account_id"], reason_code,
-            REVIEW_REASONS[reason_code], "SCHEDULED", slot_id, slot["starts_at"],
-            json.dumps(snapshot, ensure_ascii=False, default=str),
+            account["account_id"], "human_review_request",
+            "طلب مراجعة بشرية", "REQUESTED",
+            json.dumps(snapshot, ensure_ascii=False, default=str), client_note or None,
+            "DRAFT",
         ),
     )
     add_event(db, review_id, case["company_id"], None, "REQUESTED", account["account_id"])
-    add_event(
-        db, review_id, case["company_id"], "REQUESTED", "SCHEDULED",
-        account["account_id"], {"slot_id": slot_id, "scheduled_at": str(slot["starts_at"])},
+    _admin_audit(
+        db, account["account_id"], "human_review_requested",
+        "case_human_review", review_id, case["company_id"],
+        reason="طلب العميل مراجعة بشرية",
+        metadata={"case_id": case_id, "has_client_note": bool(client_note)},
     )
-    reviewer = db.execute(
-        """SELECT account_id,email FROM user_accounts
-           WHERE account_id=? AND account_status='active'""",
-        (slot["reviewer_account_id"],),
-    ).fetchone()
-    if reviewer:
-        _admin_send_email(
-            db, notification_type="human_review_requested",
-            recipient_email=reviewer["email"],
-            subject="طلب مراجعة قرار جديد في سنع",
-            html_body="<p>يوجد طلب مراجعة قرار جديد في قائمة المراجعات الداخلية.</p>",
-            actor_id=account["account_id"], company_id=case["company_id"],
-            payload={"review_id": review_id, "case_id": case_id},
-        )
     db.commit()
     return jsonify({"success": True, "data": client_payload(
         db, case["company_id"], case_id
@@ -7969,11 +8224,32 @@ def passport_report_pdf(company_id):
     if guard:
         return guard
 
-    ctx = _build_passport_context(company_id)
-    if not ctx:
-        return jsonify({"success": False, "error": "BUILD_FAILED"}), 500
-
-    html_string = render_template("14-passport-report.html", **ctx)
+    expert_summary = request.args.get("view") == "expert-summary"
+    if expert_summary:
+        from sana_human_review import summary_for_review
+        case_id = (request.args.get("case_id") or "").strip()
+        review_id = (request.args.get("review_id") or "").strip() or None
+        summary = summary_for_review(
+            get_db(), company_id, case_id, review_id,
+            allow_unapproved=_admin_role() in SYSTEM_ADMIN_ROLES,
+        )
+        if not summary:
+            return jsonify({
+                "success": False,
+                "error": "EXPERT_SUMMARY_NOT_AVAILABLE",
+            }), 404
+        html_string = render_template(
+            "25-expert-review-summary.html", summary=summary,
+        )
+        safe_name = summary["company_name"].replace("/", "-")
+        download_name = f"Sana-Expert-Review_{safe_name}.pdf"
+    else:
+        ctx = _build_passport_context(company_id)
+        if not ctx:
+            return jsonify({"success": False, "error": "BUILD_FAILED"}), 500
+        html_string = render_template("14-passport-report.html", **ctx)
+        safe_name = ctx["company"]["name"].replace("/", "-")
+        download_name = f"Sana-Scan_{safe_name}.pdf"
 
     # lazy import — weasyprint يحتاج libpango كـ system lib
     import weasyprint  # noqa: PLC0415
@@ -7985,8 +8261,7 @@ def passport_report_pdf(company_id):
     ).write_pdf()
 
     from urllib.parse import quote as _quote
-    safe_name = ctx["company"]["name"].replace("/", "-")
-    encoded = _quote(f"Sana-Scan_{safe_name}.pdf", safe="")
+    encoded = _quote(download_name, safe="")
 
     return Response(
         pdf_bytes,

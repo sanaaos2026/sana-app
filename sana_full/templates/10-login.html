@@ -40,6 +40,8 @@
   .btn:disabled{ opacity:.6; cursor:not-allowed; }
   .error{ display:none; background:#FCEBEA; color:var(--red-risk); font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:16px; }
   .error.show{ display:block; }
+  .notice{ display:none; background:#EAF8F7; color:#087e7d; font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:16px; }
+  .notice.show{ display:block; }
   .foot{ text-align:center; margin-top:20px; font-size:12.5px; color:var(--slate); }
   .foot a{ color:var(--teal); font-weight:600; text-decoration:none; }
 </style>
@@ -55,6 +57,7 @@
     <h1>تسجيل الدخول</h1>
     <div class="sub">ادخل إلى مساحة شركتك وتابع عملك من حيث توقفت.</div>
 
+    <div class="notice" id="sessionMsg"></div>
     <div class="error" id="errorMsg"></div>
 
     <label for="email">البريد الإلكتروني</label>
@@ -72,6 +75,14 @@
   </div>
 
 <script>
+const loginParams = new URLSearchParams(window.location.search);
+const nextTarget = loginParams.get('next') || '';
+if(loginParams.get('reason') === 'session_expired'){
+  const sessionMsg = document.getElementById('sessionMsg');
+  sessionMsg.textContent = 'انتهت الجلسة، سجّل دخولك للمتابعة';
+  sessionMsg.classList.add('show');
+}
+
 async function doLogin(){
   const email = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
@@ -91,7 +102,7 @@ async function doLogin(){
     const res = await fetch('/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email, password, next: nextTarget })
     });
     const json = await res.json();
     if(res.ok && json.success){

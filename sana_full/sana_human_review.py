@@ -6,6 +6,7 @@ after_snapshot_json and status history is stored separately.
 """
 import json
 import uuid
+from datetime import date
 
 
 REVIEW_REASONS = {
@@ -17,6 +18,7 @@ REVIEW_REASONS = {
 }
 REVIEW_STATUSES = {"REQUESTED", "SCHEDULED", "COMPLETED", "CANCELLED"}
 OFFER_MODES = {"INCLUDED", "FREE", "PAID"}
+EXPERT_SUMMARY_STATUSES = {"DRAFT", "FORMATTED", "APPROVED"}
 
 
 def ensure_schema(db):
@@ -63,12 +65,31 @@ def ensure_schema(db):
         change_reason TEXT,
         approved_kpi TEXT,
         next_action TEXT,
+        client_note TEXT,
         reviewer_note TEXT,
+        expert_summary_json TEXT,
+        expert_summary_status TEXT NOT NULL DEFAULT 'DRAFT',
+        notes_updated_at TIMESTAMPTZ,
+        formatted_at TIMESTAMPTZ,
+        approved_at TIMESTAMPTZ,
+        approved_by TEXT REFERENCES user_accounts(account_id),
         requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         started_at TIMESTAMPTZ,
         completed_at TIMESTAMPTZ,
         cancelled_at TIMESTAMPTZ
     )""")
+    for statement in (
+        "ALTER TABLE case_human_reviews ADD COLUMN IF NOT EXISTS client_note TEXT",
+        "ALTER TABLE case_human_reviews ADD COLUMN IF NOT EXISTS expert_summary_json TEXT",
+        "ALTER TABLE case_human_reviews ADD COLUMN IF NOT EXISTS "
+        "expert_summary_status TEXT NOT NULL DEFAULT 'DRAFT'",
+        "ALTER TABLE case_human_reviews ADD COLUMN IF NOT EXISTS notes_updated_at TIMESTAMPTZ",
+        "ALTER TABLE case_human_reviews ADD COLUMN IF NOT EXISTS formatted_at TIMESTAMPTZ",
+        "ALTER TABLE case_human_reviews ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ",
+        "ALTER TABLE case_human_reviews ADD COLUMN IF NOT EXISTS "
+        "approved_by TEXT REFERENCES user_accounts(account_id)",
+    ):
+        db.execute(statement)
     db.execute("""CREATE UNIQUE INDEX IF NOT EXISTS uq_human_review_active_slot
                   ON case_human_reviews(slot_id)
                   WHERE status IN ('REQUESTED','SCHEDULED')""")
@@ -181,6 +202,27 @@ def client_payload(db, company_id, case_id):
         snapshot["scan"].get("decision_readiness") == "CONDITIONAL"
         or snapshot["scan"].get("missing_evidence")
     )
+    client_review = None
+    if review:
+        client_review = {
+            key: review.get(key) for key in (
+                "review_id", "company_id", "case_id", "decision_id",
+                "reason_label", "status", "scheduled_at", "requested_at",
+                "completed_at", "final_decision", "approved_kpi", "next_action",
+                "client_note", "expert_summary_status", "approved_at",
+            )
+        }
+        if review.get("expert_summary_status") == "APPROVED":
+            query = (
+                f"?view=expert-summary&case_id={case_id}"
+                f"&review_id={review['review_id']}"
+            )
+            client_review["summary_url"] = (
+                f"/company/{company_id}/scan-report{query}"
+            )
+            client_review["summary_pdf_url"] = (
+                f"/api/companies/{company_id}/passport/report-pdf{query}"
+            )
     return {
         "settings": {
             "offer_mode": config["offer_mode"],
@@ -193,8 +235,195 @@ def client_payload(db, company_id, case_id):
                 config["offer_mode"] == "PAID" and not config["paid_enabled"]
             ),
         },
-        "review": review,
+        "review": client_review,
         "slots": [] if review and review["status"] in {"REQUESTED", "SCHEDULED"} else available_slots(db),
         "needs_emphasis": critical,
         "reasons": REVIEW_REASONS,
     }
+
+
+def _json_object(value):
+    if isinstance(value, dict):
+        return value
+    try:
+        parsed = json.loads(value or "{}")
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+
+def _display_text(value):
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in (
+            "statement", "conflict_note", "title", "label", "question",
+            "reason", "message",
+        ):
+            text = str(value.get(key) or "").strip()
+            if text:
+                return text
+    return ""
+
+
+def format_expert_summary(db, review_id):
+    """Build a bounded summary from persisted case data and human notes only."""
+    review = db.execute(
+        """SELECT r.*,c.name AS company_name,ca.case_title,ca.declared_problem,
+                  ca.real_question,d.title AS decision_title,
+                  d.recommended_action,d.reason AS decision_reason,
+                  u.email AS reviewer_email
+           FROM case_human_reviews r
+           JOIN companies c ON c.company_id=r.company_id
+           JOIN cases ca ON ca.case_id=r.case_id
+           LEFT JOIN decisions d ON d.decision_id=r.decision_id
+           LEFT JOIN user_accounts u ON u.account_id=r.reviewer_account_id
+           WHERE r.review_id=?""",
+        (review_id,),
+    ).fetchone()
+    if not review:
+        raise ValueError("REVIEW_NOT_FOUND")
+    notes = str(review["reviewer_note"] or "").strip()
+    if not notes:
+        raise ValueError("EXPERT_NOTES_REQUIRED")
+
+    scan_row = db.execute(
+        """SELECT result FROM scan_runs
+           WHERE company_id=? AND case_id=?
+           ORDER BY created_at DESC,scan_id DESC LIMIT 1""",
+        (review["company_id"], review["case_id"]),
+    ).fetchone()
+    scan = _json_object(scan_row["result"] if scan_row else None)
+
+    evidence_rows = db.execute(
+        """SELECT evidence_id,title,source_ref,source_type,verification_status,
+                  confidence,date_collected
+           FROM evidence WHERE company_id=? AND case_id=?
+           ORDER BY date_collected DESC,evidence_id DESC LIMIT 12""",
+        (review["company_id"], review["case_id"]),
+    ).fetchall()
+    evidence = [{
+        "evidence_id": row["evidence_id"],
+        "title": row["title"],
+        "source_ref": row["source_ref"] or row["source_type"] or "دون مصدر محدد",
+        "verification_status": row["verification_status"] or "UNVERIFIED",
+        "confidence": row["confidence"],
+        "date_collected": row["date_collected"],
+    } for row in evidence_rows]
+
+    relation_rows = db.execute(
+        """SELECT a.title AS from_title,b.title AS to_title,
+                  r.verification_question
+           FROM evidence_relations r
+           JOIN evidence a ON a.evidence_id=r.from_evidence_id
+           JOIN evidence b ON b.evidence_id=r.to_evidence_id
+           WHERE r.company_id=? AND r.case_id=?
+             AND r.relation_type='CONTRADICTS' AND r.status='OPEN'
+           ORDER BY r.created_at DESC LIMIT 12""",
+        (review["company_id"], review["case_id"]),
+    ).fetchall()
+    conflicts = [
+        "يتعارض «{}» مع «{}»{}".format(
+            row["from_title"], row["to_title"],
+            (
+                f" — {row['verification_question']}"
+                if row["verification_question"] else ""
+            ),
+        )
+        for row in relation_rows
+    ]
+    for item in scan.get("open_conflicts") or []:
+        text = _display_text(item)
+        if text and text not in conflicts:
+            conflicts.append(text)
+
+    missing = []
+    for item in scan.get("missing_evidence") or []:
+        text = _display_text(item)
+        if text and text not in missing:
+            missing.append(text)
+    missing.append(
+        "ملاحظات الخبير تبقى Expert Observation / Human Review، وأي رقم أو "
+        "ادعاء فيها يحتاج مصدرًا مباشرًا قبل اعتباره حقيقة."
+    )
+
+    bottleneck = _display_text(scan.get("bottleneck"))
+    proposed = _display_text(scan.get("proposed_decision"))
+    task = None
+    if review["decision_id"]:
+        task = db.execute(
+            """SELECT title,status,due_date,kpi FROM tasks
+               WHERE company_id=? AND decision_id=?
+               ORDER BY created_at DESC,task_id DESC LIMIT 1""",
+            (review["company_id"], review["decision_id"]),
+        ).fetchone()
+
+    current_situation = (
+        review["real_question"]
+        or review["declared_problem"]
+        or review["case_title"]
+    )
+    recommendation = (
+        review["final_decision"]
+        or review["decision_title"]
+        or proposed
+        or "لم تُسجّل توصية عملية في الحالة حتى الآن."
+    )
+    next_step = (
+        task["title"] if task
+        else review["recommended_action"]
+        or "لم تُسجّل خطوة تالية في الحالة حتى الآن."
+    )
+    return {
+        "title": "ملخص مراجعة الخبير",
+        "review_id": review["review_id"],
+        "company_id": review["company_id"],
+        "case_id": review["case_id"],
+        "company_name": review["company_name"],
+        "review_date": date.today().isoformat(),
+        "reviewer": review["reviewer_email"] or "مراجع سنع",
+        "classification": "Expert Observation / Human Review",
+        "current_situation": current_situation,
+        "expert_observations": notes,
+        "evidence": evidence,
+        "needs_confirmation": missing,
+        "conflicts": conflicts,
+        "priority": bottleneck or "لم تُسجّل أولوية صريحة في الحالة حتى الآن.",
+        "recommendation": recommendation,
+        "next_step": next_step,
+        "trust_note": (
+            "هذا الملخص يعيد تنظيم ملاحظات بشرية وبيانات محفوظة في الحالة فقط. "
+            "لا يحوّل ملاحظة الخبير إلى Fact، ولا يضيف سببًا جذريًا أو KPI أو نتيجة."
+        ),
+    }
+
+
+def summary_for_review(
+    db, company_id, case_id, review_id=None, *, allow_unapproved=False
+):
+    params = [company_id, case_id]
+    review_filter = ""
+    if review_id:
+        review_filter = " AND review_id=?"
+        params.append(review_id)
+    approval_filter = "" if allow_unapproved else (
+        " AND expert_summary_status='APPROVED'"
+    )
+    row = db.execute(
+        f"""SELECT review_id,expert_summary_json,expert_summary_status,
+                   formatted_at,approved_at
+            FROM case_human_reviews
+            WHERE company_id=? AND case_id=?{review_filter}
+              AND expert_summary_json IS NOT NULL{approval_filter}
+            ORDER BY requested_at DESC,review_id DESC LIMIT 1""",
+        params,
+    ).fetchone()
+    if not row:
+        return None
+    summary = _json_object(row["expert_summary_json"])
+    if not summary:
+        return None
+    summary["summary_status"] = row["expert_summary_status"]
+    summary["formatted_at"] = row["formatted_at"]
+    summary["approved_at"] = row["approved_at"]
+    return summary
