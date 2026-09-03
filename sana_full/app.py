@@ -8651,6 +8651,7 @@ def passport_report_text(company_id):
     opportunity = review.get("opportunity")
     gate = review["evidence_gate"]
     confidence = review.get("client_confidence") or {}
+    cycle = review.get("client_evidence_request_cycle") or {}
 
     lines = [
         "══════════════════════════════════════════",
@@ -8669,6 +8670,16 @@ def passport_report_text(company_id):
             else "   Sana Score التشغيلي: غير متاح حتى تكتمل المحاور وتُراجع بشريًا."
         ),
         "   التقييم المالي: غير معروض — لا توجد معلومات مالية معتمدة.",
+        "",
+        "نهاية دورة الأدلة: "
+        f"{cycle.get('outcome_label') or 'لم تُحسم بعد'}",
+        f"   الطلبات الحرجة: {cycle.get('critical_request_count', 0)}",
+        (
+            "   الطلبات المغلقة: "
+            f"{cycle.get('closed_request_count', 0)} من "
+            f"{cycle.get('critical_request_count', 0)}"
+        ),
+        f"   الطلبات المتتبعة: {cycle.get('fingerprint_count', 0)}",
         "",
         "❷  الثقة عبر مراحل القرار",
     ]
@@ -9110,6 +9121,10 @@ def _build_scan_report_context(company_id, case_id=None):
     client_missing_evidence = _client_missing_evidence(
         scan.get("missing_evidence") or []
     )
+    client_evidence_request_cycle = _client_evidence_request_cycle(
+        scan.get("evidence_request_cycle"),
+        outcome=scan.get("journey_outcome"),
+    )
     priority_source_ids = {
         str(source_id)
         for source_id in ((bottleneck or opportunity or {}).get("source_ids") or [])
@@ -9252,6 +9267,7 @@ def _build_scan_report_context(company_id, case_id=None):
         "journey": scan_journey,
         "journey_outcome": scan.get("journey_outcome"),
         "evidence_request_cycle": dict(scan.get("evidence_request_cycle") or {}),
+        "client_evidence_request_cycle": client_evidence_request_cycle,
         "problem": problem,
         "hypothesis": hypothesis,
         "inference": inference,
@@ -9304,6 +9320,7 @@ def _build_scan_report_context(company_id, case_id=None):
         "scan_missing_evidence": list(scan.get("missing_evidence") or []),
         "scan_evidence_requests": list(scan.get("evidence_requests") or []),
         "scan_evidence_request_cycle": dict(scan.get("evidence_request_cycle") or {}),
+        "scan_client_evidence_request_cycle": client_evidence_request_cycle,
         "scan_journey_outcome": scan.get("journey_outcome"),
         "scan_client_missing_evidence": client_missing_evidence,
         "scan_diagnostic_quality": dict(scan.get("diagnostic_quality") or {}),
@@ -13185,6 +13202,48 @@ def _client_missing_evidence(items):
         )
         safe_items.append(text)
     return list(dict.fromkeys(safe_items))
+
+
+def _client_evidence_request_cycle(cycle, *, outcome=None):
+    """يبني ملخصًا قابلًا للمشاركة لدورة الأدلة دون رموزها الداخلية."""
+    cycle = cycle if isinstance(cycle, dict) else {}
+    requests = [
+        item for item in (cycle.get("requests") or [])
+        if isinstance(item, dict)
+    ]
+    fingerprints = {
+        str(item.get("fingerprint")).strip()
+        for item in requests
+        if item.get("fingerprint")
+    }
+    fingerprints.update(
+        str(item).strip()
+        for item in (cycle.get("requested_fingerprints") or [])
+        if str(item).strip()
+    )
+    try:
+        critical_count = int(cycle.get("critical_request_count"))
+    except (TypeError, ValueError):
+        critical_count = len(requests)
+    critical_count = max(0, critical_count)
+    closed_count = sum(
+        1 for item in requests
+        if str(item.get("status") or "").upper() != "PENDING"
+    )
+    outcome = str(outcome or cycle.get("outcome") or "").upper() or None
+    outcome_labels = {
+        "DECISION": "قرار",
+        "CONDITIONAL_EXPERIMENT": "تجربة مشروطة",
+        "UNKNOWN": "UNKNOWN — المعلومة غير متاحة الآن",
+    }
+    return {
+        "outcome": outcome,
+        "outcome_label": outcome_labels.get(outcome, "لم تُحسم بعد"),
+        "critical_request_count": critical_count,
+        "closed_request_count": closed_count,
+        "fingerprint_count": len(fingerprints),
+    }
+
 
 def _client_readiness_view(status, *, score=None, message=None):
     """يرسم حالات القرار الداخلية بلغة التقرير التي يفهمها العميل."""

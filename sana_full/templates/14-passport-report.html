@@ -94,6 +94,13 @@
   .journey-state.review,.journey-state.complete{ border-color:#B8E5E1; background:#F6FFFD; }
   .journey-state-title{ font-family:'Cairo'; color:var(--navy); font-weight:800; font-size:13px; margin-bottom:3px; }
   .journey-state-copy{ color:var(--muted); font-size:12px; }
+  .cycle-summary{ border:1px solid #D9EEEE; border-radius:10px; padding:13px 15px; margin-top:12px; background:#F8FBFC; }
+  .cycle-summary-title{ font-family:'Cairo'; color:var(--navy); font-weight:800; font-size:13px; margin-bottom:9px; }
+  .cycle-summary-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .cycle-summary-item{ min-width:0; }
+  .cycle-summary-label{ color:var(--muted); font-size:10.5px; margin-bottom:2px; }
+  .cycle-summary-value{ color:var(--navy); font-size:12px; font-weight:600; }
+  .cycle-summary-value.outcome{ color:#087e7d; }
   .executive-lede{ font-size:15px; line-height:2; color:var(--navy); font-weight:600; margin-bottom:16px; }
   .answer-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
   .answer-card{ border:1px solid var(--line); border-radius:10px; padding:13px 14px; background:#fff; }
@@ -188,7 +195,7 @@
     .next-step{ margin:18px 18px 0; padding:18px; }
     .review-card,.compact-review{margin:14px 18px 0}
     .report-actions{padding:12px 18px}
-    .answer-grid,.initiative-grid,.confidence-grid,.swot-grid{ grid-template-columns:1fr; }
+    .answer-grid,.initiative-grid,.confidence-grid,.swot-grid,.cycle-summary-grid{ grid-template-columns:1fr; }
     .report-details .report-actions{bottom:0;top:auto;border-top:1px solid var(--line);border-bottom:0}
     .report-details .report-action{flex:1;min-width:105px}
   }
@@ -222,6 +229,37 @@
     <h1>{% if report_view == 'plan' %}خطة التنفيذ{% elif report_view == 'details' %}تفاصيل الصورة التشخيصية{% else %}ما القرار والخطوة التالية؟{% endif %}</h1>
     <div class="company-name">{{ company.name }}{% if company.sector %} — {{ company.sector }}{% endif %}</div>
     {% if report_view != 'plan' %}<div class="tier-label">{{ scan_report_tier_label }}</div>{% endif %}
+    <div class="report-meta">
+      <span><b>الحالة:</b> <span class="status-pill {{ scan_journey.tone if scan_journey else ('incomplete' if scan_status != 'REVIEW_REQUIRED' else '') }}">{{ scan_status_label }}</span></span>
+    </div>
+    {% if scan_journey %}
+    <div class="journey-state {{ scan_journey.tone }}" data-testid="report-journey-state">
+      <div class="journey-state-title">{{ scan_journey.label }}</div>
+      <div class="journey-state-copy">{{ scan_journey.message }} الإجراء التالي: {{ scan_journey.action_label }}.</div>
+    </div>
+    {% set client_cycle = scan_client_evidence_request_cycle or {} %}
+    <div class="cycle-summary" data-testid="report-cycle-summary">
+      <div class="cycle-summary-title">نهاية دورة الأدلة</div>
+      <div class="cycle-summary-grid">
+        <div class="cycle-summary-item">
+          <div class="cycle-summary-label">النتيجة</div>
+          <div class="cycle-summary-value outcome">{{ client_cycle.outcome_label or 'لم تُحسم بعد' }}</div>
+        </div>
+        <div class="cycle-summary-item">
+          <div class="cycle-summary-label">الطلبات الحرجة</div>
+          <div class="cycle-summary-value">{{ client_cycle.critical_request_count or 0 }}</div>
+        </div>
+        <div class="cycle-summary-item">
+          <div class="cycle-summary-label">الطلبات المغلقة</div>
+          <div class="cycle-summary-value">{{ client_cycle.closed_request_count or 0 }} / {{ client_cycle.critical_request_count or 0 }}</div>
+        </div>
+        <div class="cycle-summary-item">
+          <div class="cycle-summary-label">الطلبات المتتبعة</div>
+          <div class="cycle-summary-value">{{ client_cycle.fingerprint_count or 0 }}</div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
   </header>
 
   {% set current_review = human_review.review if human_review else none %}

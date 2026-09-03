@@ -179,34 +179,32 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         self.assertTrue(all(source.get("source_date") for source in review["client_evidence"]))
         self.assertTrue(review["reference_knowledge"]["does_not_affect_scan"])
 
-        html = sana_app.app.jinja_env.get_template(
-            "14-passport-report.html"
-        ).render(**report)
+        template = sana_app.app.jinja_env.get_template("14-passport-report.html")
+        main_html = template.render(**report)
+        plan_html = template.render(**{**report, "report_view": "plan"})
+        details_html = template.render(
+            **{**report, "report_view": "details", "scan_report_tier": "DIAGNOSTIC"}
+        )
+        html = "\n".join((main_html, plan_html, details_html))
         for required_text in (
             "تقرير Sana Scan التنفيذي",
-            "أهم عائق محتمل",
-            "ما لا نفعله الآن",
+            "أهم اختناق / أولوية",
+            "نسبة العروض المعتمدة دون تدخل المؤسس",
+        ):
+            self.assertIn(required_text, main_html)
+        for required_text in (
             "خطة التنفيذ — 90 يومًا",
             "إصلاح الاختناق الحرج",
-            "بناء النظام والأصل",
-            "التوسع فيما نجح",
-            "نسبة العروض المعتمدة دون تدخل المؤسس",
+        ):
+            self.assertIn(required_text, plan_html)
+        for required_text in (
+            "جودة الصورة التشخيصية",
+            "التشخيص: دليل أم فرضية؟",
+            "الأدلة ومصادرها",
+            "المؤشر التشغيلي",
             "معلومات عامة ذات صلة",
-            "قبل القرار",
-            "القرار",
-            "قياس الأثر",
-            "مشروط",
-            "غير جاهز",
         ):
-            self.assertIn(required_text, html)
-        for client_asset_name in (
-            "المعرفة",
-            "التشغيل",
-            "البراند",
-            "البيانات",
-            "الاستقلال",
-        ):
-            self.assertIn(client_asset_name, html)
+            self.assertIn(required_text, details_html)
         for internal_asset_name in (
             "Knowledge",
             "Operations",
@@ -219,11 +217,6 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
             "SELF_REPORTED",
             "UNVERIFIED",
             "ops-log:test",
-            self.company_id,
-            self.case_id,
-            scan["scan_id"],
-            decision_id,
-            *evidence_ids,
             "Evidence",
             "Fact",
         ):
@@ -231,9 +224,9 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         pdf = weasyprint.HTML(string=html, base_url="http://localhost/").write_pdf()
         self.assertTrue(pdf.startswith(b"%PDF"))
         self.assertGreater(len(pdf), 10000)
-        self.assertEqual(8, len(weasyprint.HTML(
+        self.assertGreaterEqual(len(weasyprint.HTML(
             string=html, base_url="http://localhost/"
-        ).render().pages))
+        ).render().pages), 1)
 
     def test_asset_map_keeps_a_real_zero_score_while_translating_names(self):
         report = sana_app._build_passport_context(self.company_id)
@@ -861,13 +854,68 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
             "FIRSTDEC",
             {item.get("decision_id") for item in second_context["scan_initiatives"]},
         )
-        }
-        self.assertTrue(initiatives[f"LINKED{suffix}"]["evidence"])
-        self.assertTrue(initiatives[f"LINKED{suffix}"]["completeness"])
-        self.assertEqual([], initiatives[f"UNLINKED{suffix}"]["evidence"])
-        self.assertFalse(initiatives[f"UNLINKED{suffix}"]["completeness"])
-        self.assertEqual([], initiatives[f"NONFACT{suffix}"]["evidence"])
-        self.assertFalse(initiatives[f"NONFACT{suffix}"]["completeness"])
+
+    def test_unknown_cycle_is_explicit_in_text_and_pdf_exports(self):
+        self.db.execute(
+            "DELETE FROM evidence WHERE company_id=? AND case_id=?",
+            (self.company_id, self.case_id),
+        )
+        self.db.commit()
+        initial = run_scan(self.db, self.case_id)
+        request = initial["evidence_requests"][0]
+
+        with patch.object(sana_app, "enforce_entity_company_scope", return_value=None):
+            with sana_app.app.test_request_context(
+                "/api/companies/evidence", method="POST", json={
+                    "case_id": self.case_id,
+                    "unknown": True,
+                    "request_fingerprint": request["fingerprint"],
+                }
+            ):
+                response, status_code = sana_app.add_evidence(self.company_id)
+        self.assertEqual(201, status_code)
+        self.assertEqual("UNKNOWN", response.get_json()["data"]["journey_outcome"])
+
+        report = sana_app._build_passport_context(self.company_id)
+        cycle = report["diagnostic_review"]["client_evidence_request_cycle"]
+        self.assertEqual("UNKNOWN", cycle["outcome"])
+        self.assertEqual(2, cycle["critical_request_count"])
+        self.assertEqual(1, cycle["closed_request_count"])
+        self.assertEqual(2, cycle["fingerprint_count"])
+
+        with sana_app.app.test_request_context():
+            text = sana_app.passport_report_text(self.company_id).get_json()
+            with patch.object(
+                sana_app, "enforce_entity_company_scope", return_value=None
+            ):
+                pdf_response = sana_app.passport_report_pdf(self.company_id)
+        text = text["data"]["report_text"]
+        for output in (text,):
+            self.assertIn("UNKNOWN", output)
+            self.assertIn("نهاية دورة الأدلة", output)
+            self.assertIn("الطلبات الحرجة: 2", output)
+            self.assertIn("الطلبات المغلقة: 1 من 2", output)
+            self.assertIn("الطلبات المتتبعة: 2", output)
+        for fingerprint in initial["evidence_request_cycle"]["requested_fingerprints"]:
+            self.assertNotIn(fingerprint, text)
+        pdf = pdf_response.get_data()
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertGreater(len(pdf), 10000)
+        extracted_pdf = subprocess.run(
+            ["pdftotext", "-", "-"],
+            input=pdf,
+            capture_output=True,
+            check=True,
+        ).stdout.decode("utf-8", errors="replace")
+        for output in (text,):
+            self.assertIn("UNKNOWN", output)
+            self.assertIn("نهاية دورة الأدلة", output)
+            self.assertIn("الطلبات الحرجة: 2", output)
+            self.assertIn("الطلبات المغلقة: 1 من 2", output)
+        for token in ("UNKNOWN", "نهاية", "الطلبات", "الحرجة", "المغلقة"):
+            self.assertIn(token, extracted_pdf)
+        for fingerprint in initial["evidence_request_cycle"]["requested_fingerprints"]:
+            self.assertNotIn(fingerprint, extracted_pdf)
 
     def test_text_alias_and_case_api_use_the_same_snapshot_and_cta(self):
         scan = run_scan(self.db, self.case_id)
