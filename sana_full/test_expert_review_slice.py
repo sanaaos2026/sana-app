@@ -1,8 +1,30 @@
 import json
 import secrets
 import unittest
+from pathlib import Path
 
 import app as sana_app
+
+
+class ExpertReviewTemplateTest(unittest.TestCase):
+    def test_expert_review_mark_covers_every_report_action_state(self):
+        template = (
+            Path(__file__).parent / "templates" / "14-passport-report.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(template.count('class="expert-review-mark"'), 5)
+        self.assertEqual(
+            template.count(
+                'class="expert-review-mark" aria-hidden="true" focusable="false"'
+            ),
+            5,
+        )
+        self.assertIn(
+            ".expert-review-mark{width:15px;height:15px;flex:0 0 15px;"
+            "margin-left:6px;"
+            "color:var(--gold)}",
+            template,
+        )
 
 
 class ExpertReviewSliceTest(unittest.TestCase):
