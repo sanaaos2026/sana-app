@@ -319,8 +319,11 @@
   /* ── Sana logo SVG inline ── */
   .sana-logo { display: block; }
 </style>
+{% include '_customer-journey-styles.html' %}
 </head>
 <body>
+{% set journey_step = 'discovery' %}
+{% include '_customer-journey-nav.html' %}
 {% if can_reset_experience %}
 <button type="button" class="reset-experience-tool" onclick="confirmExperienceReset()" aria-label="إعادة ضبط التجربة">↺ إعادة ضبط التجربة</button>
 {% endif %}
@@ -347,6 +350,10 @@ const PREVIEW_QUERY = (() => {
   if (!adminKey || !companyId) return '';
   return `?${new URLSearchParams({admin_key: adminKey, company_id: companyId}).toString()}`;
 })();
+const JOURNEY_URLS = {{ journey_urls|tojson }};
+const withContext = url => `${url}${PREVIEW_QUERY}`;
+const caseUrl = (template, caseId) =>
+  template.replace('__CASE_ID__', encodeURIComponent(caseId));
 const FULL_REASSESSMENT = {{ (full_reassessment|default(false))|tojson }};
 const COMPANY_MEMORY = {{ (company_memory|default({"items": []}))|tojson }};
 const MEMORY_KEY_BY_QUESTION = {
@@ -607,10 +614,10 @@ async function confirmExperienceReset(){
   if (!first) return;
   const second = window.confirm('تأكيد أخير: هل تريد إعادة هذا الحساب إلى أول خطوة في سنع؟');
   if (!second) return;
-  const response = await fetch('/api/testing/reset-experience', { method:'POST' });
+  const response = await fetch(withContext(JOURNEY_URLS.reset_experience), { method:'POST' });
   const payload = await response.json();
   if (response.ok && payload.success) {
-    window.location.assign(payload.data.redirect || '/onboarding');
+    window.location.assign(payload.data.redirect || JOURNEY_URLS.onboarding);
     return;
   }
   window.alert(payload.message || 'تعذر إعادة ضبط التجربة.');
@@ -721,7 +728,7 @@ async function submitFitGate() {
   button.disabled = true;
   button.textContent = 'جارٍ التحقق…';
   try {
-    const response = await fetch('/api/fit-gate/check', {
+    const response = await fetch(withContext(JOURNEY_URLS.fit_gate), {
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken()},
       body:JSON.stringify({fit_gate:ans.fit_gate})
@@ -922,7 +929,7 @@ function submitCalibration() {
 // step 9 — شاشة انتظار مؤقتة بينما يحفظ سنع الجلسة في الخلفية
 function renderOutro() {
   $screen.innerHTML = `
-    <div class="outro-wrap" style="align-items:center;">
+    <div class="outro-wrap journey-state-panel dark" role="status" style="align-items:center;">
       <div class="outro-logo">${LOGO_LG}</div>
       <div class="loading-dots" style="margin:24px 0; font-size:28px; color:var(--gold);">· · ·</div>
       <div style="color:rgba(255,255,255,0.5); font-size:13px;">يجمع سنع ملخص شركتك…</div>
@@ -940,7 +947,9 @@ function renderPassport(data) {
     '👤 وجود المؤسس ومتابعته':   'الاستقلالية',
   };
   const retryQuery = data.scan_has_run === false ? '?scan=failed' : '';
-  const dest = data.case_id ? `/case/${data.case_id}/result${retryQuery}` : '/home';
+  const dest = data.case_id
+    ? `${caseUrl(JOURNEY_URLS.case_result_template, data.case_id)}${retryQuery}`
+    : JOURNEY_URLS.home;
 
   const rows = [
     data.sector        ? `<div class="pp-row"><span class="pp-icon">🏢</span><div><span class="pp-label">القطاع</span><span class="pp-val">${data.sector}</span></div></div>` : '',
@@ -973,7 +982,7 @@ function renderPassport(data) {
 async function saveAndFinish() {
   let saveData = { case_id: null };
   try {
-    const res = await fetch(`/api/discovery/save${PREVIEW_QUERY}`, {
+    const res = await fetch(withContext(JOURNEY_URLS.discovery_save), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({...ans, full_reassessment: FULL_REASSESSMENT})
@@ -991,7 +1000,7 @@ async function saveAndFinish() {
     }
   } catch(e) {
     $screen.innerHTML = `
-      <div class="outro-wrap">
+      <div class="outro-wrap journey-state-panel dark error" role="alert">
         <div class="outro-title">لم تُحفظ الإجابات بعد</div>
         <div class="outro-body">${escHtml(e.message || 'تعذر الاتصال بالخادم. إجاباتك ما زالت في هذه الصفحة.')}</div>
         <button class="outro-btn" onclick="saveAndFinish()">أعد المحاولة</button>

@@ -81,32 +81,61 @@
   .sds-suggestion{ margin-top:10px; font-size:12.5px; color:#6E7580; font-style:italic; display:none; }
   .sds-suggestion.show{ display:block; }
 </style>
+{% include '_customer-journey-styles.html' %}
 </head>
 <body>
 
-<div class="concept-nav">
-  <a href="/home{{ context_query }}">اليوم</a>
-  <a href="/passport{{ context_query }}" class="active">الأصول</a>
-  <a href="/logout">تسجيل الخروج</a>
-</div>
+{% set journey_step = 'passport' %}
+{% include '_customer-journey-nav.html' %}
 
 <div id="app">
-  <div class="skeleton">يحسب سنع قيمة الشركة...</div>
+  <div class="journey-state-panel" role="status">يجري تجهيز جواز الشركة…</div>
 </div>
 
 <script>
 const COMPANY_ID = {{ company_id|tojson }};
 const CQS = {{ context_query|tojson }};
+const JOURNEY_URLS = {{ journey_urls|tojson }};
+const caseUrl = caseId => JOURNEY_URLS.case_result_template
+  .replace('__CASE_ID__', encodeURIComponent(caseId));
+const withContext = url => `${url}${CQS}`;
+
+function showStateError(message){
+  document.getElementById('app').innerHTML = `
+    <div class="journey-state-panel error" role="alert">
+      <p>${message}</p>
+      <button class="journey-retry" onclick="loadPassport()">أعد المحاولة</button>
+      <a class="journey-retry" href="${withContext(JOURNEY_URLS.home)}">ارجع لليوم</a>
+    </div>`;
+}
+
+function showToast(message){
+  const old = document.getElementById('passportToast');
+  if(old) old.remove();
+  const toast = document.createElement('div');
+  toast.id = 'passportToast';
+  toast.className = 'journey-state-panel error';
+  toast.setAttribute('role', 'alert');
+  toast.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;z-index:80;margin:auto';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
 
 async function loadPassport(){
-  const [passRes, sdsRes] = await Promise.all([
-    fetch(`/api/companies/${COMPANY_ID}/passport${CQS}`),
-    fetch(`/api/companies/${COMPANY_ID}/sds-question${CQS}`)
-  ]);
-  const passJson = await passRes.json();
-  const sdsJson  = await sdsRes.json();
-  if(!passJson.success){ document.getElementById('app').innerHTML = '<p>تعذر تحميل الجواز</p>'; return; }
-  render(passJson.data, passJson.meta, sdsJson.success ? sdsJson.data : null);
+  document.getElementById('app').innerHTML = '<div class="journey-state-panel" role="status">يجري تجهيز جواز الشركة…</div>';
+  try{
+    const [passRes, sdsRes] = await Promise.all([
+      fetch(withContext(JOURNEY_URLS.company_passport_api)),
+      fetch(withContext(JOURNEY_URLS.company_question_api))
+    ]);
+    const passJson = await passRes.json();
+    const sdsJson  = await sdsRes.json();
+    if(!passRes.ok || !passJson.success) throw new Error(passJson.message || 'تعذر تحميل الجواز.');
+    render(passJson.data, passJson.meta, sdsJson.success ? sdsJson.data : null);
+  }catch(error){
+    showStateError(error.message || 'تعذر الاتصال بالخادم. بياناتك لم تتغير.');
+  }
 }
 
 function render(d, meta, sds){
@@ -166,12 +195,12 @@ function render(d, meta, sds){
       </section>
       ${d.weakest_asset_case_id ? `
       <section style="text-align:center;">
-        <a href="/case/${d.weakest_asset_case_id}/result${CQS}" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح نتيجة التشخيص</a>
+        <a href="${withContext(caseUrl(d.weakest_asset_case_id))}" style="color:#0EA5A5; font-weight:600; font-size:13.5px;">← ابدأ من أضعف أصل: افتح نتيجة التشخيص</a>
       </section>` : ''}
       <section style="text-align:center;">
         <div style="font-size:11.5px;color:#6E7580;margin-bottom:8px;">راجع التفاصيل قبل اتخاذ قرار كبير.</div>
-        <a data-testid="executive-report-link" href="${journey.report_url || `/company/${COMPANY_ID}/scan-report`}" style="display:inline-block;color:#0EA5A5;font-weight:600;font-size:13.5px;margin-bottom:8px;">عرض الملخص التنفيذي ←</a>
-        ${['REVIEW_REQUIRED','COMPLETE'].includes(journey.status) ? `<a data-testid="execution-plan-link" href="/company/${COMPANY_ID}/execution-plan${CQS}" style="display:inline-block;color:#0B132B;font-weight:600;font-size:13.5px;margin:0 12px 8px;">خطة التنفيذ ←</a>` : ''}
+        <a data-testid="executive-report-link" href="${withContext(journey.report_url || JOURNEY_URLS.company_report)}" style="display:inline-block;color:#0EA5A5;font-weight:600;font-size:13.5px;margin-bottom:8px;">عرض الملخص التنفيذي ←</a>
+        ${['REVIEW_REQUIRED','COMPLETE'].includes(journey.status) ? `<a data-testid="execution-plan-link" href="${withContext(JOURNEY_URLS.company_plan)}" style="display:inline-block;color:#0B132B;font-weight:600;font-size:13.5px;margin:0 12px 8px;">خطة التنفيذ ←</a>` : ''}
         <br>
         <button class="btn" id="downloadReportBtn" onclick="downloadReport()"
           style="background:#0B132B; color:#fff; border:none; padding:11px 22px; border-radius:7px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans Arabic';">
@@ -219,7 +248,7 @@ async function sdsAnswer(choice, btn){
   const confidence = confMap[choice] || 30;
 
   try{
-    const res = await fetch(`/api/companies/${COMPANY_ID}/evidence`, {
+    const res = await fetch(withContext(JOURNEY_URLS.company_evidence_api), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -245,7 +274,7 @@ async function sdsAnswer(choice, btn){
       msg.classList.add('show');
       setTimeout(() => {
         if(json.data.next_question) location.reload();
-        else location.href = json.data.result_url || `/case/${sds.case_id}/result`;
+        else location.href = json.data.result_url || withContext(caseUrl(sds.case_id));
       }, 180);
     } else {
       msg.textContent = '⚠️ تعذر الحفظ — حاول مرة أخرى.';
@@ -264,7 +293,7 @@ async function downloadReport(){
   const originalText = btn.textContent;
   btn.textContent = 'جارٍ التحضير...';
   try{
-    const res = await fetch(`/api/companies/${COMPANY_ID}/scan/report-pdf${CQS}`);
+    const res = await fetch(withContext(JOURNEY_URLS.company_report_pdf));
     if(res.ok){
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);

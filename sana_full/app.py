@@ -1077,6 +1077,11 @@ def default_company_id():
         return request.args["company_id"]
     return "C001"
 
+def endpoint_path(endpoint, **values):
+    """Build an internal path from Flask's route map, even outside a request."""
+    return app.url_map.bind("").build(endpoint, values, force_external=False)
+
+
 def p0_template_context():
     """سياق موحّد للقوالب دون تسريب معرّفات الشركة في روابط العميل.
 
@@ -1085,12 +1090,36 @@ def p0_template_context():
     الذي تتحقق منه الحراسة قبل الوصول.
     """
     account = current_account()
+    def journey_urls(company_id):
+        return {
+            "discovery": url_for("discovery"),
+            "onboarding": url_for("onboarding"),
+            "home": url_for("ceo_home"),
+            "passport": url_for("business_passport"),
+            "logout": url_for("logout"),
+            "case_result_template": url_for("case_result", case_id="__CASE_ID__"),
+            "case_next_template": url_for("case_next_step", case_id="__CASE_ID__"),
+            "company_report": url_for("scan_report_html", company_id=company_id),
+            "company_plan": url_for("execution_plan_html", company_id=company_id),
+            "discovery_save": url_for("discovery_save"),
+            "fit_gate": url_for("fit_gate_check"),
+            "reset_experience": url_for("reset_experience"),
+            "case_api_template": url_for("case_detail", case_id="__CASE_ID__"),
+            "case_scan_template": url_for("run_case_scan", case_id="__CASE_ID__"),
+            "case_baseline_template": url_for("case_diagnostic_baseline", case_id="__CASE_ID__"),
+            "case_decision_template": url_for("create_p0_case_decision", case_id="__CASE_ID__"),
+            "company_passport_api": url_for("passport_summary", company_id=company_id),
+            "company_question_api": url_for("sds_question", company_id=company_id),
+            "company_evidence_api": url_for("add_evidence", company_id=company_id),
+            "company_report_pdf": url_for("passport_report_pdf", company_id=company_id),
+        }
     if account:
         return {
             "company_id": account["company_id"],
             "context_query": "",
             "is_admin_preview": False,
             "can_reset_experience": _test_reset_allowed(account),
+            "journey_urls": journey_urls(account["company_id"]),
         }
     if is_admin_preview():
         params = {"admin_key": request.args["admin_key"]}
@@ -1103,12 +1132,14 @@ def p0_template_context():
             "context_query": "?" + urlencode(params),
             "is_admin_preview": True,
             "can_reset_experience": False,
+            "journey_urls": journey_urls(default_company_id()),
         }
     return {
         "company_id": "C001",
         "context_query": "",
         "is_admin_preview": False,
         "can_reset_experience": False,
+        "journey_urls": journey_urls("C001"),
     }
 
 
@@ -3141,8 +3172,8 @@ def discovery():
     if context["admin_preview"]:
         return render_template(
             "06-sana-discovery.html", full_reassessment=full_reassessment,
-            company_memory=memory_context, company_id=context["company_id"],
-            can_reset_experience=False,
+            company_memory=memory_context,
+            **p0_template_context(),
         )
     account = current_account()
     start = _company_start_redirect(account)
@@ -3152,8 +3183,8 @@ def discovery():
         return redirect(start)
     return render_template(
         "06-sana-discovery.html", full_reassessment=full_reassessment,
-        company_memory=memory_context, company_id=context["company_id"],
-        can_reset_experience=_test_reset_allowed(account),
+        company_memory=memory_context,
+        **p0_template_context(),
     )
 
 
@@ -7908,9 +7939,12 @@ def _scan_journey_details(
             (company_id,),
         ).fetchone()
         case_id = fallback_case["case_id"] if fallback_case else None
-    report_url = f"/company/{company_id}/scan-report"
-    assessment_url = "/assessment"
-    case_url = f"/case/{case_id}" if case_id else assessment_url
+    report_url = endpoint_path("scan_report_html", company_id=company_id)
+    assessment_url = endpoint_path("assessment")
+    case_url = (
+        endpoint_path("case_workspace", case_id=case_id)
+        if case_id else assessment_url
+    )
 
     states = {
         "NOT_RUN": {
@@ -9415,32 +9449,61 @@ def _build_passport_context(company_id):
     else:
         context["human_review"] = None
     context["report_view"] = "main"
-    context["report_summary_url"] = f"/company/{company_id}/scan-report"
-    context["report_details_url"] = f"/company/{company_id}/scan-report/details"
-    context["execution_plan_url"] = f"/company/{company_id}/execution-plan"
-    context["report_pdf_url"] = f"/api/companies/{company_id}/scan/report-pdf"
+    context["context_query"] = ""
+    assessment_url = endpoint_path("assessment")
+    context["report_summary_url"] = endpoint_path(
+        "scan_report_html", company_id=company_id
+    )
+    context["report_details_url"] = endpoint_path(
+        "scan_report_details_html", company_id=company_id
+    )
+    context["execution_plan_url"] = endpoint_path(
+        "execution_plan_html", company_id=company_id
+    )
+    context["report_pdf_url"] = endpoint_path(
+        "passport_report_pdf", company_id=company_id
+    )
     context["execution_plan_pdf_url"] = (
-        f"/api/companies/{company_id}/scan/report-pdf?view=execution-plan"
+        endpoint_path("passport_report_pdf", company_id=company_id)
+        + "?view=execution-plan"
     )
     context["adaptive_questions_url"] = (
-        f"/case/{case_id}#sdsSection" if case_id else "/assessment"
+        endpoint_path("case_workspace", case_id=case_id) + "#sdsSection"
+        if case_id else assessment_url
     )
     context["report_problem_url"] = (
-        f"/case/{case_id}#caseQuestion" if case_id else "/assessment"
+        endpoint_path("case_workspace", case_id=case_id) + "#caseQuestion"
+        if case_id else assessment_url
     )
     context["report_evidence_url"] = (
-        f"/case/{case_id}#evidenceSection" if case_id else "/assessment"
+        endpoint_path("case_workspace", case_id=case_id) + "#evidenceSection"
+        if case_id else assessment_url
     )
     context["report_decision_url"] = (
-        f"/case/{case_id}#decisionsSection" if case_id else "/assessment"
+        endpoint_path("case_workspace", case_id=case_id) + "#decisionsSection"
+        if case_id else assessment_url
     )
     context["report_results_url"] = (
-        f"/case/{case_id}#resultsSection" if case_id else "/assessment"
+        endpoint_path("case_workspace", case_id=case_id) + "#resultsSection"
+        if case_id else assessment_url
     )
     context["report_next_url"] = (
         context["report_results_url"]
         if context.get("scan_next_action") else context["adaptive_questions_url"]
     )
+    context["journey_urls"] = {
+        "discovery": endpoint_path("discovery"),
+        "onboarding": endpoint_path("onboarding"),
+        "home": endpoint_path("ceo_home"),
+        "passport": endpoint_path("business_passport"),
+        "logout": endpoint_path("logout"),
+        "company_report": endpoint_path(
+            "scan_report_html", company_id=company_id
+        ),
+        "company_plan": endpoint_path(
+            "execution_plan_html", company_id=company_id
+        ),
+    }
     return context
 
 
@@ -9460,6 +9523,7 @@ def _render_scan_report_view(company_id, report_view):
     from flask_wtf.csrf import generate_csrf
     ctx["csrf_value"] = generate_csrf()
     ctx["report_view"] = report_view
+    ctx["context_query"] = p0_template_context()["context_query"]
     return render_template("14-passport-report.html", **ctx)
 
 
@@ -9622,6 +9686,7 @@ def passport_report_pdf(company_id):
             return jsonify({"success": False, "error": "BUILD_FAILED"}), 500
         execution_plan_export = request.args.get("view") == "execution-plan"
         ctx["report_view"] = "plan" if execution_plan_export else "main"
+        ctx["context_query"] = p0_template_context()["context_query"]
         html_string = render_template("14-passport-report.html", **ctx)
         safe_name = ctx["company"]["name"].replace("/", "-")
         download_name = (

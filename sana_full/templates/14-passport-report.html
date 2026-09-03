@@ -149,6 +149,7 @@
   .review-card.emphasis{border-color:#E8C463;background:#FFFCF3}
   .review-title{font-family:'Cairo';font-weight:800;color:var(--navy);font-size:15px}
   .review-copy{font-size:12px;color:var(--muted);margin:5px 0 12px}
+  .review-copy.error{color:#8F3027}
   .review-action{border:0;background:var(--navy);color:#fff;border-radius:8px;padding:10px 15px;font-family:inherit;font-weight:700;cursor:pointer}
   .review-action.secondary{background:#fff;color:var(--navy);border:1px solid var(--line)}
   .review-fields{display:grid;gap:10px;margin-top:12px}.review-fields select,.review-fields textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;font-family:inherit}.review-fields textarea{min-height:84px;resize:vertical}
@@ -202,8 +203,11 @@
     .review-action,.review-fields{display:none!important}
   }
 </style>
+{% include '_customer-journey-styles.html' %}
 </head>
 <body class="report-{{ report_view }}" data-report-tier="{{ scan_report_tier }}">
+{% set journey_step = 'report' %}
+{% include '_customer-journey-nav.html' %}
 <div class="wrap" data-testid="executive-report">
 
   <header>
@@ -238,7 +242,7 @@
       {% endif %}
     {% elif report_view == 'plan' %}
       <a class="report-action primary" href="{{ execution_plan_pdf_url }}">تحميل خطة التنفيذ</a>
-      <a class="report-action" href="/company/{{ company.company_id }}/scan-report">الملخص التنفيذي</a>
+      <a class="report-action" href="{{ journey_urls.company_report }}">الملخص التنفيذي</a>
     {% else %}
       <a class="report-action primary" href="{{ report_summary_url }}">العودة للملخص</a>
       <a class="report-action" href="{{ adaptive_questions_url }}">زد الوضوح</a>
@@ -685,13 +689,14 @@ const fields=document.getElementById('reviewFields');
 document.getElementById('openReview').onclick=()=>{fields.hidden=false;document.getElementById('openReview').hidden=true};
 document.getElementById('cancelReview').onclick=()=>{fields.hidden=true;document.getElementById('openReview').hidden=false};
 document.getElementById('confirmReview').onclick=async()=>{
-  const client_note=document.getElementById('reviewClientNote').value.trim(),msg=document.getElementById('reviewMessage');
+  const client_note=document.getElementById('reviewClientNote').value.trim(),msg=document.getElementById('reviewMessage'),button=document.getElementById('confirmReview'),original=button.textContent;
+  button.disabled=true;button.textContent='جارٍ الإرسال…';msg.classList.remove('error');msg.textContent='';
   try{
     const response=await fetch(`/api/cases/${encodeURIComponent(reviewCaseId)}/human-review`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf},body:JSON.stringify({client_note})});
     const result=await response.json();
     if(!response.ok||!result.success)throw new Error(result.message||'تعذر إرسال طلب المراجعة');
     location.reload();
-  }catch(error){msg.textContent=error.message}
+  }catch(error){msg.classList.add('error');msg.textContent=error.message;button.disabled=false;button.textContent=original}
 };
 </script>
 {% endif %}

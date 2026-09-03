@@ -24,16 +24,16 @@ h2{font-size:14px;color:var(--navy);margin:0 0 8px}.item{padding:8px 0;border-bo
 .period-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.period-choice{padding:11px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#333940;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer}.period-choice.selected{border-color:var(--teal);background:#EAF8F7;color:#087e7d}.period-dates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.period-dates[hidden],.period-compare[hidden],#periodSummary[hidden]{display:none}.period-dates label{font-size:11px;color:var(--muted)}.period-dates input,.period-select{width:100%;margin-top:5px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;font-family:inherit}.period-summary{margin-top:10px;padding:9px 10px;border-radius:8px;background:#EAF8F7;color:#087e7d;font-size:12px}.period-note{min-height:18px;margin-top:7px;color:#765B00;font-size:11.5px}.period-edit{border:0;background:transparent;color:#087e7d;font-family:inherit;font-size:11.5px;font-weight:700;padding:8px 0 0;cursor:pointer}
 @media (max-width:480px){main{margin:18px auto;padding:0 12px 32px}section{padding:14px;margin-bottom:8px}.next .btn{display:block;width:100%;text-align:center}.period-options,.period-dates{grid-template-columns:1fr}.period-choice{width:100%;text-align:right}}
 </style>
+{% include '_customer-journey-styles.html' %}
 </head>
 <body>
-<nav>
-  <a href="/home">اليوم</a>
-  <a href="/passport">الأصول</a>
-  <a href="/logout">تسجيل الخروج</a>
-</nav>
-<main id="app"><p class="empty">يجري تجهيز النتيجة...</p></main>
+{% set journey_step = 'result' %}
+{% include '_customer-journey-nav.html' %}
+<main id="app"><div class="journey-state-panel" role="status">يجري تجهيز النتيجة…</div></main>
 <script>
 const CASE_ID={{ case_id|tojson }},COMPANY_ID={{ company_id|tojson }},AUTO_SCAN_RETRY={{ auto_scan_retry|default(false)|tojson }};let caseData=null;
+const JOURNEY_URLS={{ journey_urls|tojson }};
+const routeFor=(template,id)=>template.replace('__CASE_ID__',encodeURIComponent(id));
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const humanLabel=v=>({NOT_RUN:'لم نرتب الصورة بعد',INCOMPLETE:'نحتاج معلومة إضافية',REVIEW_REQUIRED:'الصورة جاهزة للمراجعة',COMPLETE:'الصورة مكتملة',Evidence:'معلومة بمصدر',Source:'مصدر المعلومة',Hypothesis:'احتمال يحتاج تأكيدًا',Inference:'استنتاج أولي',Opportunity:'فرصة للتحسين',Unknown:'غير واضح بعد',N_A:'غير متاح',Deferred:'نؤجله إلى أن نتأكد',Actual:'نتيجة فعلية',Fact:'معلومة متحققة'}[String(v)]||v||'—');
 const clientText=v=>String(v??'').replaceAll('SDS-001','جلسة الاكتشاف').replaceAll('Evidence Gate','ما نحتاج نتأكد منه').replaceAll('Decision Readiness','جاهزية القرار').replaceAll('Re-analysis','إعادة النظر').replaceAll('Contradiction','معلومة متعارضة').replaceAll('Baseline','نقطة البداية').replaceAll('Diagnostic Review','مراجعة الصورة').replaceAll('Impact Review','مراجعة التغيّر').replaceAll('Actual','نتيجة فعلية').replaceAll('Fact','معلومة متحققة').replaceAll('Evidence','معلومة بمصدر').replaceAll('Source','مصدر المعلومة').replaceAll('Unknown','غير واضح بعد').replaceAll('Deferred','نؤجله إلى أن نتأكد').replaceAll('N/A','غير متاح');
@@ -138,9 +138,9 @@ function render(d){
   let action='';
   const taskDecision=activeTask&&decisions.find(x=>x.decision_id===activeTask.decision_id);
   if(activeTask&&taskDecision&&taskDecision.phase_label==='P0'&&activeTask.status!=='منجزة'){action=`<button class="btn" onclick="openClientImpact('${activeTask.task_id}')">سجّل القياس وراجع الأثر</button>`}
-  else if(activeTask){action=`<a class="btn" href="/home">افتح خطوة اليوم</a>`}
+  else if(activeTask){action=`<a class="btn" href="${JOURNEY_URLS.home}">افتح خطوة اليوم</a>`}
   else if(activeDecision&&activeDecision.status==='مقترح'){action=clientApprovalForm(activeDecision)}
-  else if(activeDecision){action=`<a class="btn" href="/home">راجع القرار واعتمده</a>`}
+  else if(activeDecision){action=`<a class="btn" href="${JOURNEY_URLS.home}">راجع القرار واعتمده</a>`}
    else if(!scan){action=`${AUTO_SCAN_RETRY?'<div class="deferred">تعذر إكمال الفحص التلقائي. بياناتك محفوظة؛ أعد المحاولة مرة واحدة.</div>':''}<button class="btn" onclick="runAnalysis()">${AUTO_SCAN_RETRY?'أعد تشغيل الفحص':'رتّب المعلومات'}</button><div id="actionError" class="error"></div>`}
    else if(!scanReady&&nextRequest){action=`<div class="meta">التقدم ${progress.completed}/${progress.total}</div><strong>${esc(clientText(nextRequest.label||nextRequest.question))}</strong><input id="evidenceTitle" class="field" aria-label="اكتب المعلومة أو الرقم" placeholder="اكتب المعلومة أو الرقم"><input id="sourceRef" class="field" aria-label="من وين جبتها؟" placeholder="مثال: تقرير مبيعات أو كشف حساب"><button class="btn" onclick="addAndAnalyze()">احفظ وكمل</button><button class="btn" style="margin-top:7px;background:#6E7580" onclick="saveUnknown()">ما عندي هذه المعلومة الآن</button><div id="actionError" class="error"></div>`}
    else if(!scanReady){action=`<div class="deferred">استلمنا المعلومات المطلوبة (${progress.completed}/${progress.total}). تحتاج مراجعة بشرية قبل القرار.</div>`}
@@ -219,17 +219,17 @@ async function savePeriod(){
   if(choice==='yes'&&body.comparison_end>iso(new Date())){box.textContent='المقارنة تحتاج فترة انتهت فعليًا';return}
   if(choice==='yes'&&body.comparison_end>=body.baseline_start){box.textContent='الفترة السابقة لازم تنتهي قبل الفترة الحالية.';return}
   periodSave.disabled=true;box.textContent='';
-  try{const r=await fetch(`/api/cases/${CASE_ID}/diagnostic-baseline`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(!r.ok||!j.success)throw Error(j.message||'تعذر الحفظ');box.style.color='#087e7d';box.textContent=choice==='yes'?'حُفظت الفترة والفترة السابقة.':'حُفظت الفترة كنقطة بداية.'}
+   try{const r=await fetch(routeFor(JOURNEY_URLS.case_baseline_template,CASE_ID),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(!r.ok||!j.success)throw Error(j.message||'تعذر الحفظ');box.style.color='#087e7d';box.textContent=choice==='yes'?'حُفظت الفترة والفترة السابقة.':'حُفظت الفترة كنقطة بداية.'}
   catch(e){box.style.color='#B23A2E';box.textContent=e.message}finally{periodSave.disabled=false}
 }
-async function runAnalysis(){const r=await fetch(`/api/cases/${CASE_ID}/scan`,{method:'POST'}),j=await r.json();if(r.ok&&j.success)location.reload();else document.getElementById('actionError').textContent=j.message||'تعذر ترتيب الصورة.'}
-async function addAndAnalyze(){const title=document.getElementById('evidenceTitle').value.trim(),source=document.getElementById('sourceRef').value.trim(),box=document.getElementById('actionError'),request=((caseData.scan||{}).evidence_requests||[]).find(x=>x.status==='OPEN'||x.status==='PENDING');if(!title||!source){box.textContent='اكتب الرقم أو المعلومة ومصدرها.';return}if(!request){box.textContent='لا يوجد طلب مفتوح الآن.';return}const r=await fetch(`/api/companies/${COMPANY_ID}/evidence`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:CASE_ID,request_key:request.request_key,request_fingerprint:request.fingerprint,asset_id:request.asset_id,title,source_type:'معلومة عميل بمصدر',source_ref:source,evidence_type:'Evidence',confidence:70})}),j=await r.json();if(!r.ok||!j.success){box.textContent=j.message||'لم تغلق المعلومة الطلب: تأكد أنها تخص النقطة الظاهرة وأن مصدرها واضح.';return}location.reload()}
-async function saveUnknown(){const box=document.getElementById('actionError'),request=((caseData.scan||{}).evidence_requests||[]).find(x=>x.status==='OPEN'||x.status==='PENDING');if(!request){box.textContent='لا يوجد طلب دليل حرج مفتوح.';return}const r=await fetch(`/api/companies/${COMPANY_ID}/evidence`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:CASE_ID,unknown:true,request_key:request.request_key,request_fingerprint:request.fingerprint})}),j=await r.json();if(!r.ok||!j.success){box.textContent=j.message||'تعذر تسجيل الإجابة.';return}location.reload()}
-async function buildDecision(){const r=await fetch(`/api/cases/${CASE_ID}/p0-decision`,{method:'POST'}),j=await r.json();if(r.ok&&j.success)location.href='/home';else document.getElementById('actionError').textContent=j.message||'تعذر تجهيز القرار.'}
-fetch(`/api/cases/${CASE_ID}`).then(r=>r.json()).then(j=>{
+async function runAnalysis(){const r=await fetch(routeFor(JOURNEY_URLS.case_scan_template,CASE_ID),{method:'POST'}),j=await r.json();if(r.ok&&j.success)location.reload();else document.getElementById('actionError').textContent=j.message||'تعذر ترتيب الصورة.'}
+async function addAndAnalyze(){const title=document.getElementById('evidenceTitle').value.trim(),source=document.getElementById('sourceRef').value.trim(),box=document.getElementById('actionError'),request=((caseData.scan||{}).evidence_requests||[]).find(x=>x.status==='OPEN'||x.status==='PENDING');if(!title||!source){box.textContent='اكتب الرقم أو المعلومة ومصدرها.';return}if(!request){box.textContent='لا يوجد طلب مفتوح الآن.';return}const r=await fetch(JOURNEY_URLS.company_evidence_api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:CASE_ID,request_key:request.request_key,request_fingerprint:request.fingerprint,asset_id:request.asset_id,title,source_type:'معلومة عميل بمصدر',source_ref:source,evidence_type:'Evidence',confidence:70})}),j=await r.json();if(!r.ok||!j.success){box.textContent=j.message||'لم تغلق المعلومة الطلب: تأكد أنها تخص النقطة الظاهرة وأن مصدرها واضح.';return}location.reload()}
+async function saveUnknown(){const box=document.getElementById('actionError'),request=((caseData.scan||{}).evidence_requests||[]).find(x=>x.status==='OPEN'||x.status==='PENDING');if(!request){box.textContent='لا يوجد طلب دليل حرج مفتوح.';return}const r=await fetch(JOURNEY_URLS.company_evidence_api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:CASE_ID,unknown:true,request_key:request.request_key,request_fingerprint:request.fingerprint})}),j=await r.json();if(!r.ok||!j.success){box.textContent=j.message||'تعذر تسجيل الإجابة.';return}location.reload()}
+async function buildDecision(){const r=await fetch(routeFor(JOURNEY_URLS.case_decision_template,CASE_ID),{method:'POST'}),j=await r.json();if(r.ok&&j.success)location.href=JOURNEY_URLS.home;else document.getElementById('actionError').textContent=j.message||'تعذر تجهيز القرار.'}
+fetch(routeFor(JOURNEY_URLS.case_api_template,CASE_ID)).then(r=>r.json()).then(j=>{
   if(!j.success) throw new Error();
   render(j.data);
-}).catch(()=>{document.getElementById('app').innerHTML='<div class="empty"><p>ما فيه قرار حتى الآن. نكمل من الأولوية الحالية.</p><a class="btn" href="/case/'+encodeURIComponent(CASE_ID)+'/next-step">تابع الخطوة التالية</a><a class="btn secondary" href="/home">ارجع لليوم</a></div>';});
+}).catch(()=>{document.getElementById('app').innerHTML=`<div class="journey-state-panel error"><p>تعذر تجهيز النتيجة الآن. بياناتك لم تتغير.</p><button class="journey-retry" onclick="location.reload()">أعد المحاولة</button> <a class="journey-retry" href="${routeFor(JOURNEY_URLS.case_next_template,CASE_ID)}">تابع الخطوة التالية</a> <a class="journey-retry" href="${JOURNEY_URLS.home}">ارجع لليوم</a></div>`;});
 </script>
 </body>
 </html>
