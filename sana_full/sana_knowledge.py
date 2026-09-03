@@ -1998,7 +1998,7 @@ def create_research_source(db, payload, owner_account_id=None, company_id=None):
             author, publisher, publication_year, language, jurisdiction, summary,
             notes, tags, rights_status, rights_expires_at, review_status,
             is_private, owner_account_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)""",
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)""",
         (
             source_id, title, source_kind, origin, company_id,
             drive_file_id, source_url,

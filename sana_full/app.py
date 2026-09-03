@@ -1111,6 +1111,18 @@ def init_db(force=False):
             conn.execute("ALTER TABLE companies ADD COLUMN social_media_url TEXT")
         if "business_reference_url" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN business_reference_url TEXT")
+        if "source_prompt_last_shown_at" not in companies_cols:
+            conn.execute(
+                "ALTER TABLE companies ADD COLUMN source_prompt_last_shown_at TIMESTAMPTZ"
+            )
+        if "source_prompt_dismissed_at" not in companies_cols:
+            conn.execute(
+                "ALTER TABLE companies ADD COLUMN source_prompt_dismissed_at TIMESTAMPTZ"
+            )
+        if "source_last_confirmed_at" not in companies_cols:
+            conn.execute(
+                "ALTER TABLE companies ADD COLUMN source_last_confirmed_at TIMESTAMPTZ"
+            )
         if "business_description" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN business_description TEXT")
         if "goal_90_days" not in companies_cols:
@@ -1989,6 +2001,7 @@ def case_result(case_id):
         return render_template(
             "02-case-workspace-client.html",
             case_id=case_id,
+            auto_scan_retry=request.args.get("scan") in {"failed", "required"},
             **p0_template_context(),
         )
     return render_template(
@@ -2021,6 +2034,9 @@ def business_passport():
         start = _company_start_redirect(account)
         if start != url_for("business_passport") and start != url_for("ceo_home"):
             return redirect(start)
+        scan_redirect = _client_scan_result_redirect(account["company_id"])
+        if scan_redirect:
+            return scan_redirect
     return render_template("03-business-passport.html", **p0_template_context())
 
 
@@ -2686,9 +2702,15 @@ def discovery_save():
             "SELECT case_id FROM cases WHERE company_id=? ORDER BY opened_at ASC LIMIT 1",
             (company_id,)
         ).fetchone()
+        scan_state = (
+            _run_initial_case_scan(db, company_id, case["case_id"])
+            if case else {"has_run": False, "status": "NOT_RUN"}
+        )
         return jsonify({"success": True, "data": {
             "case_id": case["case_id"] if case else None,
-            "already_done": True
+            "already_done": True,
+            "scan_has_run": scan_state["has_run"],
+            "scan_status": scan_state["status"],
         }})
 
     q1    = (body.get("q1")      or "").strip()
@@ -2771,6 +2793,10 @@ def discovery_save():
         db, company_id, case_id=case_id,
         answers={**body, "q7": q7}, owner_id=(current_account() or {}).get("account_id"),
     )
+
+    # الشركات القديمة قد تسبق إنشاء الأصول الافتراضية. أكمل الأنواع الناقصة
+    # قبل ربط إجابات Discovery وتشغيل أول Scan.
+    _create_company_default_assets(db, company_id)
 
     # خريطة الأصول حسب النوع (5 أصول معتمدة فقط)
     assets_by_type = {
@@ -2929,6 +2955,7 @@ def discovery_save():
     # تحديث علامة اكتمال الجلسة
     db.execute("UPDATE companies SET sds_done=1 WHERE company_id=?", (company_id,))
     db.commit()
+    scan_state = _run_initial_case_scan(db, company_id, case_id)
 
     # إرجاع بيانات الشركة لشاشة الجواز (Company Passport) بعد الجلسة
     company_row = db.execute(
@@ -2943,6 +2970,8 @@ def discovery_save():
         "main_goal":      q1 or None,
         "top_asset":      q3 or None,
         "declared_problem": q2 or None,
+        "scan_has_run":   scan_state["has_run"],
+        "scan_status":    scan_state["status"],
     }})
 
 
@@ -3074,14 +3103,31 @@ def _new_company_identity(db, name):
     raise RuntimeError("COMPANY_CODE_GENERATION_FAILED")
 
 
+_DEFAULT_COMPANY_ASSETS = (
+    ("Knowledge", "أصل المعرفة"),
+    ("Operations", "أصل التشغيل"),
+    ("Brand", "أصل البراند"),
+    ("Data", "أصل البيانات"),
+    ("Independence", "أصل الاستقلال"),
+)
+
+
 def _create_company_default_assets(db, company_id):
-    for asset_type, asset_name in (
-        ("Knowledge", "أصل المعرفة"),
-        ("Operations", "أصل التشغيل"),
-        ("Brand", "أصل البراند"),
-        ("Data", "أصل البيانات"),
-        ("Independence", "أصل الاستقلال"),
-    ):
+    """أكمل أنواع الأصول الافتراضية الناقصة دون إنشاء صفوف مكررة."""
+    db.execute(
+        "SELECT pg_advisory_xact_lock(hashtext(?))",
+        (f"default-company-assets:{company_id}",),
+    )
+    existing_types = {
+        row["asset_type"]
+        for row in db.execute(
+            "SELECT asset_type FROM assets WHERE company_id=?",
+            (company_id,),
+        ).fetchall()
+    }
+    for asset_type, asset_name in _DEFAULT_COMPANY_ASSETS:
+        if asset_type in existing_types:
+            continue
         db.execute(
             """INSERT INTO assets
                (asset_id,company_id,asset_type,asset_name,current_score,
@@ -3092,6 +3138,34 @@ def _create_company_default_assets(db, company_id):
                 company_id, asset_type, asset_name, 0, 100, "غير مقيَّم",
             ),
         )
+
+
+def _run_initial_case_scan(db, company_id, case_id):
+    """شغّل أول Scan فقط؛ فشل الفحص لا يلغي بيانات Discovery المحفوظة."""
+    try:
+        _create_company_default_assets(db, company_id)
+        db.commit()
+        existing = db.execute(
+            """SELECT status FROM scan_runs
+               WHERE company_id=? AND case_id=?
+               ORDER BY created_at DESC, scan_id DESC LIMIT 1""",
+            (company_id, case_id),
+        ).fetchone()
+        if existing:
+            return {"has_run": True, "status": existing["status"]}
+
+        from sana_scan import run_scan
+        result = run_scan(db, case_id)
+        return {
+            "has_run": bool(result.get("scan_id")),
+            "status": result.get("status") or "INCOMPLETE",
+        }
+    except Exception:
+        db.rollback()
+        app.logger.exception(
+            "Initial Sana Scan failed after Discovery for case %s", case_id,
+        )
+        return {"has_run": False, "status": "NOT_RUN"}
 
 
 _BILLING_NOTIFICATION_TYPES = {
@@ -5905,6 +5979,136 @@ def case_diagnostic_baseline(case_id):
     return jsonify({"success": True, "data": data})
 
 
+_COMPANY_SOURCE_TYPES = {"website", "platform", "other"}
+_COMPANY_SOCIAL_HOSTS = (
+    "instagram.com", "linkedin.com", "tiktok.com", "facebook.com",
+    "x.com", "twitter.com", "youtube.com", "snapchat.com",
+    "g.page", "maps.app.goo.gl", "google.com",
+)
+
+
+def _company_source_datetime(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(
+            tzinfo=None
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _infer_company_source_type(source_url):
+    parsed = urlparse(str(source_url or "").strip())
+    host = (parsed.hostname or "").lower()
+    path = (parsed.path or "").lower()
+    if any(host == item or host.endswith("." + item) for item in _COMPANY_SOCIAL_HOSTS):
+        if host.endswith("google.com") and "/maps" not in path:
+            return "website"
+        return "platform"
+    return "website"
+
+
+def _normalize_company_source_url(value):
+    candidate = str(value or "").strip()
+    if candidate and "://" not in candidate:
+        candidate = "https://" + candidate
+    parsed = urlparse(candidate)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("INVALID_SOURCE_URL")
+    return candidate
+
+
+def _company_source_reminder_state(db, company_id, now=None):
+    """حالة اختيارية مستقلة عن Discovery وScan وقرار الشركة."""
+    from sana_knowledge import ensure_schema as ensure_knowledge_schema
+    ensure_knowledge_schema(db)
+    company = db.execute(
+        """SELECT sds_done,created_at,website_url,social_media_url,
+                  business_reference_url,source_prompt_last_shown_at,
+                  source_prompt_dismissed_at,source_last_confirmed_at
+           FROM companies WHERE company_id=?""",
+        (company_id,),
+    ).fetchone()
+    if not company or not company["sds_done"]:
+        return {"show": False, "kind": None, "missing_types": []}
+
+    source_types = set()
+    if str(company["website_url"] or "").strip():
+        source_types.add("website")
+    if str(company["social_media_url"] or "").strip():
+        source_types.add("platform")
+    if str(company["business_reference_url"] or "").strip():
+        source_types.add("other")
+
+    source_rows = db.execute(
+        """SELECT origin,source_url,tags,created_at,updated_at
+           FROM research_sources
+           WHERE company_id=? AND review_status<>'archived'""",
+        (company_id,),
+    ).fetchall()
+    source_times = []
+    for row in source_rows:
+        if row["origin"] == "upload":
+            source_types.add("file")
+        elif row["source_url"]:
+            tag_match = re.search(
+                r"(?:^|[|,])company-source:(website|platform|other)(?:$|[|,])",
+                str(row["tags"] or ""),
+            )
+            source_types.add(
+                tag_match.group(1)
+                if tag_match else _infer_company_source_type(row["source_url"])
+            )
+        source_times.extend(filter(None, (
+            _company_source_datetime(row["updated_at"]),
+            _company_source_datetime(row["created_at"]),
+        )))
+
+    missing_types = [
+        source_type for source_type in ("website", "platform", "file")
+        if source_type not in source_types
+    ]
+    current_time = (now or datetime.utcnow()).replace(tzinfo=None)
+    last_prompt = max(filter(None, (
+        _company_source_datetime(company["source_prompt_last_shown_at"]),
+        _company_source_datetime(company["source_prompt_dismissed_at"]),
+    )), default=None)
+    in_cooldown = bool(
+        last_prompt and current_time - last_prompt < timedelta(days=30)
+    )
+    if missing_types:
+        return {
+            "show": not in_cooldown,
+            "kind": "missing",
+            "missing_types": missing_types,
+            "content_retrieved": False,
+        }
+
+    confirmation_times = source_times + list(filter(None, (
+        _company_source_datetime(company["source_last_confirmed_at"]),
+        _company_source_datetime(company["created_at"]),
+    )))
+    latest_confirmation = max(confirmation_times, default=None)
+    needs_confirmation = bool(
+        latest_confirmation
+        and current_time - latest_confirmation > timedelta(days=90)
+    )
+    return {
+        "show": bool(needs_confirmation and not in_cooldown),
+        "kind": "freshness" if needs_confirmation else None,
+        "missing_types": [],
+        "content_retrieved": False,
+    }
+
+
 @app.route("/api/companies")
 def companies_list():
     """قائمة الشركات — مقيَّدة بمفتاح المشرف فقط (P0-1: إغلاق التسريب)."""
@@ -5972,9 +6176,192 @@ def company_summary(company_id):
             "tasks": [dict(t) for t in tasks],
             "evidence_count": len(evidence),
             "company_memory": memory,
+            "source_reminder": _company_source_reminder_state(db, company_id),
         },
         "meta": {"generated_at": datetime.utcnow().isoformat() + "Z"}
     })
+
+
+@app.route("/api/companies/<company_id>/source-reminder", methods=["POST"])
+def company_source_reminder_action(company_id):
+    account = current_account()
+    if not account or not account.get("company_id"):
+        return jsonify({"success": False, "error": "ACCOUNT_REQUIRED"}), 401
+    body = request.get_json(silent=True) or {}
+    action = str(body.get("action") or "").strip()
+    if action not in {"shown", "later", "confirmed"}:
+        return jsonify({"success": False, "error": "INVALID_ACTION"}), 400
+    db = get_db()
+    if action == "shown":
+        db.execute(
+            """UPDATE companies SET source_prompt_last_shown_at=now()
+               WHERE company_id=?""",
+            (company_id,),
+        )
+    elif action == "later":
+        db.execute(
+            """UPDATE companies
+               SET source_prompt_last_shown_at=now(),
+                   source_prompt_dismissed_at=now()
+               WHERE company_id=?""",
+            (company_id,),
+        )
+    else:
+        db.execute(
+            """UPDATE companies
+               SET source_last_confirmed_at=now(),
+                   source_prompt_last_shown_at=now()
+               WHERE company_id=?""",
+            (company_id,),
+        )
+    db.commit()
+    return jsonify({
+        "success": True,
+        "data": _company_source_reminder_state(db, company_id),
+    })
+
+
+@app.route("/api/companies/<company_id>/source-reminder/url", methods=["POST"])
+def company_source_reminder_url(company_id):
+    from sana_knowledge import create_research_source
+    account = current_account()
+    if not account or not account.get("company_id"):
+        return jsonify({"success": False, "error": "ACCOUNT_REQUIRED"}), 401
+    body = request.get_json(silent=True) or {}
+    try:
+        source_url = _normalize_company_source_url(body.get("url"))
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    source_type = str(body.get("source_type") or "").strip()
+    if not source_type:
+        source_type = _infer_company_source_type(source_url)
+    if source_type not in _COMPANY_SOURCE_TYPES:
+        return jsonify({"success": False, "error": "INVALID_SOURCE_TYPE"}), 400
+
+    db = get_db()
+    existing = db.execute(
+        """SELECT research_source_id FROM research_sources
+           WHERE company_id=? AND lower(trim(source_url))=lower(trim(?))
+           LIMIT 1""",
+        (company_id, source_url),
+    ).fetchone()
+    column = {
+        "website": "website_url",
+        "platform": "social_media_url",
+        "other": "business_reference_url",
+    }[source_type]
+    db.execute(
+        f"""UPDATE companies SET {column}=CASE
+              WHEN {column} IS NULL OR trim({column})='' THEN ?
+              ELSE {column} END
+            WHERE company_id=?""",
+        (source_url, company_id),
+    )
+    if existing:
+        db.commit()
+        return jsonify({
+            "success": True,
+            "data": {
+                "research_source_id": existing["research_source_id"],
+                "source_type": source_type,
+                "duplicate": True,
+                "reminder": _company_source_reminder_state(db, company_id),
+            },
+        })
+    try:
+        result = create_research_source(
+            db,
+            {
+                "title": {
+                    "website": "موقع الشركة",
+                    "platform": "منصة الشركة",
+                    "other": "مرجع الشركة",
+                }[source_type],
+                "source_kind": "summary",
+                "origin": "url",
+                "source_url": source_url,
+                "rights_status": "pending",
+                "tags": f"company-source:{source_type}",
+                "notes": (
+                    "رابط قدمته الشركة كسياق فقط؛ لم يُفتح أو يُفحص، "
+                    "ولا يتحول إلى Fact أو Finding قبل retrieval وتحقق فعلي."
+                ),
+            },
+            owner_account_id=account["account_id"],
+            company_id=company_id,
+        )
+    except Exception:
+        db.rollback()
+        return jsonify({"success": False, "error": "SOURCE_CREATE_FAILED"}), 400
+    if not result.get("success"):
+        db.rollback()
+        return jsonify(result), 400
+    return jsonify({
+        "success": True,
+        "data": {
+            **result,
+            "source_type": source_type,
+            "reminder": _company_source_reminder_state(db, company_id),
+        },
+    }), 201
+
+
+@app.route("/api/companies/<company_id>/source-reminder/upload", methods=["POST"])
+def company_source_reminder_upload(company_id):
+    from sana_knowledge import create_uploaded_research_source
+    account = current_account()
+    if not account or not account.get("company_id"):
+        return jsonify({"success": False, "error": "ACCOUNT_REQUIRED"}), 401
+    uploaded = request.files.get("file")
+    if not uploaded:
+        return jsonify({"success": False, "error": "FILE_REQUIRED"}), 400
+    db = get_db()
+    try:
+        result = create_uploaded_research_source(
+            db,
+            filename=uploaded.filename,
+            mime_type=uploaded.mimetype,
+            content=uploaded.read(),
+            payload={
+                "title": uploaded.filename,
+                "source_kind": "file",
+                "rights_status": "pending",
+                "knowledge_scope": "private",
+                "tags": "company-source:file",
+                "notes": (
+                    "ملف قدمته الشركة إلى صندوق المصادر الخاص؛ يبقى في قيد "
+                    "المراجعة ولا يتحول تلقائيًا إلى Fact أو Finding."
+                ),
+                "ingestion_event": "company_source_reminder_upload",
+            },
+            owner_account_id=account["account_id"],
+            company_id=company_id,
+        )
+    except Exception:
+        db.rollback()
+        return jsonify({"success": False, "error": "FILE_UPLOAD_FAILED"}), 400
+    if not result.get("success"):
+        if (
+            result.get("error") == "DUPLICATE_FILE"
+            and result.get("research_source_id")
+        ):
+            return jsonify({
+                "success": True,
+                "data": {
+                    **result,
+                    "duplicate": True,
+                    "reminder": _company_source_reminder_state(db, company_id),
+                },
+            })
+        return jsonify(result), 409 if result.get("error") == "DUPLICATE_FILE" else 400
+    return jsonify({
+        "success": True,
+        "data": {
+            **result,
+            "reminder": _company_source_reminder_state(db, company_id),
+        },
+    }), 201
+
 
 @app.route("/api/companies/<company_id>/memory", methods=["GET", "POST"])
 def company_memory_api(company_id):
@@ -6931,6 +7318,36 @@ def _scan_journey_details(
         "case_url": case_url,
     }
 
+
+def _client_scan_result_redirect(company_id):
+    """لا تعرض الجواز أو التقرير للعميل قبل وجود أول نتيجة Scan."""
+    account = current_account()
+    if (
+        not account
+        or is_admin_preview()
+        or _admin_role() in SYSTEM_ADMIN_ROLES
+    ):
+        return None
+    db = get_db()
+    case = db.execute(
+        """SELECT case_id FROM cases WHERE company_id=?
+           ORDER BY opened_at DESC, case_id DESC LIMIT 1""",
+        (company_id,),
+    ).fetchone()
+    if not case:
+        return redirect(url_for("ceo_home"))
+    scan = db.execute(
+        """SELECT 1 FROM scan_runs
+           WHERE company_id=? AND case_id=? LIMIT 1""",
+        (company_id, case["case_id"]),
+    ).fetchone()
+    if scan:
+        return None
+    return redirect(url_for(
+        "case_result", case_id=case["case_id"], scan="required",
+    ))
+
+
 def _client_confidence_label(score):
     """صياغة ثقة مفهومة للعميل، مع الحفاظ على الصفر كقيمة حقيقية."""
     if score is None:
@@ -7420,6 +7837,9 @@ def passport_report_text(company_id):
     guard = enforce_entity_company_scope(company_id)
     if guard:
         return guard
+    scan_redirect = _client_scan_result_redirect(company_id)
+    if scan_redirect:
+        return scan_redirect
     company = context["company"]
     review = context["diagnostic_review"]
     journey = review["journey"]
@@ -8135,6 +8555,9 @@ def scan_report_html(company_id):
                 "error": "EXPERT_SUMMARY_NOT_AVAILABLE",
             }), 404
         return render_template("25-expert-review-summary.html", summary=summary)
+    scan_redirect = _client_scan_result_redirect(company_id)
+    if scan_redirect:
+        return scan_redirect
     ctx = _build_passport_context(company_id)
     from flask_wtf.csrf import generate_csrf
     ctx["csrf_value"] = generate_csrf()
@@ -8234,6 +8657,10 @@ def passport_report_pdf(company_id):
         return guard
 
     expert_summary = request.args.get("view") == "expert-summary"
+    if not expert_summary:
+        scan_redirect = _client_scan_result_redirect(company_id)
+        if scan_redirect:
+            return scan_redirect
     if expert_summary:
         from sana_human_review import summary_for_review
         case_id = (request.args.get("case_id") or "").strip()
