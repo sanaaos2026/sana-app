@@ -343,6 +343,101 @@ class CompanyMemoryTest(unittest.TestCase):
                     f"{template_path.name} mutates through fetch without the shared guard",
                 )
 
+    def test_shared_csrf_fetch_guard_runs_in_browser(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("Playwright is not installed")
+
+        template = (
+            Path(sana_app.app.template_folder) / "_csrf-fetch.html"
+        ).read_text(encoding="utf-8")
+        token = "browser-csrf-token"
+        html = template.replace(
+            "{{ csrf_value if csrf_value is defined else csrf_token() }}", token
+        )
+        captured = []
+
+        with sync_playwright() as playwright:
+            try:
+                browser = playwright.chromium.launch(headless=True)
+            except Exception as exc:
+                self.skipTest(f"Playwright Chromium is unavailable: {exc}")
+            page = browser.new_page()
+
+            def handle_route(route):
+                request = route.request
+                if request.resource_type == "document":
+                    route.fulfill(status=200, content_type="text/html", body=html)
+                    return
+                captured.append({
+                    "url": request.url,
+                    "method": request.method,
+                    "headers": request.headers,
+                })
+                if request.url.endswith("/expired"):
+                    route.fulfill(
+                        status=401,
+                        content_type="application/json",
+                        body=json.dumps({"redirect": "/signed-out"}),
+                    )
+                else:
+                    route.fulfill(
+                        status=200, content_type="application/json", body="{}"
+                    )
+
+            page.route("**/*", handle_route)
+            page.goto("http://sana.test/")
+            page.evaluate(
+                """async () => {
+                    await fetch("/post", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"}
+                    });
+                    await fetch("/put", {
+                        method: "PUT",
+                        headers: new Headers({"X-Request-Kind": "headers"})
+                    });
+                    await fetch(new Request("/patch", {
+                        method: "PATCH",
+                        headers: {"X-Request-Kind": "request"}
+                    }));
+                    await fetch("/delete", {method: "DELETE"});
+                    await fetch("https://external.test/post", {method: "POST"});
+                    await fetch("/expired", {method: "POST"});
+                }"""
+            )
+            page.wait_for_url("http://sana.test/signed-out")
+            browser.close()
+
+        by_url = {request["url"]: request for request in captured}
+        for path, method in (
+            ("/post", "POST"),
+            ("/put", "PUT"),
+            ("/patch", "PATCH"),
+            ("/delete", "DELETE"),
+            ("/expired", "POST"),
+        ):
+            request = by_url[f"http://sana.test{path}"]
+            self.assertEqual(method, request["method"])
+            self.assertEqual(token, request["headers"].get("x-csrftoken"))
+        self.assertEqual(
+            "application/json",
+            by_url["http://sana.test/post"]["headers"].get("content-type"),
+        )
+        self.assertEqual(
+            "headers",
+            by_url["http://sana.test/put"]["headers"].get("x-request-kind"),
+        )
+        self.assertEqual(
+            "request",
+            by_url["http://sana.test/patch"]["headers"].get("x-request-kind"),
+        )
+        self.assertNotIn(
+            "x-csrftoken",
+            by_url["https://external.test/post"]["headers"],
+        )
+
     def test_admin_expert_creation_keeps_json_request_contract(self):
         template = (
             Path(sana_app.app.template_folder) / "admin-experts.html"
