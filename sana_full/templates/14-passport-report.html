@@ -177,10 +177,11 @@
   .swot-item:last-child{border-bottom:0}
   .certainty{display:block;color:var(--muted);font-size:10.5px;margin-top:2px}
   .compact-review{margin:10px 28px 0;padding:12px;border:1px solid var(--line);background:#fff;border-radius:9px}
-  .executive-stack{display:grid;gap:12px}
-  .executive-block{border-bottom:1px solid var(--line);padding-bottom:12px}
-  .executive-block:last-child{border-bottom:0;padding-bottom:0}
-  .executive-block h2{font-family:'Cairo';font-size:13px;color:var(--muted);margin-bottom:4px}
+  .executive-intro{font-size:13px;color:var(--muted);line-height:1.8;margin-bottom:14px}
+  .executive-stack{display:grid;gap:10px}
+  .executive-block{border:1px solid var(--line);border-radius:12px;padding:16px 17px;background:#fff}
+  .executive-block:first-child{background:#F8FBFC;border-color:#D9EEEE}
+  .executive-block h2{font-family:'Cairo';font-size:15px;color:var(--navy);margin-bottom:7px}
   .executive-block p{font-size:14px;line-height:1.8;color:var(--navy)}
   .two-lines{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .signal-list,.executive-missing{padding-right:18px;font-size:13px;color:var(--ink)}
@@ -239,6 +240,25 @@
 {% include '_customer-journey-styles.html' %}
 </head>
 <body class="report-{{ report_view }}" data-report-tier="{{ scan_report_tier }}">
+{% macro clean_report_text(value) -%}
+  {{ value|string
+    |replace('[decision_style] ', '')
+    |replace('SDS-001', 'جلسة التعريف')
+    |replace('Actual', 'نتيجة فعلية')
+    |replace('Evidence', 'معلومة بمصدر')
+    |replace('Discovery', 'جلسة التعريف') }}
+{%- endmacro %}
+{% macro missing_as_question(value) -%}
+  {% set text = value|string %}
+  {% set topic = text.split(':')[0] if ':' in text else 'هذه النقطة' %}
+  {% if 'Actual موثّق' in text and 'Evidence مستقل' in text %}
+    هل لديك رقم أو نتيجة حديثة من تقرير أو سجل تؤكد ما شاركته عن {{ topic }}؟
+  {% elif 'إجابة SDS-001' in text %}
+    هل يمكنك توضيح {{ topic }} من واقع شركتك؟
+  {% else %}
+    {{ clean_report_text(text) }}
+  {% endif %}
+{%- endmacro %}
 {% set journey_step = 'report' %}
 {% include '_customer-journey-nav.html' %}
 <div class="wrap" data-testid="executive-report">
@@ -324,44 +344,45 @@
   <!-- الملخص التنفيذي -->
   {% if report_view == 'main' %}
   <section data-testid="executive-report-summary">
+    <p class="executive-intro">هذه خلاصة ما فهمناه حتى الآن، بصيغة بسيطة تساعدك تعرف أين تركز وما الذي نحتاجه قبل القرار.</p>
     <div class="executive-stack">
       <div class="executive-block">
-        <h2>الصورة الآن</h2>
-        <p class="two-lines">{% if scan_case %}{{ scan_case.declared_problem or scan_case.case_title }}{% if scan_case.real_question %} — {{ scan_case.real_question }}{% endif %}{% else %}ابدأ بتوصيف القضية حتى تتكوّن صورة قابلة للمراجعة.{% endif %}</p>
-        <a class="local-action" href="{{ report_problem_url }}">زد الوضوح</a>
+        <h2>ما الذي يبدو أنه يحدث الآن؟</h2>
+        <p class="two-lines">{% if scan_case %}{{ clean_report_text(scan_case.declared_problem or scan_case.case_title) }}{% if scan_case.real_question %} — {{ clean_report_text(scan_case.real_question) }}{% endif %}{% else %}ابدأ بوصف ما يحدث في شركتك حتى نفهم الصورة معًا.{% endif %}</p>
+        <a class="local-action" href="{{ report_problem_url }}">عدّل وصف المشكلة</a>
       </div>
       {% if scan_bottleneck or scan_opportunity %}
       <div class="executive-block">
-        <h2>أهم اختناق / أولوية</h2>
-        <p class="two-lines">{{ (scan_bottleneck or scan_opportunity).statement }}</p>
-        <a class="local-action" href="{{ adaptive_questions_url }}">كمّل الصورة</a>
+        <h2>ما الشيء الأهم الذي يحتاج انتباهك أولًا؟</h2>
+        <p class="two-lines">{{ clean_report_text((scan_bottleneck or scan_opportunity).statement) }}</p>
+        <a class="local-action" href="{{ adaptive_questions_url }}">جاوب عن أسئلة قصيرة</a>
       </div>
       {% endif %}
       {% if scan_executive_signals %}
       <div class="executive-block">
-        <h2>لماذا؟</h2>
+        <h2>ما الذي جعلنا نصل إلى هذا الفهم؟</h2>
         <ul class="signal-list">
-          {% for signal in scan_executive_signals %}<li>{{ signal.statement }}</li>{% endfor %}
+          {% for signal in scan_executive_signals %}<li>{{ clean_report_text(signal.statement) }}</li>{% endfor %}
         </ul>
       </div>
       {% endif %}
       {% if scan_client_missing_evidence %}
       <div class="executive-block">
-        <h2>ما الذي ما زال ناقصًا؟</h2>
+        <h2>ما الذي نحتاج معرفته قبل أن نوصي بخطوة؟</h2>
         <ul class="executive-missing">
-          {% for item in scan_client_missing_evidence[:2] %}<li>{{ item }}</li>{% endfor %}
+          {% for item in scan_client_missing_evidence[:2] %}<li>{{ missing_as_question(item) }}</li>{% endfor %}
         </ul>
       </div>
       {% endif %}
       {% if scan_decision_ready and scan_current_decision %}
       <div class="executive-block">
-        <h2>القرار الآن</h2>
-        <p class="two-lines">{{ scan_current_decision.title or scan_current_decision.statement }}</p>
+        <h2>ما القرار المقترح الآن؟</h2>
+        <p class="two-lines">{{ clean_report_text(scan_current_decision.title or scan_current_decision.statement) }}</p>
         <a class="local-action" href="{{ report_decision_url }}">ابدأ التنفيذ</a>
       </div>
       {% if scan_next_action %}
       <div class="executive-block">
-        <h2>الخطوة التالية</h2>
+        <h2>ما أول خطوة بعد القرار؟</h2>
         <p><b>{{ scan_next_action.task }}</b>{% if scan_next_action.owner %} · المسؤول: {{ scan_next_action.owner }}{% endif %}{% if scan_next_action.due_date %} · الموعد: {{ scan_next_action.due_date }}{% endif %}{% if scan_next_action.kpi %} · المقياس: {{ scan_next_action.kpi }}{% endif %}</p>
       </div>
       {% endif %}

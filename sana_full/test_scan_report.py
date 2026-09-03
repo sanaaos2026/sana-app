@@ -188,7 +188,7 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         html = "\n".join((main_html, plan_html, details_html))
         for required_text in (
             "تقرير Sana Scan التنفيذي",
-            "أهم اختناق / أولوية",
+            "ما الشيء الأهم الذي يحتاج انتباهك أولًا؟",
             "نسبة العروض المعتمدة دون تدخل المؤسس",
         ):
             self.assertIn(required_text, main_html)
