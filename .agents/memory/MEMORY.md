@@ -33,3 +33,4 @@
 - [Billing test schema cleanup](billing-test-schema-cleanup.md) — PostgreSQL has no schema creation timestamp; auto-delete only timestamped Sana test names with no active session.
 - [Sana P0 production source](sana-p0-production-source.md) — Replit Production is the sole P0 runtime; GitHub is a non-blocking backup mirror and Railway stays inactive.
 - [Sana company memory](sana-company-memory.md) — company memory is append-only and private; only fresh verified versions become current, while conflicts stay reviewable.
+- [Sana asset score separation](sana-asset-score-separation.md) — self-reports improve completeness, not strength; asset-score changes require traceable verified evidence or measured impact.

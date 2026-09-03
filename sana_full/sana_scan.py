@@ -494,7 +494,7 @@ def _asset_sources(asset, sources):
 
 
 def _score_asset(asset, sources):
-    """درجة شفافة؛ لا رقم عند غياب SDS + دليل مستقل/Fact."""
+    """افصل القوة الفعلية عن الثقة واكتمال المعلومات."""
     if not asset.get("asset_id"):
         return {
             "asset_id": None,
@@ -507,9 +507,33 @@ def _score_asset(asset, sources):
             "missing_evidence": [asset["integrity_issue"]],
             "source_ids": [],
             "components": [],
+            "asset_score": {
+                "value": None, "change": 0, "source_ids": [],
+                "reason": "لا يوجد أصل قانوني واحد لهذا المحور.",
+            },
+            "evidence_confidence": {
+                "score": 0, "source_ids": [],
+                "reason": "لا توجد معلومات مرتبطة بأصل قانوني.",
+            },
+            "information_completeness": {
+                "score": 0, "source_ids": [],
+                "reason": "صورة المحور غير مكتملة.",
+            },
         }
     direct = _asset_sources(asset, sources)
     discovery = [item for item in direct if _is_discovery(item)]
+    adaptive_claims = [
+        item for item in direct
+        if str(item.get("source_ref") or "").startswith("SDS-002:")
+        and item.get("source_category") == "SELF_REPORTED"
+    ]
+    sourced_unverified = [
+        item for item in direct
+        if item.get("source_category") not in {"SELF_REPORTED", "CASE", "UNKNOWN"}
+        and item.get("verification_status") == "UNVERIFIED"
+        and str(item.get("source_ref") or "").strip()
+        and source_is_fresh(item)
+    ]
     independent_evidence = [
         item for item in direct
         if item["classification"] == "Evidence"
@@ -527,6 +551,34 @@ def _score_asset(asset, sources):
         and source_is_fresh(item)
     ]
     corroborating = independent_evidence + facts
+    completeness_components = [
+        (25, discovery, "إجابة Discovery مرتبطة بالمحور"),
+        (20, adaptive_claims, "إجابة تكيفية جديدة"),
+        (20, sourced_unverified, "معلومة ذات مصدر لم تُراجع بعد"),
+        (35, corroborating, "معلومة موثقة وحديثة"),
+    ]
+    completeness_score = min(
+        100,
+        sum(points for points, items, _ in completeness_components if items),
+    )
+    completeness_source_ids = list(dict.fromkeys(
+        item["source_id"]
+        for _, items, _ in completeness_components
+        for item in items
+    ))
+    confidence_score = min(
+        100,
+        (20 if discovery else 0)
+        + min(10, 5 * len(adaptive_claims))
+        + min(25, 15 * len(sourced_unverified))
+        + min(60, 30 * len(corroborating)),
+    )
+    confidence_source_ids = list(dict.fromkeys(
+        item["source_id"] for item in (
+            discovery + adaptive_claims + sourced_unverified + corroborating
+        )
+    ))
+    recorded_score = max(0, min(100, int(asset.get("current_score") or 0)))
     missing = []
     if not discovery:
         missing.append("إجابة SDS-001 مرتبطة بهذا الأصل")
@@ -544,6 +596,29 @@ def _score_asset(asset, sources):
             "missing_evidence": missing,
             "source_ids": [item["source_id"] for item in direct],
             "components": [],
+            "asset_score": {
+                "value": recorded_score,
+                "baseline_value": recorded_score,
+                "change": 0,
+                "source_ids": [],
+                "reason": (
+                    "لم تتغير قوة الأصل؛ المعلومات الحالية غير موثقة بما يكفي."
+                ),
+            },
+            "evidence_confidence": {
+                "score": confidence_score,
+                "source_ids": confidence_source_ids,
+                "reason": (
+                    "الإفادة الذاتية تضيف ثقة محدودة، ولا تعادل Evidence موثقًا."
+                ),
+            },
+            "information_completeness": {
+                "score": completeness_score,
+                "source_ids": completeness_source_ids,
+                "reason": (
+                    "يقيس مقدار ما عُرف عن المحور، ولا يساوي قوة الأصل."
+                ),
+            },
         }
 
     risk_source_ids = []
@@ -556,30 +631,20 @@ def _score_asset(asset, sources):
     fact_ids = [item["source_id"] for item in facts]
     evidence_ids = [item["source_id"] for item in independent_evidence]
     risk_source_ids = list(dict.fromkeys(risk_source_ids))
-    components = [
-        {
-            "label": "إجابة SDS-001 مرتبطة بالمحور",
-            "points": 40,
-            "source_ids": [item["source_id"] for item in discovery],
-        },
-        {
-            "label": "Evidence مستقل قابل للتتبع",
-            "points": 30 if independent_evidence else 0,
-            "source_ids": evidence_ids,
-        },
-        {
-            "label": "حقائق موثقة",
-            "points": 30 if fact_ids else 0,
-            "source_ids": fact_ids,
-        },
-    ]
-    if risk_source_ids:
-        components.append({
-            "label": "إشارات اختناق صريحة",
-            "points": -min(40, 20 * len(set(risk_source_ids))),
-            "source_ids": list(dict.fromkeys(risk_source_ids)),
-        })
-    score = max(0, min(100, sum(component["points"] for component in components)))
+    verified_ids = {item["source_id"] for item in corroborating}
+    verified_risk_ids = sorted(verified_ids & set(risk_source_ids))
+    verified_support_ids = sorted(verified_ids - set(verified_risk_ids))
+    score_delta = (
+        min(4, 2 * len(verified_support_ids))
+        - min(4, 2 * len(verified_risk_ids))
+    )
+    score = max(0, min(100, recorded_score + score_delta))
+    score_sources = verified_support_ids + verified_risk_ids
+    components = [{
+        "label": "تعديل محدود بسبب معلومات موثقة",
+        "points": score_delta,
+        "source_ids": score_sources,
+    }] if score_delta else []
     return {
         "asset_id": asset["asset_id"],
         "asset_type": asset["asset_type"],
@@ -587,12 +652,42 @@ def _score_asset(asset, sources):
         "status": "COMPLETE",
         "score": score,
         "score_label": f"{score}/100",
-        "explanation": "الدرجة هي مجموع المكونات الظاهرة أدناه؛ ليست تقييمًا ماليًا.",
+        "explanation": (
+            "قوة الأصل تبدأ من الدرجة التشغيلية المسجلة، ولا تتغير هنا إلا "
+            "بتعديل محدود من Evidence موثق؛ ليست تقييمًا ماليًا."
+        ),
         "missing_evidence": [],
         "source_ids": list(dict.fromkeys(
             [item["source_id"] for item in discovery] + evidence_ids + fact_ids
         )),
         "components": components,
+        "asset_score": {
+            "value": score,
+            "baseline_value": recorded_score,
+            "change": score_delta,
+            "source_ids": score_sources,
+            "reason": (
+                "تعديل محدود مرتبط حصريًا بمعلومات موثقة وحديثة: "
+                + "، ".join(score_sources)
+                if score_delta
+                else "لا توجد نتيجة موثقة تسمح بتغيير قوة الأصل."
+            ),
+        },
+        "evidence_confidence": {
+            "score": confidence_score,
+            "source_ids": confidence_source_ids,
+            "reason": (
+                "الإفادة الذاتية تضيف ثقة محدودة؛ المصدر الأقوى والمراجعة "
+                "الموثقة يرفعان الثقة بدرجة أكبر."
+            ),
+        },
+        "information_completeness": {
+            "score": completeness_score,
+            "source_ids": completeness_source_ids,
+            "reason": (
+                "يقيس مقدار ما عُرف عن المحور، ولا يساوي قوة الأصل."
+            ),
+        },
     }
 
 
@@ -834,7 +929,7 @@ def run_scan(db, case_id, evidence_response=None):
         return None
     company = db.execute("SELECT * FROM companies WHERE company_id=?", (case["company_id"],)).fetchone()
     asset_rows = db.execute(
-        """SELECT asset_id, asset_type, asset_name FROM assets
+        """SELECT asset_id, asset_type, asset_name, current_score FROM assets
            WHERE company_id=? ORDER BY asset_type""",
         (case["company_id"],),
     ).fetchall()
@@ -1197,7 +1292,9 @@ def run_scan(db, case_id, evidence_response=None):
         "reference_knowledge_used_as_evidence": False,
         "reference_knowledge_effect": "none",
         "explainability_rule": (
-            "لا درجة بلا SDS-001 وActual/Evidence مستقل موثّق وحديث، "
+            "Asset Score قوة فعلية، وEvidence Confidence ثقة، وInformation "
+            "Completeness اكتمال؛ الإفادة الذاتية لا تغيّر Asset Score. "
+            "لا درجة معتمدة بلا SDS-001 وActual/Evidence مستقل موثّق وحديث، "
             "ولا تختلط Actual وForecast وTarget، ولا يُحسم التعارض تلقائيًا؛ "
             "المعرفة العامة لا تدخل Evidence ولا تغيّر التشخيص أو الدرجة أو القرار."
         ),

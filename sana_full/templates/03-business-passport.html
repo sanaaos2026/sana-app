@@ -194,7 +194,7 @@ function render(d, meta, sds){
       <div class="sds-q">${sds.question} <span style="font-size:11px; color:#9AA0AB; font-weight:400;">(${sds.client_asset_name})</span></div>
       <div style="font-size:12px;color:#6E7580;margin:-8px 0 14px;">أجب عن سؤال واحد لتوضيح أهم نقطة ناقصة الآن.</div>
       <div class="sds-options">${optHtml}</div>
-      <div class="sds-msg" id="sdsMsg">تمام، ارتفعت معرفتنا بهذا الأصل 🎯</div>
+      <div class="sds-msg" id="sdsMsg">تم تحديث الصورة</div>
       <div class="sds-suggestion" id="sdsSuggestion"></div>
     `;
     document.getElementById('app').after(sec);
@@ -221,9 +221,13 @@ async function sdsAnswer(choice, btn){
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title,
+        case_id:     sds.case_id,
         asset_id:    sds.asset_id,
         source_type: 'SDS-002 تشخيص تراكمي',
-        source_ref: 'SDS-002 إجابة العميل',
+        source_ref: sds.question_id,
+        question_id: sds.question_id,
+        answer: choice,
+        adaptive_answer: true,
         information_type: 'Narrative',
         verification_status: 'UNVERIFIED',
         source_category: 'SELF_REPORTED',
@@ -235,9 +239,10 @@ async function sdsAnswer(choice, btn){
     const sug  = document.getElementById('sdsSuggestion');
     if(res.ok && json.success){
       msg.classList.add('show');
-      // اقتراح frontend فقط — لا يُنشأ أي صف في tasks/decisions
-      const suggestion = (sds.suggestions || {})[choice];
-      if(suggestion){ sug.textContent = suggestion; sug.classList.add('show'); }
+      setTimeout(() => {
+        if(json.data.next_question) location.reload();
+        else location.href = json.data.result_url || `/case/${sds.case_id}/result`;
+      }, 650);
     } else {
       msg.textContent = '⚠️ تعذر الحفظ — حاول مرة أخرى.';
       msg.classList.add('show');

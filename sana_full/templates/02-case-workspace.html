@@ -1293,9 +1293,10 @@ async function saveCompanySources(showSuccess = true){
 async function loadSdsSection(){
   if(!CASE_COMPANY_ID) return;
   try{
-    const res  = await fetch(`/api/companies/${CASE_COMPANY_ID}/sds-question${qs(CASE_COMPANY_ID)}`);
+    const joiner = qs(CASE_COMPANY_ID) ? '&' : '?';
+    const res  = await fetch(`/api/companies/${CASE_COMPANY_ID}/sds-question${qs(CASE_COMPANY_ID)}${joiner}case_id=${encodeURIComponent(CASE_ID)}`);
     const json = await res.json();
-    if(!json.success) return;
+    if(!json.success || !json.data) return;
     const sds = json.data;
 
     const optHtml = sds.options.map(opt =>
@@ -1309,7 +1310,7 @@ async function loadSdsSection(){
       <div class="sds-eyebrow">🧩 بقيت فجوة واحدة…</div>
       <div class="sds-q">${sds.question} <span style="font-size:11px; color:#9AA0AB; font-weight:400;">(${sds.asset_name})</span></div>
       <div class="sds-options">${optHtml}</div>
-      <div class="sds-msg" id="sdsMsg">تمام، ارتفعت معرفتنا بهذا الأصل 🎯</div>
+      <div class="sds-msg" id="sdsMsg">تم تحديث الصورة</div>
       <div class="sds-suggestion" id="sdsSuggestion"></div>
     `;
     document.getElementById('app').appendChild(sec);
@@ -1336,6 +1337,13 @@ async function sdsAnswer(choice, btn){
         case_id:     CASE_ID,
         asset_id:    sds.asset_id,
         source_type: 'SDS-002 تشخيص تراكمي',
+        source_ref: sds.question_id,
+        question_id: sds.question_id,
+        answer: choice,
+        adaptive_answer: true,
+        information_type: 'Narrative',
+        verification_status: 'UNVERIFIED',
+        source_category: 'SELF_REPORTED',
         confidence
       })
     });
@@ -1344,9 +1352,11 @@ async function sdsAnswer(choice, btn){
     const sug  = document.getElementById('sdsSuggestion');
     if(res.ok && json.success){
       msg.classList.add('show');
-      showToast('تمام، ارتفعت معرفتنا بهذا الأصل 🎯');
-      const suggestion = (sds.suggestions || {})[choice];
-      if(suggestion){ sug.textContent = suggestion; sug.classList.add('show'); }
+      showToast('تم تحديث الصورة');
+      setTimeout(() => {
+        if(json.data.next_question) location.reload();
+        else location.href = json.data.result_url || `/case/${CASE_ID}/result`;
+      }, 650);
     } else {
       msg.textContent = '⚠️ تعذر الحفظ — حاول مرة أخرى.';
       msg.classList.add('show');

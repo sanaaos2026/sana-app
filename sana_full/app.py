@@ -7525,56 +7525,90 @@ SDS_QUESTIONS = {
 }
 
 
-@app.route("/api/companies/<company_id>/sds-question")
-def sds_question(company_id):
-    """SDS-002 MVP: يختار الأصل الأقل أدلة ويعيد سؤاله — بلا جدول جديد."""
-    guard = enforce_entity_company_scope(company_id)
-    if guard:
-        return guard
-    db = get_db()
+def _next_sds_question(db, company_id, case_id=None):
+    """السؤال التكيفي التالي غير المجاب لنفس الشركة والقضية."""
+    if case_id:
+        case = db.execute(
+            "SELECT case_id FROM cases WHERE case_id=? AND company_id=?",
+            (case_id, company_id),
+        ).fetchone()
+        if not case:
+            return None
     assets = db.execute(
         "SELECT * FROM assets WHERE company_id=?", (company_id,)
     ).fetchall()
     if not assets:
-        return jsonify({"success": False, "error": "NO_ASSETS"}), 404
+        return None
 
-    # COUNT مباشر من evidence لكل أصل — بلا عمود confidence جديد
     evidence_per_asset = {}
     for a in assets:
         client_asset = _client_asset_view(a)
-        cnt = db.execute(
-            "SELECT COUNT(*) as cnt FROM evidence WHERE company_id=? AND asset_id=?",
-            (company_id, a["asset_id"])
-        ).fetchone()["cnt"]
+        counts = db.execute(
+            """SELECT COUNT(*) AS total,
+                      COUNT(*) FILTER (
+                        WHERE source_type='SDS-002 تشخيص تراكمي'
+                           OR source_ref LIKE 'SDS-002:%%'
+                      ) AS adaptive_answers
+               FROM evidence
+               WHERE company_id=? AND asset_id=?""",
+            (company_id, a["asset_id"]),
+        ).fetchone()
         evidence_per_asset[a["asset_type"]] = {
-            "count":      cnt,
+            "count":      counts["total"],
+            "answered":   counts["adaptive_answers"] > 0,
             "asset_id":   a["asset_id"],
             "asset_name": client_asset["asset_name"],
             "client_asset_name": client_asset["client_asset_name"],
         }
 
-    # اختر الأصل صاحب أقل عدد أدلة — عشوائيًا عند التساوي
-    import random
-    valid = {k: v for k, v in evidence_per_asset.items() if k in SDS_QUESTIONS}
+    valid = {
+        key: value for key, value in evidence_per_asset.items()
+        if key in SDS_QUESTIONS and not value["answered"]
+    }
     if not valid:
-        return jsonify({"success": False, "error": "NO_QUESTION"}), 404
-    min_count  = min(v["count"] for v in valid.values())
-    candidates = [k for k, v in valid.items() if v["count"] == min_count]
-    chosen     = random.choice(candidates)
-    q          = SDS_QUESTIONS[chosen]
+        return None
+    chosen = min(valid, key=lambda key: (valid[key]["count"], key))
+    question = SDS_QUESTIONS[chosen]
+    if not case_id:
+        case = db.execute(
+            """SELECT case_id FROM cases
+               WHERE company_id=?
+               ORDER BY (related_asset_id=?) DESC, opened_at DESC, case_id DESC
+               LIMIT 1""",
+            (company_id, valid[chosen]["asset_id"]),
+        ).fetchone()
+        case_id = case["case_id"] if case else None
+    if not case_id:
+        return None
+    return {
+        "question_id": f"SDS-002:{chosen}",
+        "case_id": case_id,
+        "asset_type": chosen,
+        "asset_id": valid[chosen]["asset_id"],
+        "asset_name": valid[chosen]["asset_name"],
+        "client_asset_name": valid[chosen]["client_asset_name"],
+        "question": question["text"],
+        "options": question["options"],
+        "suggestions": question["suggestions"],
+        "evidence_per_asset": {
+            key: value["count"] for key, value in evidence_per_asset.items()
+        },
+    }
 
+
+@app.route("/api/companies/<company_id>/sds-question")
+def sds_question(company_id):
+    """SDS-002: سؤال واحد غير مجاب، مرتبط بقضية قائمة دون إنشاء قضية."""
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    data = _next_sds_question(
+        get_db(), company_id, request.args.get("case_id") or None
+    )
     return jsonify({
         "success": True,
-        "data": {
-            "asset_type":       chosen,
-            "asset_id":         evidence_per_asset[chosen]["asset_id"],
-            "asset_name":       evidence_per_asset[chosen]["asset_name"],
-            "client_asset_name": evidence_per_asset[chosen]["client_asset_name"],
-            "question":         q["text"],
-            "options":          q["options"],
-            "suggestions":      q["suggestions"],
-            "evidence_per_asset": {k: v["count"] for k, v in evidence_per_asset.items()},
-        }
+        "data": data,
+        "meta": {"complete": data is None},
     })
 
 
@@ -8991,6 +9025,9 @@ def add_evidence(company_id):
     confidence  = int(body.get("confidence", 50))
     evidence_type = (body.get("evidence_type") or "Evidence").strip()
     source_ref = (body.get("source_ref") or "").strip()
+    adaptive_answer = body.get("adaptive_answer") is True
+    adaptive_question_id = (body.get("question_id") or "").strip()
+    adaptive_value = (body.get("answer") or "").strip()
     request_key = (body.get("request_key") or "").strip()
     request_fingerprint = (body.get("request_fingerprint") or "").strip()
     is_unknown_response = (
@@ -9004,6 +9041,20 @@ def add_evidence(company_id):
         }
     )
     evidence_response = None
+    if adaptive_answer:
+        if not case_id or not adaptive_question_id or not adaptive_value:
+            return jsonify({
+                "success": False,
+                "error": "ADAPTIVE_ANSWER_CONTEXT_REQUIRED",
+                "message": "الإجابة التكيفية تحتاج القضية والسؤال والإجابة.",
+            }), 400
+        source_type = "SDS-002 تشخيص تراكمي"
+        source_ref = adaptive_question_id
+        evidence_type = "Evidence"
+        confidence = min(confidence, 40)
+        body["information_type"] = "Narrative"
+        body["verification_status"] = "UNVERIFIED"
+        body["source_category"] = "SELF_REPORTED"
     if is_unknown_response:
         if not case_id:
             return jsonify({
@@ -9137,12 +9188,24 @@ def add_evidence(company_id):
         (company_id, case_id, asset_id, title, source_type)
     ).fetchone()
     if existing:
+        existing_scan = latest_scan(db, case_id) if case_id else None
+        next_question = (
+            _next_sds_question(db, company_id, case_id)
+            if adaptive_answer and case_id else None
+        )
         return jsonify({
             "success": True,
-            "data": {"evidence_id": existing["evidence_id"]},
+            "data": {
+                "evidence_id": existing["evidence_id"],
+                "scan": existing_scan,
+                "next_question": next_question,
+                "result_url": f"/case/{case_id}/result" if case_id else None,
+                "message": "تم تحديث الصورة" if adaptive_answer else None,
+            },
             "meta": {
                 "duplicate": True,
-                "message": "هذا الدليل محفوظ مسبقًا بنفس المحتوى — لم يُنشأ سجل مكرر."
+                "message": "هذا الدليل محفوظ مسبقًا بنفس المحتوى — لم يُنشأ سجل مكرر.",
+                "manual_rerun_required": False if adaptive_answer else None,
             }
         }), 200
 
@@ -9170,28 +9233,48 @@ def add_evidence(company_id):
     if not result["success"]:
         return jsonify({"success": False, "error": result["error"]}), 400
     from sana_company_memory import record_memory
-    memory_key = calibrated.get("topic_key") or f"evidence:{result['evidence_id']}"
+    memory_key = (
+        f"adaptive:{case_id}:{adaptive_question_id}"
+        if adaptive_answer
+        else calibrated.get("topic_key") or f"evidence:{result['evidence_id']}"
+    )
     try:
         record_memory(
-            db, company_id, memory_key=memory_key, memory_type="evidence",
-            value={
+            db, company_id, memory_key=memory_key,
+            memory_type="current_state" if adaptive_answer else "evidence",
+            value=({
+                "question": title.split(" — الإجابة:", 1)[0],
+                "answer": adaptive_value,
+                "claim": title,
+            } if adaptive_answer else {
                 "title": title, "raw_value": calibrated.get("raw_value"),
                 "normalized_value": calibrated.get("normalized_value"),
                 "unit": calibrated.get("unit"),
-            },
+            }),
             source_ref=source_ref, source_type=source_type,
             observed_at=calibrated.get("observed_at") or date.today(),
             period_start=calibrated.get("period_start"),
             period_end=calibrated.get("period_end"),
-            context={"information_type": calibrated.get("information_type"),
-                     "topic_key": calibrated.get("topic_key")},
+            context={
+                "information_type": calibrated.get("information_type"),
+                "topic_key": calibrated.get("topic_key"),
+                "self_reported": calibrated.get("source_category") == "SELF_REPORTED",
+                "adaptive_answer": adaptive_answer,
+            },
             verification_status=calibrated.get("verification_status", "UNVERIFIED"),
             freshness_class="FAST" if calibrated.get("normalized_value") is not None else "MEDIUM",
             source_strength=confidence,
-            verification_confidence=confidence if calibrated.get("verification_status") == "VERIFIED" else 0,
+            verification_confidence=(
+                confidence if calibrated.get("verification_status") == "VERIFIED"
+                else 10 if adaptive_answer else 0
+            ),
             freshness_confidence=50, owner_id=(current_account() or {}).get("account_id"),
             case_id=case_id, asset_id=asset_id, source_id=result["evidence_id"],
-            reason="إصدار ذاكرة مشتق من سجل الدليل الأصلي؛ لا يستبدل الدليل.",
+            reason=(
+                "إجابة تكيفية ذاتية تزيد اكتمال الصورة ولا تغيّر قوة الأصل بذاتها."
+                if adaptive_answer
+                else "إصدار ذاكرة مشتق من سجل الدليل الأصلي؛ لا يستبدل الدليل."
+            ),
         )
     except ValueError as exc:
         db.rollback()
@@ -9207,6 +9290,10 @@ def add_evidence(company_id):
             "outcome": "UNKNOWN" if is_unknown_response else "ANSWERED",
         } if case_id else None,
     ) if case_id else None
+    next_question = (
+        _next_sds_question(db, company_id, case_id)
+        if adaptive_answer and case_id else None
+    )
     return jsonify({
         "success": True,
         "data": {
@@ -9216,11 +9303,15 @@ def add_evidence(company_id):
             "new_score":   result.get("new_score"),
             "scan": reevaluated_scan,
             "journey_outcome": (reevaluated_scan or {}).get("journey_outcome"),
+            "next_question": next_question,
+            "result_url": f"/case/{case_id}/result" if case_id else None,
+            "message": "تم تحديث الصورة" if adaptive_answer else None,
         },
         "meta": {
             "duplicate": False,
             "request_key": request_key or None,
             "reevaluated": bool(reevaluated_scan),
+            "manual_rerun_required": False if adaptive_answer else None,
         }
     }), 201
 
@@ -9480,7 +9571,7 @@ def healthz():
 
 
 # ------------------------------------------------------------------
-# API — Tasks (إنجاز المهمة = ترفع الأصل المرتبط بالقرار تلقائيًا)
+# API — Tasks (إنجاز المهمة يسجل التنفيذ فقط؛ الدرجة تنتظر أثرًا موثقًا)
 # ------------------------------------------------------------------
 
 @app.route("/api/tasks/<task_id>/complete", methods=["POST"])
@@ -9529,62 +9620,17 @@ def complete_task(task_id):
                 "message": "القرار المرتبط بهذه المهمة لا ينتمي لشركتك."
             }), 403
 
-    updated_assets = []
-    if decision:
-        impacts = db.execute(
-            "SELECT * FROM decision_asset_impacts WHERE decision_id=? "
-            "ORDER BY is_primary DESC, impact_id ASC",
-            (decision["decision_id"],)
-        ).fetchall()
-
-        if impacts:
-            for impact in impacts:
-                asset = db.execute(
-                    "SELECT * FROM assets WHERE asset_id=?", (impact["asset_id"],)
-                ).fetchone()
-                if not asset:
-                    continue
-                new_score = min(100, asset["current_score"] + impact["score_impact"])
-                db.execute(
-                    "UPDATE assets SET current_score=? WHERE asset_id=?",
-                    (new_score, asset["asset_id"])
-                )
-                updated_assets.append({
-                    "asset_id": asset["asset_id"],
-                    "asset_name": asset["asset_name"],
-                    "previous_score": asset["current_score"],
-                    "new_score": new_score,
-                    "is_primary": bool(impact["is_primary"])
-                })
-        elif decision["asset_id"]:
-            # قرارات قديمة بلا سجلات تأثير — تحافظ على السلوك السابق (أصل واحد فقط)
-            asset = db.execute(
-                "SELECT * FROM assets WHERE asset_id=?", (decision["asset_id"],)
-            ).fetchone()
-            if asset:
-                new_score = min(100, asset["current_score"] + 5)
-                db.execute(
-                    "UPDATE assets SET current_score=? WHERE asset_id=?",
-                    (new_score, asset["asset_id"])
-                )
-                updated_assets.append({
-                    "asset_id": asset["asset_id"],
-                    "asset_name": asset["asset_name"],
-                    "previous_score": asset["current_score"],
-                    "new_score": new_score,
-                    "is_primary": True
-                })
-
     db.commit()
     return jsonify({
         "success": True,
         "data": {
             "task_id": task_id,
             "status": "منجزة",
-            "updated_assets": updated_assets,
-            # حقول متوافقة مع النسخة السابقة (أصل واحد) لتجنّب كسر أي مستهلك قديم
-            "asset_id": updated_assets[0]["asset_id"] if updated_assets else None,
-            "new_asset_score": updated_assets[0]["new_score"] if updated_assets else None
+            "updated_assets": [],
+            "asset_scores_changed": False,
+            "impact_measurement_required": True,
+            "asset_id": None,
+            "new_asset_score": None,
         }
     })
 
@@ -9930,6 +9976,17 @@ def apply_verified_impact(task_id, evidence_id):
         return {"error": "NOT_VERIFIED", "message": "التأثير يُطبَّق فقط بعد التحقق بنتيجة 'مرتبط'"}
     if evidence["impact_applied"]:
         return {"error": "ALREADY_APPLIED", "message": "تم تطبيق التأثير مسبقاً لهذا الإثبات"}
+    measured_impact = db.execute(
+        """SELECT review_id,result_source_ref FROM p0_impact_reviews
+           WHERE task_id=? AND company_id=? AND impact_outcome='IMPROVED'
+           LIMIT 1""",
+        (task_id, evidence["task_company_id"]),
+    ).fetchone()
+    if not measured_impact:
+        return {
+            "error": "IMPACT_MEASUREMENT_REQUIRED",
+            "message": "ارتباط إثبات بالمهمة لا يثبت تحسن الأصل؛ يلزم Before/After موثق.",
+        }
 
     raw_impact = evidence.get("expected_asset_impact")
     if not raw_impact:
@@ -9938,7 +9995,7 @@ def apply_verified_impact(task_id, evidence_id):
     try:
         impact_data = _json.loads(raw_impact)
         asset_id = impact_data["asset_id"]
-        score_impact = int(impact_data["score_impact"])
+        requested_impact = int(impact_data["score_impact"])
     except Exception:
         return {"error": "INVALID_IMPACT_FORMAT"}
 
@@ -9950,6 +10007,7 @@ def apply_verified_impact(task_id, evidence_id):
     if not asset:
         return {"error": "ASSET_NOT_FOUND_OR_FORBIDDEN"}
 
+    score_impact = max(-2, min(2, requested_impact))
     previous_score = asset["current_score"]
     new_score = min(100, previous_score + score_impact)
 
@@ -9970,7 +10028,12 @@ def apply_verified_impact(task_id, evidence_id):
         "new_score": new_score,
         "score_impact_applied": score_impact,
         "evidence_id": evidence_id,
-        "task_id": task_id
+        "task_id": task_id,
+        "impact_review_id": measured_impact["review_id"],
+        "score_change_reason": (
+            "تغيير محدود بعد Before/After موثق بالمراجعة "
+            f"{measured_impact['review_id']} والمصدر {measured_impact['result_source_ref']}."
+        )
     }
 
 
