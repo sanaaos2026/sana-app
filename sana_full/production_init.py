@@ -73,14 +73,22 @@ def main():
     )
     from database_config import has_required_columns, has_required_tables
 
+    schema_check = (
+        _connect_pg,
+        has_required_tables,
+        has_required_columns,
+    )
+    if _schema_ready(*schema_check):
+        seed_db()
+        seed_decision_impacts()
+        seed_knowledge_db()
+        print("[production-init] schema already ready; skipped DDL", flush=True)
+        return
+
     try:
         init_db()
-    except TimeoutError as exc:
-        if not _wait_for_concurrent_initializer(
-            _connect_pg,
-            has_required_tables,
-            has_required_columns,
-        ):
+    except (TimeoutError, __import__("psycopg2").errors.QueryCanceled) as exc:
+        if not _wait_for_concurrent_initializer(*schema_check):
             raise RuntimeError(
                 "Concurrent schema initialization did not become ready "
                 f"within {CONCURRENT_INIT_WAIT_SECONDS} seconds"
