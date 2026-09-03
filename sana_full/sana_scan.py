@@ -80,7 +80,13 @@ BOTTLENECK_RULES = [
     {
         "rule_id": "SCAN-ACQUISITION-CONCENTRATION",
         "asset_type": "Brand",
-        "tokens": ("نعم، بشكل كبير", "نعم، بدرجة متوسطة", "هشاشة مصدر العملاء"),
+        "tokens": (
+            "انخفاض كبير",
+            "انخفاض متوسط",
+            "نعم، بشكل كبير",
+            "نعم، بدرجة متوسطة",
+            "هشاشة مصدر العملاء",
+        ),
         "title": "اعتماد اكتساب العملاء على مصدر واحد",
         "hypothesis": "قد يكون تركّز اكتساب العملاء في مصدر واحد سببًا لهشاشة المبيعات.",
         "inference": "توضح الأدلة المرتبطة أن توقف مصدر العملاء الرئيسي سيؤثر في المبيعات.",
@@ -757,7 +763,15 @@ def _matching_sources(rule, sources):
         impact = [
             item for item in raw
             if _source_is(item, "Q4", "هشاشة مصدر العملاء:")
-            and _contains_any(item, ("نعم، بشكل كبير", "نعم، بدرجة متوسطة"))
+            and _contains_any(
+                item,
+                (
+                    "انخفاض كبير",
+                    "انخفاض متوسط",
+                    "نعم، بشكل كبير",
+                    "نعم، بدرجة متوسطة",
+                ),
+            )
         ]
         corroborating = [
             item for item in raw

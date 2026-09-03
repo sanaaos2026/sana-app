@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import app as sana_app
 import sana_knowledge
+from sana_company_memory import retrieve_memory
 
 
 DISCOVERY_ANSWERS = {
@@ -25,7 +26,7 @@ DISCOVERY_ANSWERS = {
     "q2": "📉 المبيعات",
     "q3": "📊 البيانات والتقارير",
     "q4": "الإحالات",
-    "q4_fu": "🙂 نعم، بدرجة متوسطة",
+    "q4_fu": "😟 انخفاض متوسط",
     "q5": "😰 يتعطل أغلب العمل",
     "q5_text": "تتوقف بعض العمليات المهمة",
     "q6": "الحدس والخبرة الشخصية",
@@ -716,6 +717,41 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
             client_a.get(f"/case/{customer_a['case_id']}").status_code,
         )
         self.assertEqual(200, client_a.get("/home").status_code)
+
+    def test_new_acquisition_impact_is_saved_as_self_report_and_links_risk(self):
+        customer = self._new_customer("acquisition-impact")
+        db = sana_app._connect_pg()
+        try:
+            evidence = db.execute(
+                """SELECT title, verification_status, source_category
+                   FROM evidence
+                   WHERE company_id=? AND source_ref='SDS-001 Q4 follow-up'""",
+                (customer["company_id"],),
+            ).fetchone()
+            self.assertEqual(
+                "هشاشة مصدر العملاء: 😟 انخفاض متوسط",
+                evidence["title"],
+            )
+            self.assertEqual("UNVERIFIED", evidence["verification_status"])
+            self.assertEqual("SELF_REPORTED", evidence["source_category"])
+
+            framework = db.execute(
+                """SELECT framework_id FROM case_frameworks
+                   WHERE company_id=? AND case_id=?""",
+                (customer["company_id"], customer["case_id"]),
+            ).fetchone()
+            self.assertEqual("sana-acquisition-system", framework["framework_id"])
+
+            memory = retrieve_memory(
+                db,
+                customer["company_id"],
+                memory_keys=["acquisition:fragility"],
+            )
+            self.assertEqual(1, len(memory["items"]))
+            self.assertEqual("😟 انخفاض متوسط", memory["items"][0]["value"])
+            self.assertTrue(memory["items"][0]["needs_confirmation"])
+        finally:
+            db.close()
 
     def test_internal_preview_does_not_create_customer_session(self):
         customer = self._new_customer("preview")
