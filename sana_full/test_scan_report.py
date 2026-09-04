@@ -551,9 +551,13 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
             self.assertEqual(action, report["scan_journey"]["action_label"])
             self.assertTrue(report["scan_journey"]["label"])
             self.assertTrue(report["scan_journey"]["message"])
-            self.assertIn("Sana Score", sana_app.app.jinja_env.get_template(
+            report_html = sana_app.app.jinja_env.get_template(
                 "14-passport-report.html"
-            ).render(**report))
+            ).render(**report)
+            self.assertIn("الأولوية الأولى", report_html)
+            self.assertIn("ما القرار الآمن الآن؟", report_html)
+            self.assertNotIn(">None<", report_html)
+            self.assertNotIn("0 مثبتة · 0 من الشركة", report_html)
             self.db.execute("DELETE FROM scan_runs WHERE scan_id=?", (scan_id,))
             self.db.commit()
 

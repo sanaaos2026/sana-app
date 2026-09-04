@@ -190,6 +190,26 @@
   .single-alert{background:#FFF8E7;border:1px solid #EBCB79;border-radius:10px;padding:14px 16px}
   .single-alert strong{display:block;color:var(--navy);font-family:'Cairo';font-size:14px;margin-bottom:8px}
   .cta{display:inline-flex;text-decoration:none;background:var(--gold);color:var(--navy);border-radius:8px;padding:9px 14px;font-weight:800;font-size:13px}
+  .decision-hero{background:linear-gradient(145deg,#0B132B,#18254A);color:#fff;border-radius:14px;padding:20px;margin-bottom:12px}
+  .decision-hero-label{color:var(--gold);font-size:11px;font-weight:800;margin-bottom:6px}
+  .decision-hero h2{color:#fff;font-family:'Cairo';font-size:19px;line-height:1.6;margin-bottom:7px}
+  .decision-hero p{color:#DDE4F2;font-size:13px;line-height:1.8}
+  .summary-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .summary-fact{border:1px solid var(--line);border-radius:10px;padding:11px 12px;background:#fff}
+  .summary-fact span{display:block;color:var(--muted);font-size:10.5px;margin-bottom:3px}
+  .summary-fact strong{display:block;color:var(--navy);font-family:'Cairo';font-size:13px;line-height:1.6}
+  .summary-decision{border:1px solid #CDE8E5;border-right:4px solid var(--teal);border-radius:12px;padding:15px 16px;background:#F7FFFE;margin-bottom:10px}
+  .summary-decision.waiting{border-color:#F0D48A;border-right-color:var(--gold);background:#FFFDF7}
+  .summary-decision h2{font-family:'Cairo';font-size:14px;color:var(--navy);margin-bottom:5px}
+  .summary-decision p{font-size:13px;line-height:1.8;color:var(--ink)}
+  .summary-next{display:flex;align-items:center;justify-content:space-between;gap:14px;background:#FFF7E4;border:1px solid #EBCB79;border-radius:12px;padding:15px 16px}
+  .summary-next-copy strong{display:block;font-family:'Cairo';font-size:14px;color:var(--navy);margin-bottom:3px}
+  .summary-next-copy span{display:block;font-size:12px;color:#715A1A;line-height:1.7}
+  .summary-disclosure{border:1px solid var(--line);border-radius:10px;background:#fff;margin-top:10px;overflow:hidden}
+  .summary-disclosure summary{padding:12px 14px;cursor:pointer;color:var(--navy);font-size:12.5px;font-weight:800;background:#F8F9FB;list-style-position:inside}
+  .summary-disclosure[open] summary{border-bottom:1px solid var(--line)}
+  .summary-disclosure-body{padding:13px 15px}
+  @media screen{.report-main .cycle-summary{display:none}}
   @media(max-width:560px){
     .wrap{ padding-bottom:32px; }
     header{ padding:22px 18px 18px; }
@@ -198,7 +218,8 @@
     .next-step{ margin:18px 18px 0; padding:18px; }
     .review-card,.compact-review{margin:14px 18px 0}
     .report-actions{padding:12px 18px}
-    .answer-grid,.initiative-grid,.confidence-grid,.swot-grid,.cycle-summary-grid{ grid-template-columns:1fr; }
+    .answer-grid,.initiative-grid,.confidence-grid,.swot-grid,.cycle-summary-grid,.summary-facts{ grid-template-columns:1fr; }
+    .summary-next{align-items:flex-start;flex-direction:column}
     .report-details .report-actions{bottom:0;top:auto;border-top:1px solid var(--line);border-bottom:0}
     .report-details .report-action{flex:1;min-width:105px}
   }
@@ -241,21 +262,26 @@
 {% include '_customer-journey-styles.html' %}
 </head>
 <body class="report-{{ report_view }}" data-report-tier="{{ scan_report_tier }}">
-{% macro clean_report_text(value) -%}
-  {{ value|string
+{% macro clean_report_text(value, fallback='') -%}
+  {% set raw = value|string %}
+  {% if not value or raw|trim|lower in ['none', 'null', 'n/a'] %}
+    {{ fallback }}
+  {% else %}
+  {{ raw
     |replace('[decision_style] ', '')
     |replace('SDS-001', 'جلسة التعريف')
     |replace('Actual', 'نتيجة فعلية')
     |replace('Evidence', 'معلومة بمصدر')
     |replace('Discovery', 'جلسة التعريف') }}
+  {% endif %}
 {%- endmacro %}
 {% macro missing_as_question(value) -%}
   {% set text = value|string %}
   {% set topic = text.split(':')[0] if ':' in text else 'هذه النقطة' %}
-  {% if 'Actual موثّق' in text and 'Evidence مستقل' in text %}
-    هل لديك رقم أو نتيجة حديثة من تقرير أو سجل تؤكد ما شاركته عن {{ topic }}؟
-  {% elif 'إجابة SDS-001' in text %}
-    هل يمكنك توضيح {{ topic }} من واقع شركتك؟
+  {% if 'Actual' in text and 'Evidence' in text %}
+    هل لديك رقم أو نتيجة حديثة من تقرير أو سجل تؤكد هذه النقطة؟
+  {% elif 'SDS-001' in text %}
+    هل يمكنك ربط هذه النقطة بإجابة محددة من جلسة التعريف؟
   {% else %}
     {{ clean_report_text(text) }}
   {% endif %}
@@ -344,56 +370,88 @@
 
   <!-- الملخص التنفيذي -->
   {% if report_view == 'main' %}
+  {% set summary_priority = scan_bottleneck or scan_opportunity %}
+  {% set summary_direction = scan_current_decision if scan_decision_ready and scan_current_decision else (scan_opportunity or scan_bottleneck) %}
+  {% set verified_count = scan_diagnostic_quality.verified_count if scan_diagnostic_quality and scan_diagnostic_quality.verified_count is not none else 0 %}
+  {% set self_reported_count = scan_diagnostic_quality.self_reported_count if scan_diagnostic_quality and scan_diagnostic_quality.self_reported_count is not none else 0 %}
   <section data-testid="executive-report-summary">
-    <p class="executive-intro">هذه خلاصة ما فهمناه حتى الآن، بصيغة بسيطة تساعدك تعرف أين تركز وما الذي نحتاجه قبل القرار.</p>
-    <div class="executive-stack">
-      <div class="executive-block">
-        <h2>ما الذي يبدو أنه يحدث الآن؟</h2>
-        <p class="two-lines">{% if scan_case %}{{ clean_report_text(scan_case.declared_problem or scan_case.case_title) }}{% if scan_case.real_question %} — {{ clean_report_text(scan_case.real_question) }}{% endif %}{% else %}ابدأ بوصف ما يحدث في شركتك حتى نفهم الصورة معًا.{% endif %}</p>
-        <a class="local-action" href="{{ report_problem_url }}">عدّل وصف المشكلة</a>
+    <p class="executive-intro">ملخص واحد يوضح الأولوية، قوة المعلومات، والقرار الآمن الآن.</p>
+
+    <div class="decision-hero">
+      <div class="decision-hero-label">الأولوية الأولى</div>
+      <h2>ما الشيء الأهم الذي يحتاج انتباهك أولًا؟</h2>
+      <p>{% if summary_priority %}{{ clean_report_text(summary_priority.statement, 'تحديد القضية التي تؤثر أكثر على نمو الشركة وتشغيلها الآن.') }}{% elif scan_case %}{{ clean_report_text(scan_case.real_question or scan_case.declared_problem or scan_case.case_title, 'تحديد القضية التي تؤثر أكثر على نمو الشركة وتشغيلها الآن.') }}{% else %}تحديد القضية التي تؤثر أكثر على نمو الشركة وتشغيلها الآن.{% endif %}</p>
+    </div>
+
+    <div class="summary-facts">
+      <div class="summary-fact">
+        <span>حالة القرار</span>
+        <strong>{% if scan_decision_ready %}جاهز للمراجعة{% else %}اتجاه أولي، ليس قرارًا نهائيًا{% endif %}</strong>
       </div>
-      {% if scan_bottleneck or scan_opportunity %}
-      <div class="executive-block">
-        <h2>ما الشيء الأهم الذي يحتاج انتباهك أولًا؟</h2>
-        <p class="two-lines">{{ clean_report_text((scan_bottleneck or scan_opportunity).statement) }}</p>
-        <a class="local-action" href="{{ adaptive_questions_url }}">جاوب عن أسئلة قصيرة</a>
+      <div class="summary-fact">
+        <span>قوة المعلومات</span>
+        <strong>{% if scan_client_confidence.quality_label == 'غير مكتملة' %}أولية · تحتاج مصدرًا داعمًا{% else %}{{ scan_client_confidence.quality_label }} · موثوقية {{ scan_client_confidence.data_label }}{% endif %}</strong>
       </div>
-      {% endif %}
-      {% if scan_executive_signals %}
-      <div class="executive-block">
-        <h2>ما الذي جعلنا نصل إلى هذا الفهم؟</h2>
+      <div class="summary-fact">
+        <span>أساس القراءة</span>
+        <strong>{% if verified_count or self_reported_count %}{{ verified_count }} مثبتة · {{ self_reported_count }} من الشركة{% if scan_client_confidence.decision_score is not none %} · ثقة {{ scan_client_confidence.decision_score }}٪{% endif %}{% else %}إجابات التعريف كوّنت فرضية أولية تحتاج مصدرًا داعمًا{% endif %}</strong>
+      </div>
+    </div>
+
+    <div class="summary-decision {% if not scan_decision_ready %}waiting{% endif %}">
+      <h2>{% if scan_decision_ready and scan_current_decision %}القرار المقترح الآن{% else %}ما القرار الآمن الآن؟{% endif %}</h2>
+      <p>
+        {% if scan_decision_ready and scan_current_decision %}
+          {{ clean_report_text(scan_current_decision.title or scan_current_decision.statement) }}
+        {% elif summary_direction %}
+          اختبر هذا الاتجاه بخطوة محدودة قابلة للقياس: {{ clean_report_text(summary_direction.statement or summary_direction.title, 'القضية الأعلى أثرًا في الشركة') }}. لا تبدأ تغييرًا كبيرًا قبل مراجعة الأدلة الناقصة.
+        {% elif scan_case %}
+          ثبّت أولًا أثر القضية التي وصفتها — {{ clean_report_text(scan_case.declared_problem or scan_case.case_title, 'القضية الأعلى أثرًا في الشركة') }} — ثم حوّلها إلى تجربة صغيرة قابلة للقياس.
+        {% else %}
+          ابدأ بتحديد قضية واحدة ونتيجة قابلة للقياس؛ بعدها يمكن ترتيب الأولوية دون تخمين.
+        {% endif %}
+      </p>
+    </div>
+
+    <div class="summary-next">
+      <div class="summary-next-copy">
+        <strong>خطوتك التالية</strong>
+        <span>
+          {% if scan_next_action %}
+            {{ scan_next_action.task }}{% if scan_next_action.owner %} · المسؤول: {{ scan_next_action.owner }}{% endif %}{% if scan_next_action.due_date %} · الموعد: {{ scan_next_action.due_date }}{% endif %}{% if scan_next_action.kpi %} · مقياس النجاح: {{ scan_next_action.kpi }}{% endif %}
+          {% elif scan_client_missing_evidence %}
+            أجب عن أهم سؤال يرفع الثقة: {{ missing_as_question(scan_client_missing_evidence[0]) }}
+          {% elif scan_decision_ready %}
+            راجع القرار المقترح واعتمده، ثم حدّد المسؤول والموعد ومقياس النجاح.
+          {% else %}
+            راجع الاتجاه الأولي مع فريق سنع وحدد له مقياسًا قبل التنفيذ.
+          {% endif %}
+        </span>
+      </div>
+      <a class="cta" data-testid="complete-picture-cta" href="{% if scan_decision_ready and scan_current_decision %}{{ report_decision_url }}{% else %}{{ adaptive_questions_url }}{% endif %}">{% if scan_decision_ready and scan_current_decision %}راجع القرار{% else %}زد الوضوح{% endif %}</a>
+    </div>
+
+    <details class="summary-disclosure">
+      <summary>لماذا اخترنا هذه الأولوية؟ وما الذي قد يغيّرها؟</summary>
+      <div class="summary-disclosure-body">
+        {% if scan_executive_signals %}
+        <div class="answer-label">المعلومات التي دعمت الاتجاه</div>
         <ul class="signal-list">
           {% for signal in scan_executive_signals %}<li>{{ clean_report_text(signal.statement) }}</li>{% endfor %}
         </ul>
-      </div>
-      {% endif %}
-      {% if scan_client_missing_evidence %}
-      <div class="executive-block">
-        <h2>ما الذي نحتاج معرفته قبل أن نوصي بخطوة؟</h2>
+        {% else %}
+        <p class="answer-value">الاتجاه الحالي مبني على وصف الشركة للقضية وإجابات جلسة التعريف، ويظل فرضية أولية حتى تدعمه نتيجة أو وثيقة.</p>
+        {% endif %}
+        <div class="answer-label" style="margin-top:10px">ما الذي قد يغيّر القرار؟</div>
+        {% if scan_client_missing_evidence %}
         <ul class="executive-missing">
           {% for item in scan_client_missing_evidence[:2] %}<li>{{ missing_as_question(item) }}</li>{% endfor %}
         </ul>
+        {% else %}
+        <p class="answer-value">ظهور دليل حديث يناقض الأولوية الحالية، أو تغير النتيجة الفعلية بعد القياس.</p>
+        {% endif %}
       </div>
-      {% endif %}
-      {% if scan_decision_ready and scan_current_decision %}
-      <div class="executive-block">
-        <h2>ما القرار المقترح الآن؟</h2>
-        <p class="two-lines">{{ clean_report_text(scan_current_decision.title or scan_current_decision.statement) }}</p>
-        <a class="local-action" href="{{ report_decision_url }}">ابدأ التنفيذ</a>
-      </div>
-      {% if scan_next_action %}
-      <div class="executive-block">
-        <h2>ما أول خطوة بعد القرار؟</h2>
-        <p><b>{{ scan_next_action.task }}</b>{% if scan_next_action.owner %} · المسؤول: {{ scan_next_action.owner }}{% endif %}{% if scan_next_action.due_date %} · الموعد: {{ scan_next_action.due_date }}{% endif %}{% if scan_next_action.kpi %} · المقياس: {{ scan_next_action.kpi }}{% endif %}</p>
-      </div>
-      {% endif %}
-      {% else %}
-      <div class="single-alert" data-testid="single-readiness-alert">
-        <strong>باقي معلومات قليلة قبل اعتماد القرار</strong>
-        <a class="cta" data-testid="complete-picture-cta" href="{{ adaptive_questions_url }}">كمّل الصورة</a>
-      </div>
-      {% endif %}
-    </div>
+    </details>
   </section>
   {% endif %}
 
