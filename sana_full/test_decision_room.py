@@ -2,6 +2,7 @@ import unittest
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
+from pathlib import Path
 from threading import Barrier, Lock, local
 from unittest.mock import MagicMock, patch
 
@@ -38,6 +39,18 @@ from sana_growth_engine import (
 
 
 class DecisionRoomAcceptanceTests(unittest.TestCase):
+    def test_today_card_precedes_four_collapsed_detail_groups(self):
+        template = (
+            Path(__file__).parent / "templates" / "01-ceo-home.html"
+        ).read_text(encoding="utf-8")
+        today_position = template.index('aria-label="بطاقة اليوم"')
+        details_position = template.index('<details class="room-details">')
+        self.assertLess(today_position, details_position)
+        for group in ("القرار", "الدليل", "التنفيذ", "الخطر"):
+            self.assertIn(f"<summary>{group}</summary>", template)
+        self.assertNotIn('<details class="room-group" open', template)
+        self.assertIn("طلب الدليل الأعلى أثرًا", template)
+
     @classmethod
     def setUpClass(cls):
         sana_app.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
@@ -237,10 +250,17 @@ class DecisionRoomAcceptanceTests(unittest.TestCase):
         room = decision_room(self.db, self.company_id)
         self.assertEqual("evidence_needed", room["today"]["status"])
         self.assertEqual("/case/new", room["today"]["action"]["href"])
-        self.assertTrue(room["today"]["evidence"])
-        self.assertTrue(
-            all(item["status"] == "missing" for item in room["today"]["evidence"])
+        self.assertEqual("وثّق هذا الدليل", room["today"]["action"]["label"])
+        self.assertEqual(
+            "baseline", room["top_evidence_request"]["key"]
         )
+        self.assertEqual(
+            room["top_evidence_request"]["title"],
+            room["today"]["evidence"][0]["value"],
+        )
+        self.assertTrue(room["today"]["evidence"])
+        self.assertEqual(1, len(room["today"]["evidence"]))
+        self.assertEqual("missing", room["today"]["evidence"][0]["status"])
 
     def test_documented_experiment_decision_has_one_approval_state(self):
         _, truth, experiment = self._growth_experiment()

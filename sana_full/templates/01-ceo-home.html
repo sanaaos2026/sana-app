@@ -110,6 +110,13 @@
    .room-details[open]>summary::before{content:'−'}
    .room-details .room-grid{margin-top:14px}
    .room-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .room-group{background:#fff;border:1px solid #DEE1EC;border-radius:12px;padding:0;overflow:hidden}
+    .room-group>summary{cursor:pointer;list-style:none;padding:16px 18px;font-size:15px;font-weight:700;color:#0B132B;display:flex;justify-content:space-between;align-items:center}
+    .room-group>summary::-webkit-details-marker{display:none}
+    .room-group>summary::after{content:'＋';color:#0EA5A5}
+    .room-group[open]>summary::after{content:'−'}
+    .room-group-body{padding:0 18px 18px;display:grid;gap:12px}
+    .room-group .room-card{border:0;border-top:1px solid #DEE1EC;border-radius:0;padding:16px 0;min-height:0}
   .room-card{margin:0;min-height:150px;position:relative}
   .room-card.wide{grid-column:1/-1}
   .room-label{font-size:10.5px;color:#0EA5A5;font-weight:700;letter-spacing:.04em;margin-bottom:9px}
@@ -309,6 +316,7 @@ const TODAY_STATUS_LABELS = {
   decision_pending: 'بانتظار الاعتماد',
   measure: 'القياس الآن',
   execute: 'قيد التنفيذ',
+  execution_blocked: 'أكمل الجاهزية',
   risk_review: 'مراجعة التنفيذ',
   monitor: 'متابعة',
 };
@@ -333,7 +341,7 @@ function renderDecisionRoom(d){
   document.getElementById('app').innerHTML=`
     <span class="eyebrow">اليوم</span>
      <h1>اليوم: وش يستحق انتباهك؟</h1>
-    <section class="today-card">
+    <section class="today-card" aria-label="بطاقة اليوم">
       <div class="today-head">
         <div class="today-label">${safe(today.label||'حالة اليوم')}</div>
         <div class="today-status">${safe(TODAY_STATUS_LABELS[today.status]||today.status||'—')}</div>
@@ -351,32 +359,53 @@ function renderDecisionRoom(d){
     <details class="room-details">
        <summary>تفاصيل الصورة والقرار</summary>
       <div class="room-grid">
-       <section class="room-card wide"><div class="room-label">1 · الوضع الآن</div>
+       <details class="room-group">
+        <summary>القرار</summary>
+        <div class="room-group-body">
+       <section class="room-card"><div class="room-label">الوضع الآن</div>
         <div class="room-value">${safe(s.profile_label)}</div>
         <div class="room-meta">حالة الدليل: ${s.baseline_status==='complete'?'مكتمل':'غير مكتمل'}
         ${s.baseline_period?` · ${s.baseline_period.start} — ${s.baseline_period.end}`:''}</div>
       </section>
-       <section class="room-card wide"><div class="room-label">2 · أهم 3 أرقام</div><div class="metrics3">${metricCards}</div></section>
-       <section class="room-card"><div class="room-label">3 · أكثر ما يعطل الشغل</div>
+       <section class="room-card"><div class="room-label">القرار الآن</div>
+         ${dec.status==='missing'?emptyCard(dec):`<div class="room-value">${safe(dec.action)}</div><div class="room-meta">${safe(dec.reason)}</div>${evidenceMeta(dec)}
+          <div class="room-meta" style="margin-top:12px;color:#0E7C7B;">الإجراء الوحيد لهذا القرار موجود في بطاقة «اليوم» أعلاه.</div>`}
+       </section>
+        </div>
+       </details>
+       <details class="room-group">
+        <summary>الدليل</summary>
+        <div class="room-group-body">
+        ${d.top_evidence_request?`<section class="room-card"><div class="room-label">طلب الدليل الأعلى أثرًا</div><div class="room-value">${safe(d.top_evidence_request.title)}</div><div class="room-meta">${safe(d.top_evidence_request.reason)}</div><a class="action-link" href="${withContext(d.top_evidence_request.href)}">وثّق هذا الدليل ←</a></section>`:''}
+        <section class="room-card"><div class="room-label">أهم 3 أرقام</div><div class="metrics3">${metricCards}</div></section>
+        <section class="room-card"><div class="room-label">أكثر ما يعطل الشغل</div>
         ${b.status==='missing'?emptyCard(b):`<div class="room-value">${safe(b.problem)}</div>${evidenceMeta(b)}`}
       </section>
-       <section class="room-card"><div class="room-label">4 · الفرصة الأوضح</div>
+        <section class="room-card"><div class="room-label">الفرصة الأوضح</div>
         ${o.status==='missing'?emptyCard(o):`<div class="room-value">${safe(o.title)}</div><div class="room-meta">قيمة العقد الموثقة: ${Number(o.contract_value||0).toLocaleString('ar-SA')}</div>${evidenceMeta(o)}`}
       </section>
-       <section class="room-card"><div class="room-label">5 · التجربة الحالية</div>
+        </div>
+       </details>
+       <details class="room-group">
+        <summary>التنفيذ</summary>
+        <div class="room-group-body">
+        <section class="room-card"><div class="room-label">التجربة الحالية</div>
         ${x.status==='missing'?emptyCard(x):`<div class="room-value">${safe(x.hypothesis)}</div><div class="room-meta">المالك: ${safe(x.owner)} · KPI: ${safe(x.kpi)}</div>${evidenceMeta(x)}`}
       </section>
-       <section class="room-card"><div class="room-label">6 · القرار الآن</div>
-        ${dec.status==='missing'?emptyCard(dec):`<div class="room-value">${safe(dec.action)}</div><div class="room-meta">${safe(dec.reason)}</div>${evidenceMeta(dec)}
-         <div class="room-meta" style="margin-top:12px;color:#0E7C7B;">الإجراء الوحيد لهذا القرار موجود في بطاقة «اليوم» أعلاه.</div>`}
-      </section>
-       <section class="room-card"><div class="room-label">7 · وش نسوي الآن؟</div>
+        <section class="room-card"><div class="room-label">وش نسوي الآن؟</div>
         ${t.status==='missing'?emptyCard(t):`<div class="room-value">${safe(t.title)}</div><div class="room-meta">المسؤول: ${safe(t.owner_user_id)} · المعتمد: ${safe(t.approver_user_id)}<br>الموعد: ${safe(t.due_date)} · مقياس النجاح: ${safe(t.kpi)} · ${safe(t.status)}</div>
          <div class="room-meta" style="margin-top:12px;color:#0E7C7B;">الإجراء الوحيد للتنفيذ موجود في بطاقة «اليوم» أعلاه.</div>`}
       </section>
-       <section class="room-card"><div class="room-label">8 · خطر يحتاج انتباهك</div>
+        </div>
+       </details>
+       <details class="room-group">
+        <summary>الخطر</summary>
+        <div class="room-group-body">
+        <section class="room-card"><div class="room-label">خطر يحتاج انتباهك</div>
         ${r.status==='missing'?emptyCard(r):`<div class="room-value">${safe(r.title)}</div><div class="room-meta">الأثر: ${safe(r.impact)} · الاحتمال ${r.probability}/5 · الشدة ${r.severity}/5<br>المالك: ${safe(r.owner_id)} · التخفيف: ${safe(r.mitigation_plan)}</div>${evidenceMeta(r)}`}
       </section>
+        </div>
+       </details>
       </div>
     </details>`;
   loadReminders();

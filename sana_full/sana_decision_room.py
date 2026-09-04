@@ -1292,11 +1292,24 @@ def decision_room(db, company_id):
     ).fetchone()
     missing_evidence = []
     if not baseline:
-        missing_evidence.append("Baseline كامل بمصدر وفترة ملاحظة")
+        missing_evidence.append({
+            "key": "baseline",
+            "title": "وثّق خط أساس كامل بمصدر وفترة ملاحظة",
+            "reason": "خط الأساس هو أعلى دليل أثرًا لأنه يحدد نقطة المقارنة قبل أي قرار أو تجربة.",
+        })
     if missing_metrics:
-        missing_evidence.append(f"{missing_metrics} مؤشرات مصنفة Fact")
+        missing_evidence.append({
+            "key": "metrics",
+            "title": f"وثّق {missing_metrics} مؤشرات مصنفة Fact",
+            "reason": "المؤشرات الموثقة مطلوبة لقياس أثر القرار بدل الاعتماد على الانطباع.",
+        })
     if not bottleneck and not experiment_decision and not experiment:
-        missing_evidence.append("اختناق رئيسي مرتبط بدليل")
+        missing_evidence.append({
+            "key": "bottleneck",
+            "title": "اربط الاختناق الرئيسي بدليل قابل للتتبع",
+            "reason": "الدليل الحاسم يثبت سبب الأولوية ويمنع اختيار مشكلة عامة.",
+        })
+    top_evidence_request = missing_evidence[0] if missing_evidence else None
 
     def today_evidence(label, value=None, source_ref=None, status="available"):
         item = {"label": label, "status": status}
@@ -1334,13 +1347,17 @@ def decision_room(db, company_id):
         today = {
             "status": "evidence_needed",
             "label": "الدليل أولًا",
-            "title": "لا تعتمد قرارًا اليوم قبل إكمال الدليل الناقص.",
-            "reason": "المعطيات الحالية لا تكفي لتحديد قرار مسؤول؛ أكمل أول فجوة ظاهرة ثم أعد المراجعة.",
+            "title": top_evidence_request["title"],
+            "reason": top_evidence_request["reason"],
             "evidence": [
-                today_evidence("المطلوب قبل القرار", item, status="missing")
-                for item in missing_evidence[:3]
+                today_evidence(
+                    "طلب الدليل الأعلى أثرًا",
+                    top_evidence_request["title"],
+                    status="missing",
+                )
             ],
-            "action": today_action("أكمل الدليل الناقص", target),
+            "action": today_action("وثّق هذا الدليل", target),
+            "evidence_request": dict(top_evidence_request),
         }
     elif case_decision:
         try:
@@ -1508,6 +1525,17 @@ def decision_room(db, company_id):
         ],
         "current_state": state,
         "today": today,
+        "top_evidence_request": (
+            {
+                **top_evidence_request,
+                "status": "required",
+                "href": (
+                    f"/case/{primary_case['case_id']}"
+                    if primary_case else "/case/new"
+                ),
+            }
+            if top_evidence_request else None
+        ),
         "top_metrics": metrics,
         "top_metrics_missing": missing_metrics,
         "bottleneck": dict(bottleneck) if bottleneck else {
