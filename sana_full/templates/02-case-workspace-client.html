@@ -22,6 +22,7 @@ h2{font-size:14px;color:var(--navy);margin:0 0 8px}.item{padding:8px 0;border-bo
 .state{border-right:4px solid var(--teal)}.state.warning{border-color:var(--gold)}.pill{display:inline-block;padding:3px 9px;border-radius:20px;background:#E4F7F6;color:#087e7d;font-size:10px;font-weight:700}.gate{background:#FFF9EB;border:1px solid #F1D68A;border-radius:9px;padding:12px;color:#765B00;font-size:12px;line-height:1.8}.finding{padding:10px;border:1px solid var(--line);border-radius:9px;margin-top:8px}.finding strong{color:var(--navy)}.sources{margin:7px 0 0;padding-right:18px}.reference{background:#F8F9FB}.reference .meta{color:#765B00}.deferred{background:#F5F6FB;border-radius:8px;padding:10px;color:var(--muted);font-size:12px}.helper{color:var(--muted);font-size:11px;margin-top:4px}
 .period-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.period-choice{padding:11px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#333940;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer}.period-choice.selected{border-color:var(--teal);background:#EAF8F7;color:#087e7d}.period-dates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.period-dates[hidden],.period-compare[hidden],#periodSummary[hidden]{display:none}.period-dates label{font-size:11px;color:var(--muted)}.period-dates input,.period-select{width:100%;margin-top:5px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;font-family:inherit}.period-summary{margin-top:10px;padding:9px 10px;border-radius:8px;background:#EAF8F7;color:#087e7d;font-size:12px}.period-note{min-height:18px;margin-top:7px;color:#765B00;font-size:11.5px}.period-edit{border:0;background:transparent;color:#087e7d;font-family:inherit;font-size:11.5px;font-weight:700;padding:8px 0 0;cursor:pointer}
 .shared-details{border:1px solid var(--line);border-radius:9px;overflow:hidden}.shared-details summary{padding:11px 12px;color:var(--navy);font-size:12.5px;font-weight:700;cursor:pointer;list-style-position:inside;background:#F8F9FB}.shared-details[open] summary{border-bottom:1px solid var(--line)}.shared-details-content{padding:0 12px}
+.clarity-card{margin-top:12px;padding:16px;border:1px solid #D9EEEE;border-radius:12px;background:#F8FFFE}.clarity-kicker{font-size:11px;font-weight:800;color:#087e7d;margin-bottom:5px}.clarity-question{font-family:'IBM Plex Sans Arabic',sans-serif;font-size:15px;font-weight:700;color:var(--navy);line-height:1.7}.clarity-why{font-size:11.5px;color:var(--muted);margin:5px 0 12px}.clarity-options{display:flex;flex-wrap:wrap;gap:7px}.clarity-option{border:1px solid var(--line);border-radius:20px;background:#fff;color:var(--navy);padding:8px 13px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}.clarity-option.selected{background:var(--navy);border-color:var(--navy);color:#fff}.clarity-note{min-height:72px;resize:vertical}.clarity-tools{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0}.clarity-tool{border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--navy);padding:8px 11px;font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer}.clarity-tool.recording{border-color:#C23B3F;color:#C23B3F;background:#FFF7F7}.clarity-status{min-height:20px;color:var(--muted);font-size:11px;margin:5px 0}.clarity-status.success{color:#087e7d}.clarity-status.error{color:#B23A2E}
 @media (max-width:480px){main{margin:18px auto;padding:0 12px 32px}section{padding:14px;margin-bottom:8px}.next .btn{display:block;width:100%;text-align:center}.period-options,.period-dates{grid-template-columns:1fr}.period-choice{width:100%;text-align:right}}
 </style>
 {% include '_customer-journey-styles.html' %}
@@ -53,6 +54,94 @@ function confidenceSummary(review,scan){
   const score=confidence.decision_score;
   const scoreText=score!==null&&score!==undefined&&score!==''?`درجة الثقة الحالية ${esc(score)}٪`:`قوة المعلومات ${esc(confidence.quality_label||'أولية')}`;
   return `${scoreText} · بُنيت القراءة على ${evidenceCount} ${evidenceCount===1?'معلومة':'معلومات'} من الشركة · موثوقية البيانات ${esc(confidence.data_label||'قيد التحسين')}`;
+}
+let clarityMeta=null,clarityChoice='',clarityAttachment=null,clarityRecorder=null,clarityChunks=[];
+async function loadClarityQuestion(){
+  const box=document.getElementById('clarityQuestion');
+  if(!box)return;
+  try{
+    const response=await fetch(`/api/companies/${encodeURIComponent(COMPANY_ID)}/sds-question?case_id=${encodeURIComponent(CASE_ID)}`);
+    const result=await response.json();
+    if(!response.ok||!result.success||!result.data){box.hidden=true;return}
+    clarityMeta=result.data;clarityChoice='';clarityAttachment=null;
+    const options=(clarityMeta.options||[]).map(option=>`<button type="button" class="clarity-option" data-choice="${esc(option)}">${esc(option)}</button>`).join('');
+    box.hidden=false;
+    box.innerHTML=`<div class="clarity-card">
+      <div class="clarity-kicker">سؤال واحد يزيد وضوح التشخيص</div>
+      <div class="clarity-question">${esc(clarityMeta.question)}</div>
+      <div class="clarity-why">اختر الأقرب. التوضيح أو المرفق اختياري، لكنه يساعدنا نفهم وضع شركتك بدقة أكبر.</div>
+      <div class="clarity-options">${options}</div>
+      <textarea id="clarityText" class="field clarity-note" maxlength="6000" placeholder="أضف توضيحًا بسيطًا إذا رغبت…"></textarea>
+      <div class="clarity-tools">
+        <label class="clarity-tool" for="clarityFile">⌁ ارفع صورة أو تقرير</label>
+        <input id="clarityFile" type="file" hidden accept=".png,.jpg,.jpeg,.webp,.pdf,.docx,.xlsx,.txt,.csv,.mp3,.m4a,.wav,.webm,.ogg">
+        <button type="button" class="clarity-tool" id="clarityVoice">◉ جاوب بصوتك</button>
+      </div>
+      <div id="clarityStatus" class="clarity-status">لن نحفظ التسجيل الخام؛ سنعرض لك النص المفرغ قبل الحفظ.</div>
+      <button type="button" class="btn" id="claritySubmit">احفظ وحدّث الصورة</button>
+    </div>`;
+    box.querySelectorAll('.clarity-option').forEach(button=>button.onclick=()=>{
+      box.querySelectorAll('.clarity-option').forEach(item=>item.classList.remove('selected'));
+      button.classList.add('selected');clarityChoice=button.dataset.choice||'';
+    });
+    document.getElementById('clarityFile').onchange=event=>{
+      const file=event.target.files?.[0];if(file)prepareClarityFile(file);
+    };
+    document.getElementById('clarityVoice').onclick=toggleClarityRecording;
+    document.getElementById('claritySubmit').onclick=submitClarityAnswer;
+    const legacy=document.getElementById('legacyAction');if(legacy)legacy.hidden=true;
+  }catch(_){box.hidden=true}
+}
+async function prepareClarityFile(file){
+  const status=document.getElementById('clarityStatus'),input=document.getElementById('clarityText');
+  status.className='clarity-status';status.textContent=`جارٍ قراءة ${file.name||'المرفق'}…`;
+  const form=new FormData();form.append('case_id',CASE_ID);form.append('question',clarityMeta?.question||'');form.append('file',file,file.name||'voice.webm');
+  try{
+    const response=await fetch(`/api/companies/${encodeURIComponent(COMPANY_ID)}/clarity-input/prepare`,{method:'POST',body:form});
+    const result=await response.json();
+    if(!response.ok||!result.success)throw Error(result.message||'تعذر قراءة المرفق');
+    clarityAttachment=result.data;
+    input.value=[input.value.trim(),result.data.text].filter(Boolean).join('\n');
+    status.className='clarity-status success';status.textContent=result.meta?.message||'تمت قراءة المرفق. راجع النص قبل الحفظ.';
+  }catch(error){status.className='clarity-status error';status.textContent=error.message}
+}
+async function toggleClarityRecording(){
+  const button=document.getElementById('clarityVoice'),status=document.getElementById('clarityStatus');
+  if(clarityRecorder?.state==='recording'){clarityRecorder.stop();button.classList.remove('recording');button.textContent='◉ جاوب بصوتك';return}
+  if(!navigator.mediaDevices?.getUserMedia){status.className='clarity-status error';status.textContent='التسجيل الصوتي غير مدعوم في هذا المتصفح.';return}
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    clarityChunks=[];clarityRecorder=new MediaRecorder(stream);
+    clarityRecorder.ondataavailable=event=>{if(event.data.size)clarityChunks.push(event.data)};
+    clarityRecorder.onstop=()=>{
+      stream.getTracks().forEach(track=>track.stop());
+      const blob=new Blob(clarityChunks,{type:clarityRecorder.mimeType||'audio/webm'});
+      prepareClarityFile(new File([blob],'إجابة-صوتية.webm',{type:blob.type}));
+    };
+    clarityRecorder.start();button.classList.add('recording');button.textContent='■ أوقف التسجيل';
+    status.className='clarity-status';status.textContent='جارٍ التسجيل… اضغط مرة أخرى عند الانتهاء.';
+  }catch(_){status.className='clarity-status error';status.textContent='تعذر الوصول إلى الميكروفون. يمكنك الكتابة أو رفع تسجيل.'}
+}
+async function submitClarityAnswer(){
+  const status=document.getElementById('clarityStatus'),button=document.getElementById('claritySubmit'),note=document.getElementById('clarityText').value.trim();
+  if(!clarityChoice){status.className='clarity-status error';status.textContent='اختر الإجابة الأقرب أولًا.';return}
+  const answer=[clarityChoice,note?`توضيح: ${note}`:''].filter(Boolean).join(' — ');
+  button.disabled=true;button.textContent='جارٍ الحفظ…';status.className='clarity-status';status.textContent='نحفظ الإجابة في ذاكرة شركتك ونحدّث التشخيص…';
+  try{
+    const response=await fetch(`/api/companies/${encodeURIComponent(COMPANY_ID)}/evidence`,{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        title:`${clarityMeta.question} — الإجابة: ${answer}`,case_id:CASE_ID,asset_id:clarityMeta.asset_id,
+        source_type:'SDS-002 تشخيص تراكمي',source_ref:clarityMeta.question_id,question_id:clarityMeta.question_id,
+        answer,adaptive_answer:true,information_type:'Narrative',verification_status:'UNVERIFIED',
+        source_category:'SELF_REPORTED',confidence:note?40:30,
+        adaptive_context:{input_modes:['choice',note?'text':null,clarityAttachment?.input_kind].filter(Boolean),attachment_filename:clarityAttachment?.filename||'',attachment_kind:clarityAttachment?.input_kind||''}
+      })
+    });
+    const result=await response.json();
+    if(!response.ok||!result.success)throw Error(result.message||'تعذر حفظ الإجابة');
+    status.className='clarity-status success';status.textContent='تم حفظ الإجابة في ذاكرة الشركة وتحديث الصورة.';
+    setTimeout(()=>location.reload(),350);
+  }catch(error){button.disabled=false;button.textContent='احفظ وحدّث الصورة';status.className='clarity-status error';status.textContent=error.message}
 }
 function periodForm(saved={}){
   return `<section><h2>نكمل الصورة</h2><p class="lead">وش الفترة اللي عندك عنها بيانات فعلية؟</p>
@@ -196,9 +285,10 @@ function render(d){
       <section><h2>المعلومات التي شاركتها</h2>${sharedInformation(review.client_evidence||[])}</section>
       <section class="reference"><h2>معلومات عامة تساعدنا نفهم</h2><div class="deferred">تفيدنا هذه المعلومات في الفهم، لكنها لا تتحول إلى حقيقة عن شركتك دون دليل منها.</div>${rows(refs,r=>`<div class="item"><strong>${esc(r.title)}</strong><div>${esc(r.original_summary||r.problem||'')}</div><div class="meta">الإصدار ${esc(r.source_version||r.version||'—')} · سبب الصلة: ${esc((r.match_reasons||[]).join(' · ')||'معلومة عامة')}<br>ما نحتاجه منك: ${esc(r.required_client_evidence||'رقم أو معلومة خاصة بالشركة')}</div></div>`,'<div class="item"><strong>هذه القراءة مبنية على وضع الشركة نفسه</strong><div>لم نستخدم مرجعًا عامًا في هذا الاستنتاج؛ اعتمدنا على إجابات الشركة ومصادرها الحالية.</div></div>')}</section>
        <section><h2>وش الاتجاه المقترح؟</h2>${decisionView}</section>
-       <section class="next"><h2>وش تسوي الآن؟</h2>${nextStepView}${action}</section>
+       <section class="next"><h2>وش تسوي الآن؟</h2>${nextStepView}<div id="clarityQuestion" hidden></div><div id="legacyAction">${action}</div></section>
        <section class="state ${journey.status==='INCOMPLETE'?'warning':''}"><h2>وش تغيّر؟</h2>${journeyResult}</section>`;
-  if(!(scan||{}).diagnostic_baseline)initPeriodForm({});
+   loadClarityQuestion();
+   if(!(scan||{}).diagnostic_baseline)initPeriodForm({});
 }
 const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const dateOf=v=>{const [y,m,d]=String(v||'').split('-').map(Number);return y&&m&&d?new Date(y,m-1,d,12):null};

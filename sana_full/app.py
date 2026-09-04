@@ -19,6 +19,9 @@ import decimal
 import re
 import time
 import html
+import base64
+import subprocess
+import requests
 from urllib.parse import urlencode, urlparse
 from datetime import datetime, date, timedelta
 from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for, Response, abort, send_file
@@ -10501,6 +10504,167 @@ def create_case(company_id):
 # API — Evidence (add evidence = "رفع دليل")
 # ------------------------------------------------------------------
 
+@app.route("/api/companies/<company_id>/clarity-input/prepare", methods=["POST"])
+def prepare_clarity_input(company_id):
+    """يستخرج نص المرفق أو يفرّغ الصوت قبل حفظ إجابة السؤال التكيفي."""
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    case_id = (request.form.get("case_id") or "").strip()
+    question = (request.form.get("question") or "").strip()[:500]
+    upload = request.files.get("file")
+    if not case_id or not upload or not upload.filename:
+        return jsonify({
+            "success": False,
+            "error": "CLARITY_FILE_REQUIRED",
+            "message": "اختر ملفًا أو تسجيلًا لإضافته إلى الإجابة.",
+        }), 400
+    db = get_db()
+    case = db.execute(
+        "SELECT company_id FROM cases WHERE case_id=?", (case_id,)
+    ).fetchone()
+    if not case or case["company_id"] != company_id:
+        return jsonify({
+            "success": False,
+            "error": "CASE_NOT_FOUND",
+            "message": "تعذر العثور على القضية ضمن شركتك.",
+        }), 404
+
+    content = upload.read(10 * 1024 * 1024 + 1)
+    if not content or len(content) > 10 * 1024 * 1024:
+        return jsonify({
+            "success": False,
+            "error": "CLARITY_FILE_SIZE_INVALID",
+            "message": "حجم الملف يجب أن يكون بين 1 بايت و10 ميجابايت.",
+        }), 413
+    filename = os.path.basename(upload.filename)[:180]
+    mime_type = (upload.mimetype or "application/octet-stream").lower()
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    audio_types = {
+        "audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav",
+        "audio/webm", "audio/ogg", "audio/m4a",
+    }
+    image_types = {"image/jpeg", "image/png", "image/webp"}
+    allowed_extensions = {
+        "txt", "md", "csv", "json", "docx", "xlsx", "pdf",
+        "jpg", "jpeg", "png", "webp", "mp3", "mp4", "m4a",
+        "wav", "webm", "ogg",
+    }
+    if extension not in allowed_extensions:
+        return jsonify({
+            "success": False,
+            "error": "CLARITY_FILE_TYPE_INVALID",
+            "message": "استخدم صورة أو PDF أو Word أو Excel أو ملفًا نصيًا أو تسجيلًا صوتيًا.",
+        }), 415
+
+    base_url = (os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL") or "").rstrip("/")
+    api_key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY") or ""
+    extracted_text = ""
+    input_kind = "document"
+    try:
+        if mime_type in audio_types or extension in {"mp3", "m4a", "wav", "webm", "ogg"}:
+            if not base_url or not api_key:
+                raise RuntimeError("تعذر تشغيل التفريغ الصوتي الآن.")
+            response = requests.post(
+                f"{base_url}/audio/transcriptions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                files={"file": (filename, content, mime_type)},
+                data={"model": "gpt-4o-mini-transcribe", "language": "ar"},
+                timeout=90,
+            )
+            response.raise_for_status()
+            extracted_text = (response.json().get("text") or "").strip()
+            input_kind = "voice_transcript"
+        elif mime_type in image_types or extension in {"jpg", "jpeg", "png", "webp"}:
+            if not base_url or not api_key:
+                raise RuntimeError("تعذر قراءة الصورة الآن.")
+            encoded = base64.b64encode(content).decode("ascii")
+            response = requests.post(
+                f"{base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "gpt-5.4-mini",
+                    "max_completion_tokens": 700,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "استخرج فقط المعلومات الظاهرة في الصورة التي تساعد "
+                                    f"على إجابة هذا السؤال عن الشركة: {question or 'السؤال التشخيصي الحالي'}. "
+                                    "اكتب ملخصًا عربيًا قصيرًا دون تخمين أو توصية."
+                                ),
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{mime_type};base64,{encoded}"},
+                            },
+                        ],
+                    }],
+                },
+                timeout=90,
+            )
+            response.raise_for_status()
+            extracted_text = (
+                response.json().get("choices", [{}])[0]
+                .get("message", {}).get("content", "")
+            ).strip()
+            input_kind = "image_extract"
+        elif mime_type == "application/pdf" or extension == "pdf":
+            result = subprocess.run(
+                ["pdftotext", "-", "-"],
+                input=content,
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+            extracted_text = result.stdout.decode("utf-8", errors="replace").strip()
+            input_kind = "report_extract"
+        else:
+            from sana_knowledge import _extract_uploaded_text
+            extracted_text, extraction_status = _extract_uploaded_text(
+                filename, mime_type, content
+            )
+            if extraction_status != "extracted":
+                extracted_text = ""
+            input_kind = "report_extract"
+    except (requests.RequestException, subprocess.SubprocessError, RuntimeError) as exc:
+        app.logger.warning("clarity input preparation failed: %s", exc)
+        return jsonify({
+            "success": False,
+            "error": "CLARITY_PREPARATION_FAILED",
+            "message": "تعذر قراءة الملف الآن. يمكنك كتابة الخلاصة يدويًا والمحاولة لاحقًا.",
+        }), 502
+
+    extracted_text = re.sub(r"\s+", " ", extracted_text).strip()[:6000]
+    if not extracted_text:
+        return jsonify({
+            "success": False,
+            "error": "CLARITY_TEXT_EMPTY",
+            "message": "لم نجد نصًا واضحًا في الملف. اكتب الخلاصة يدويًا أو جرّب ملفًا أوضح.",
+        }), 422
+    return jsonify({
+        "success": True,
+        "data": {
+            "text": extracted_text,
+            "input_kind": input_kind,
+            "filename": filename,
+            "raw_file_retained": False,
+        },
+        "meta": {
+            "message": (
+                "تم تفريغ الصوت. راجع النص قبل الحفظ."
+                if input_kind == "voice_transcript"
+                else "تمت قراءة المرفق. راجع الخلاصة قبل الحفظ."
+            ),
+        },
+    })
+
+
 @app.route("/api/companies/<company_id>/evidence", methods=["POST"])
 def add_evidence(company_id):
     from sana_evidence import save_evidence as _save_evidence
@@ -10521,6 +10685,11 @@ def add_evidence(company_id):
     adaptive_answer = body.get("adaptive_answer") is True
     adaptive_question_id = (body.get("question_id") or "").strip()
     adaptive_value = (body.get("answer") or "").strip()
+    adaptive_context = (
+        body.get("adaptive_context")
+        if isinstance(body.get("adaptive_context"), dict)
+        else {}
+    )
     request_key = (body.get("request_key") or "").strip()
     request_fingerprint = (body.get("request_fingerprint") or "").strip()
     is_unknown_response = (
@@ -10753,6 +10922,14 @@ def add_evidence(company_id):
                 "topic_key": calibrated.get("topic_key"),
                 "self_reported": calibrated.get("source_category") == "SELF_REPORTED",
                 "adaptive_answer": adaptive_answer,
+                "input_modes": list(adaptive_context.get("input_modes") or [])[:4],
+                "attachment_filename": str(
+                    adaptive_context.get("attachment_filename") or ""
+                )[:180],
+                "attachment_kind": str(
+                    adaptive_context.get("attachment_kind") or ""
+                )[:40],
+                "raw_file_retained": False,
             },
             verification_status=calibrated.get("verification_status", "UNVERIFIED"),
             freshness_class="FAST" if calibrated.get("normalized_value") is not None else "MEDIUM",
