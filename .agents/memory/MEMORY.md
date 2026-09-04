@@ -35,3 +35,4 @@
 - [Sana company memory](sana-company-memory.md) — company memory is append-only and private; only fresh verified versions become current, while conflicts stay reviewable.
 - [Sana asset score separation](sana-asset-score-separation.md) — self-reports improve completeness, not strength; asset-score changes require traceable verified evidence or measured impact.
 - [Sana test journey reset](sana-test-journey-reset.md) — reset access is Pilot slots 1–20 or admin, including production; deletion stays tenant-scoped, transactional, and batched.
+- [Supabase RLS under live traffic](supabase-rls-live-traffic.md) — revoke client grants first; apply RLS per table when long transactions make an all-table migration deadlock.
