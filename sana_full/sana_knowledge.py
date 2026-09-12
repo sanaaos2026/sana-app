@@ -30,6 +30,9 @@ LIBRARY_TYPES = [
     ("SOP", "مكتبة إجراءات التشغيل"),
     ("CASE", "مكتبة الحالات"),
     ("FRAMEWORK", "مكتبة الأطر"),
+    ("CONTENT_REFERENCE", "مراجع المحتوى العام"),
+    ("CONTENT_POLICY", "سياسة المحتوى"),
+    ("CONTENT_BACKLOG", "خطة المحتوى"),
 ]
 
 RESEARCH_SOURCE_KINDS = {

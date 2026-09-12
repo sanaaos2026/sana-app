@@ -323,6 +323,7 @@ CREATE TABLE IF NOT EXISTS case_human_reviews (
     next_action TEXT,
     client_note TEXT,
     reviewer_note TEXT,
+    expert_inputs_json TEXT NOT NULL DEFAULT '{}',
     expert_summary_json TEXT,
     expert_summary_status TEXT NOT NULL DEFAULT 'DRAFT'
         CHECK (expert_summary_status IN ('DRAFT','FORMATTED','APPROVED')),

@@ -24,6 +24,9 @@
   .brand{ display:flex; align-items:center; gap:9px; }
   .brand svg{ width:26px; height:26px; }
   .brand span{ font-family:'Cairo'; font-weight:800; font-size:18px; color:var(--navy); }
+  .nav-links{display:flex;align-items:center;gap:16px;}
+  .nav-link{font-size:13.5px;color:var(--muted);font-weight:600;}
+  .nav-link:hover{color:var(--navy);}
   .nav-cta{ font-family:'Cairo'; font-weight:700; font-size:14px; color:var(--navy); border:1.5px solid var(--navy); padding:9px 20px; border-radius:8px; transition:.2s; }
   .nav-cta:hover{ background:var(--navy); color:#fff; }
 
@@ -101,6 +104,14 @@
   .faq-item h3{ font-family:'Cairo'; font-size:16px; color:var(--navy); margin-bottom:6px; }
   .faq-item p{ font-size:14px; color:var(--muted); }
 
+  .article-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:30px;}
+  .article-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;display:flex;flex-direction:column;min-height:190px;}
+  .article-card h3{font-family:'Cairo';font-size:16px;line-height:1.65;color:var(--navy);margin-bottom:8px;}
+  .article-card p{font-size:13px;color:var(--muted);line-height:1.75;flex:1;}
+  .article-card span{font-size:13px;color:var(--teal);font-weight:700;margin-top:14px;}
+  .articles-all{display:block;width:max-content;margin:22px auto 0;color:var(--teal);font-weight:700;font-size:14px;}
+  @media (max-width:760px){.article-grid{grid-template-columns:1fr}.nav-link{display:none}}
+
   .cta-final{ background:var(--navy); color:#fff; text-align:center; border-radius:20px; padding:56px 32px; max-width:820px; margin:20px auto 0; }
   .cta-final h2{ color:#fff; }
   .cta-final p{ color:#B9C1D6; margin-bottom:30px; }
@@ -116,7 +127,11 @@
     {{ sana_mark(size=26, decorative=true) }}
     <span>سنع</span>
   </div>
-  <a href="/login" class="nav-cta">تسجيل الدخول</a>
+  <div class="nav-links">
+    <a href="/articles" class="nav-link">المقالات</a>
+    <a href="/guide" class="nav-link">كيف يعمل سنع</a>
+    <a href="/login" class="nav-cta">تسجيل الدخول</a>
+  </div>
 </nav>
 
 <header class="hero">
@@ -232,6 +247,26 @@
     </div>
   </div>
 </section>
+
+{% if featured_articles %}
+<section style="background:#fff; border-top:1px solid var(--line); border-bottom:1px solid var(--line);">
+  <div class="section-inner">
+    <div class="eyebrow">مقالات سنع</div>
+    <h2>مشكلات تواجه الشركات الخدمية</h2>
+    <p class="lead">مقالات مختصرة تساعدك على فهم المشكلة قبل أن تنفق على الحل</p>
+    <div class="article-grid">
+      {% for article in featured_articles %}
+      <a class="article-card" href="/articles/{{ article.slug }}">
+        <h3>{{ article.title }}</h3>
+        <p>{{ article.subtitle }}</p>
+        <span>اقرأ المقال ←</span>
+      </a>
+      {% endfor %}
+    </div>
+    <a class="articles-all" href="/articles">جميع المقالات ←</a>
+  </div>
+</section>
+{% endif %}
 
 <section>
   <div class="cta-final">

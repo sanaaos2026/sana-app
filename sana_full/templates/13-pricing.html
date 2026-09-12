@@ -45,13 +45,14 @@
 </section></main>
 <script>
 const fmt=n=>`${(n/100).toLocaleString('ar-SA')} ريال`;
+const requestedFeature=new URLSearchParams(location.search).get('feature')||'';
 let authenticated=false,code='',current={price_minor:0,discount_minor:0,amount_now_minor:0};
 async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok||!j.success)throw new Error(j.message||j.error||'تعذر الطلب');return j.data}
 function draw(){summaryPrice.textContent=fmt(current.price_minor);summaryDiscount.textContent=fmt(current.discount_minor);summaryNow.textContent=fmt(current.amount_now_minor);checkout.textContent=current.amount_now_minor===0?'ابدأ مجانًا':'اشترك الآن'}
 couponToggle.onclick=()=>couponBox.classList.toggle('open');
 applyCoupon.onclick=async()=>{message.textContent='';try{current=await post('/api/billing/quote',{code:couponCode.value});code=current.coupon_code||'';draw()}catch(e){message.textContent=e.message}};
 checkout.onclick=async()=>{message.textContent='';if(!authenticated){location.href='/signup';return}checkout.disabled=true;try{const d=await post('/api/billing/checkout',{code});location.href=d.redirect||d.url}catch(e){message.textContent=e.message;checkout.disabled=false}};
-(async()=>{try{const r=await fetch('/api/billing/offer'),j=await r.json(),o=j.data;authenticated=j.authenticated;planName.textContent=o.name;headline.textContent=o.headline;saleLabel.textContent=o.sale_label;features.innerHTML=o.features.map(x=>`<li>${x}</li>`).join('');basePrice.textContent=`بدل ${fmt(o.base_price_minor)}`;salePrice.textContent=fmt(o.sale_price_minor).replace(' ريال','');current={price_minor:o.sale_price_minor,discount_minor:0,amount_now_minor:o.sale_price_minor};draw();if(new URLSearchParams(location.search).get('payment')==='pending')message.textContent='لم يكتمل الدفع بعد.'}catch(e){message.textContent='تعذر تحميل الباقة الآن.';checkout.disabled=true}})();
+(async()=>{try{const r=await fetch('/api/billing/offer'),j=await r.json(),o=j.data;authenticated=j.authenticated;planName.textContent=o.name;headline.textContent=requestedFeature==='expert_review'?'مراجعة خبير سنع والتقرير الكامل ضمن الاشتراك':(requestedFeature==='report_pdf'||requestedFeature==='report'?'حمّل التقرير الكامل وتابع القرار مع سنع':o.headline);saleLabel.textContent=o.sale_label;features.innerHTML=o.features.map(x=>`<li>${x}</li>`).join('');basePrice.textContent=`بدل ${fmt(o.base_price_minor)}`;salePrice.textContent=fmt(o.sale_price_minor).replace(' ريال','');current={price_minor:o.sale_price_minor,discount_minor:0,amount_now_minor:o.sale_price_minor};draw();if(new URLSearchParams(location.search).get('payment')==='pending')message.textContent='لم يكتمل الدفع بعد.'}catch(e){message.textContent='تعذر تحميل الباقة الآن.';checkout.disabled=true}})();
 </script>
 </body>
 </html>

@@ -745,7 +745,7 @@ ADMIN_PERMISSION_OPTIONS = {
     "edit_company": "إدخال وتعديل معلومات الشركات",
     "run_reports": "تشغيل وعرض التقارير",
     "export_reports": "تصدير التقارير",
-    "review_cases": "مراجعة الحالات",
+    "review_cases": "خبراء سنع / مراجعة الحالات",
 }
 COMPANY_CONTEXT_PERMISSIONS = {
     "manage_companies", "edit_company", "run_reports",
@@ -2278,10 +2278,12 @@ def seed_decision_impacts():
 
 
 def seed_knowledge_db():
-    """يضيف بذور مكتبة سنع المنظمة بشكل idempotent دون لمس بيانات الشركات."""
+    """يضيف معرفة سنع والمقالات العامة بشكل idempotent دون لمس بيانات الشركات."""
     from sana_knowledge import seed_knowledge
+    from sana_articles import seed_articles_and_knowledge
     conn = _connect_pg()
     seed_knowledge(conn)
+    seed_articles_and_knowledge(conn)
     conn.commit()
     conn.close()
 
@@ -2295,8 +2297,20 @@ def entry():
     account = current_account()
     if account:
         return redirect(_company_start_redirect(account))
+    from sana_articles import FEATURED_ARTICLE_SLUGS
+    placeholders = ",".join("?" for _ in FEATURED_ARTICLE_SLUGS)
+    rows = get_db().execute(
+        f"""SELECT slug,title,subtitle FROM methodology_docs
+            WHERE doc_type='article' AND slug IN ({placeholders})""",
+        FEATURED_ARTICLE_SLUGS,
+    ).fetchall()
+    by_slug = {row["slug"]: dict(row) for row in rows}
+    featured_articles = [
+        by_slug[slug] for slug in FEATURED_ARTICLE_SLUGS if slug in by_slug
+    ]
     return render_template(
         "00-landing.html",
+        featured_articles=featured_articles,
         **public_seo_context(
             "/",
             "سنع للشركات الخدمية — تشخيص وترتيب أولويات",
@@ -2361,17 +2375,29 @@ def sitemap_xml():
 
 @app.route("/llms.txt")
 def llms_txt():
-    content = """# سنع | Sana Clarity
+    articles = get_db().execute(
+        "SELECT slug,title FROM methodology_docs WHERE doc_type='article' ORDER BY doc_id"
+    ).fetchall()
+    article_lines = "\n".join(
+        f"- {row['title']}: {PUBLIC_SITE_URL}/articles/{row['slug']}"
+        for row in articles
+    )
+    content = f"""# سنع | Sana Clarity
 
 سنع أداة عربية تساعد الشركات الخدمية والخبراء والمكاتب المهنية والوكالات على تشخيص اختناقات المبيعات والتشغيل، ترتيب الأولويات، واتخاذ قرارات مبنية على البيانات. سنع ليس نظام CRM ولا يعد بنتائج رقمية؛ بل ينظم المعلومات المتاحة ويحوّلها إلى أولوية وقرار وخطوة قابلة للمتابعة.
 
 Sana Clarity is an Arabic business clarity tool for service companies, experts, professional firms, and agencies. It helps diagnose sales and operations bottlenecks, prioritize work, and turn available evidence into decisions and trackable next steps. Sana is not a CRM and does not promise numeric outcomes.
 
 ## Public pages
-- Home: https://sanaclarity.com/
-- Pricing: https://sanaclarity.com/pricing
-- Guide: https://sanaclarity.com/guide
-- Articles: https://sanaclarity.com/articles
+- Home: {PUBLIC_SITE_URL}/
+- Pricing: {PUBLIC_SITE_URL}/pricing
+- Guide: {PUBLIC_SITE_URL}/guide
+- Articles: {PUBLIC_SITE_URL}/articles
+
+## Public articles
+{article_lines}
+
+Public articles are Sana-owned educational references for service-business growth topics. They may be used to explain concepts and suggest public content, but they are not client evidence, causal proof, or numeric benchmarks.
 
 Private account, diagnostic, company, admin, and API routes are intentionally excluded.
 """
@@ -2425,7 +2451,7 @@ def case_next_step(case_id):
         abort(404)
     if account and case["company_id"] != account["company_id"]:
         abort(403)
-    return render_template("02b-next-step.html", case_id=case_id)
+    return redirect(url_for("case_workspace", case_id=case_id))
 
 
 @app.route("/api/cases/<case_id>/next-step")
@@ -5444,6 +5470,8 @@ def admin_create_admin():
     body = request.get_json(silent=True) or {}
     email = _valid_email(body.get("email"))
     requested = {str(item) for item in (body.get("permissions") or [])}
+    if requested:
+        requested.add("review_cases")
     if not email:
         return jsonify({"success": False, "error": "EMAIL_INVALID"}), 400
     if not requested or not requested.issubset(ADMIN_PERMISSION_OPTIONS):
@@ -5775,7 +5803,7 @@ def admin_human_reviews():
                   c.name AS company_name,ca.case_title,d.title AS decision_title,
                   d.confidence_score,d.success_metric,
                   r.before_snapshot_json,r.final_decision,r.approved_kpi,
-                   r.next_action,r.client_note,r.reviewer_note,
+                   r.next_action,r.client_note,r.reviewer_note,r.expert_inputs_json,
                    r.expert_summary_status,r.notes_updated_at,r.formatted_at,
                    r.approved_at,u.email AS reviewer_email
            FROM case_human_reviews r
@@ -5990,6 +6018,125 @@ def admin_save_expert_review_notes(review_id):
 
 
 @app.route(
+    "/api/admin/human-reviews/<review_id>/expert-inputs",
+    methods=["PATCH"],
+)
+def admin_save_expert_review_inputs(review_id):
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    text_fields = {
+        "current_situation": 2500,
+        "client_observation": 3000,
+        "priority": 1500,
+        "recommendation": 3000,
+        "plan": 5000,
+        "next_action": 1500,
+    }
+    cleaned = {}
+    for key, limit in text_fields.items():
+        value = str(body.get(key) or "").strip()
+        if len(value) > limit:
+            return jsonify({
+                "success": False,
+                "message": f"اختصر {key} إلى {limit} حرف أو أقل.",
+            }), 400
+        cleaned[key] = value
+
+    refs = body.get("references") or []
+    if not isinstance(refs, list) or len(refs) > 5:
+        return jsonify({
+            "success": False,
+            "message": "يمكن إضافة خمسة مراجع أو ملفات كرابط كحد أقصى.",
+        }), 400
+    clean_refs = []
+    for item in refs:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "مرجع").strip()[:120]
+        url = str(item.get("url") or "").strip()
+        parsed = urlparse(url) if url else None
+        if url and (parsed.scheme not in {"http", "https"} or not parsed.netloc):
+            return jsonify({
+                "success": False,
+                "message": "رابط المرجع يجب أن يبدأ بـ http أو https.",
+            }), 400
+        if url:
+            clean_refs.append({"label": label or "مرجع", "url": url[:1000]})
+    cleaned["references"] = clean_refs
+
+    candidate = body.get("knowledge_candidate") or {}
+    if not isinstance(candidate, dict):
+        candidate = {}
+    candidate_text = str(candidate.get("text") or "").strip()
+    if len(candidate_text) > 4000:
+        return jsonify({
+            "success": False,
+            "message": "اختصر المادة المرشحة للمعرفة إلى 4000 حرف أو أقل.",
+        }), 400
+    candidate_scope = str(candidate.get("scope") or "sector").strip().lower()
+    if candidate_scope not in {"sector", "general"}:
+        candidate_scope = "sector"
+    candidate_sector = str(candidate.get("sector") or "").strip()[:120]
+    cleaned["knowledge_candidate"] = {
+        "text": candidate_text,
+        "scope": candidate_scope,
+        "sector": candidate_sector,
+    }
+
+    db = get_db()
+    review = db.execute(
+        "SELECT * FROM case_human_reviews WHERE review_id=? FOR UPDATE",
+        (review_id,),
+    ).fetchone()
+    if not review:
+        return jsonify({"success": False, "error": "REVIEW_NOT_FOUND"}), 404
+    if review["expert_summary_status"] == "APPROVED":
+        return jsonify({
+            "success": False,
+            "message": "الملخص معتمد. أنشئ مراجعة جديدة لأي تعديل لاحق.",
+        }), 409
+    try:
+        previous = json.loads(review["expert_inputs_json"] or "{}")
+        if not isinstance(previous, dict):
+            previous = {}
+    except (TypeError, json.JSONDecodeError):
+        previous = {}
+    previous_candidate = previous.get("knowledge_candidate") or {}
+    if previous_candidate.get("research_source_id"):
+        cleaned["knowledge_candidate"]["research_source_id"] = previous_candidate["research_source_id"]
+        cleaned["knowledge_candidate"]["review_status"] = previous_candidate.get("review_status", "inbox")
+
+    actor_id = current_account()["account_id"]
+    db.execute(
+        """UPDATE case_human_reviews
+           SET expert_inputs_json=?,reviewer_account_id=?,notes_updated_at=now(),
+               expert_summary_json=NULL,expert_summary_status='DRAFT',
+               formatted_at=NULL,approved_at=NULL,approved_by=NULL
+           WHERE review_id=?""",
+        (json.dumps(cleaned, ensure_ascii=False), actor_id, review_id),
+    )
+    _admin_audit(
+        db, actor_id, "expert_review_inputs_saved",
+        "case_human_review", review_id, review["company_id"],
+        reason="حفظ إضافات خبير سنع النصية دون تغيير بيانات المصدر",
+        metadata={
+            "case_id": review["case_id"],
+            "client_fields": [k for k in text_fields if cleaned.get(k)],
+            "reference_count": len(clean_refs),
+            "knowledge_candidate": bool(candidate_text),
+        },
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "review_id": review_id,
+        "expert_summary_status": "DRAFT",
+        "expert_inputs": cleaned,
+    }})
+
+
+@app.route(
     "/api/admin/human-reviews/<review_id>/format-summary",
     methods=["POST"],
 )
@@ -6012,13 +6159,11 @@ def admin_format_expert_review_summary(review_id):
         }), 409
     try:
         summary = format_expert_summary(db, review_id)
-    except ValueError as exc:
-        message = (
-            "اكتب ملاحظات الخبير واحفظها قبل التنسيق."
-            if str(exc) == "EXPERT_NOTES_REQUIRED"
-            else "تعذر العثور على طلب المراجعة."
-        )
-        return jsonify({"success": False, "message": message}), 400
+    except ValueError:
+        return jsonify({
+            "success": False,
+            "message": "تعذر العثور على طلب المراجعة.",
+        }), 400
     actor_id = current_account()["account_id"]
     db.execute(
         """UPDATE case_human_reviews
@@ -6049,7 +6194,7 @@ def admin_approve_expert_review_summary(review_id):
     _role, failure = _admin_guard(permission="review_cases")
     if failure:
         return failure
-    from sana_human_review import add_event
+    from sana_human_review import add_event, create_knowledge_candidate_from_review
     db = get_db()
     review = db.execute(
         "SELECT * FROM case_human_reviews WHERE review_id=? FOR UPDATE",
@@ -6066,6 +6211,17 @@ def admin_approve_expert_review_summary(review_id):
             "message": "نسّق ملخص الخبير قبل اعتماده.",
         }), 409
     actor_id = current_account()["account_id"]
+    try:
+        knowledge_candidate_id = create_knowledge_candidate_from_review(
+            db, review_id, actor_id
+        )
+    except Exception:
+        db.rollback()
+        app.logger.exception("Expert knowledge candidate creation failed")
+        return jsonify({
+            "success": False,
+            "message": "تعذر حفظ المادة المرشحة لمعرفة سنع. راجع النص ثم أعد المحاولة.",
+        }), 500
     previous_status = review["status"]
     db.execute(
         """UPDATE case_human_reviews
@@ -6084,12 +6240,16 @@ def admin_approve_expert_review_summary(review_id):
         db, actor_id, "expert_review_summary_approved",
         "case_human_review", review_id, review["company_id"],
         reason="اعتماد ملخص مراجعة الخبير للعميل",
-        metadata={"case_id": review["case_id"]},
+        metadata={
+            "case_id": review["case_id"],
+            "knowledge_candidate_id": knowledge_candidate_id,
+        },
     )
     db.commit()
     return jsonify({"success": True, "data": {
         "review_id": review_id,
         "expert_summary_status": "APPROVED",
+        "knowledge_candidate_id": knowledge_candidate_id,
     }})
 
 
@@ -6255,6 +6415,13 @@ def admin_update_user(account_id):
         return jsonify({"success": False, "error": "CANNOT_DISABLE_SELF"}), 400
     new_status = new_status or target["account_status"]
     new_role = new_role or target_role
+    if new_role == "ADMIN":
+        if requested_permissions is None:
+            try:
+                requested_permissions = set(json.loads(target.get("admin_permissions") or "[]"))
+            except (TypeError, json.JSONDecodeError):
+                requested_permissions = set()
+        requested_permissions.add("review_cases")
     if new_role in SYSTEM_ADMIN_ROLES:
         company_id = None
     else:
@@ -6440,6 +6607,12 @@ def article_page(slug):
         or f"مقال من سنع يشرح {article['title']} للشركات الخدمية بخطوات عملية قابلة للتطبيق."
     ).strip()
     description = description[:157].rstrip()
+    try:
+        article_tags = json.loads(article.get("sector_tags") or "{}")
+    except (TypeError, ValueError):
+        article_tags = {}
+    keywords = [article_tags.get("keyword")] + list(article_tags.get("content_tags") or [])
+    keywords = [item for item in keywords if item]
     schema = {
         "@context": "https://schema.org",
         "@type": "Article",
@@ -6448,6 +6621,9 @@ def article_page(slug):
         "url": f"{PUBLIC_SITE_URL}{url_for('article_page', slug=slug)}",
         "mainEntityOfPage": f"{PUBLIC_SITE_URL}{url_for('article_page', slug=slug)}",
         "inLanguage": "ar",
+        "datePublished": str(article.get("created_at") or "")[:10] or None,
+        "keywords": keywords,
+        "author": {"@type": "Organization", "name": "سنع"},
         "publisher": {
             "@type": "Organization",
             "name": "سنع",
@@ -9970,6 +10146,12 @@ def _build_passport_context(company_id):
         context["human_review"] = client_payload(db, company_id, case_id)
     else:
         context["human_review"] = None
+    from sana_billing import has_company_access
+    context["report_paid_access"] = (
+        _admin_role() in SYSTEM_ADMIN_ROLES
+        or has_company_access(db, company_id)
+    )
+    context["pricing_url"] = url_for("pricing_page", feature="report")
     context["report_view"] = "main"
     context["context_query"] = ""
     assessment_url = endpoint_path("assessment")
@@ -10132,6 +10314,13 @@ def case_human_review(case_id):
             "message": "اختصر الملاحظة إلى 500 حرف أو أقل.",
         }), 400
     payload = client_payload(db, case["company_id"], case_id)
+    if payload["settings"].get("requires_subscription") and _admin_role() not in SYSTEM_ADMIN_ROLES:
+        return jsonify({
+            "success": False,
+            "error": "SUBSCRIPTION_REQUIRED",
+            "message": "مراجعة خبير سنع ضمن الاشتراك.",
+            "redirect": url_for("pricing_page", feature="expert_review"),
+        }), 402
     if not payload["settings"]["available"]:
         return jsonify({"success": False, "message": "الحجز المدفوع غير مفعّل حاليًا."}), 409
     active = payload.get("review")
@@ -10178,6 +10367,12 @@ def passport_report_pdf(company_id):
     guard = enforce_entity_company_scope(company["company_id"])
     if guard:
         return guard
+    from sana_billing import has_company_access
+    if (
+        _admin_role() not in SYSTEM_ADMIN_ROLES
+        and not has_company_access(get_db(), company_id)
+    ):
+        return redirect(url_for("pricing_page", feature="report_pdf"))
 
     expert_summary = request.args.get("view") == "expert-summary"
     if not expert_summary:

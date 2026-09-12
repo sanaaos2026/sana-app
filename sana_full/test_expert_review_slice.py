@@ -12,10 +12,10 @@ class ExpertReviewTemplateTest(unittest.TestCase):
             Path(__file__).parent / "templates" / "14-passport-report.html"
         ).read_text(encoding="utf-8")
 
-        self.assertEqual(template.count("class_name='expert-review-mark'"), 5)
+        self.assertEqual(template.count("class_name='expert-review-mark'"), 6)
         self.assertEqual(
             template.count("class_name='expert-review-mark', decorative=true"),
-            5,
+            6,
         )
         self.assertIn(
             ".expert-review-mark{width:15px;height:15px;flex:0 0 15px;"
@@ -67,6 +67,8 @@ class ExpertReviewSliceTest(unittest.TestCase):
                     "active",
                 ),
             )
+            from sana_billing import activate_free
+            activate_free(db, cls.company_id, period_days=30)
             db.execute(
                 """INSERT INTO cases
                    (case_id,company_id,case_title,declared_problem,real_question)
@@ -147,6 +149,14 @@ class ExpertReviewSliceTest(unittest.TestCase):
                 (cls.owner_id, cls.admin_id),
             )
             db.execute(
+                "DELETE FROM sana_company_subscriptions WHERE company_id=?",
+                (cls.company_id,),
+            )
+            db.execute(
+                "DELETE FROM research_sources WHERE notes LIKE ?",
+                (f"%Review {cls.review_id}%",),
+            )
+            db.execute(
                 "DELETE FROM companies WHERE company_id=?", (cls.company_id,)
             )
             db.commit()
@@ -175,11 +185,31 @@ class ExpertReviewSliceTest(unittest.TestCase):
             self.admin_id, admin_company_id=self.company_id,
         )
         client = self._client_for(self.owner_id)
-        notes = "لاحظ الخبير أن ملكية التسليم غير واضحة وتحتاج تحققًا مباشرًا."
+        notes = "ملاحظة داخلية: افحص مسؤولية التسليم قبل عرضها للعميل."
+        client_observation = "لاحظ الخبير أن ملكية التسليم تحتاج وضوحًا أكبر."
 
         response = admin.patch(
             f"/api/admin/human-reviews/{self.review_id}/notes",
             json={"notes": notes},
+        )
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+        response = admin.patch(
+            f"/api/admin/human-reviews/{self.review_id}/expert-inputs",
+            json={
+                "current_situation": "توجد فجوة في وضوح مسؤولية التسليم.",
+                "client_observation": client_observation,
+                "priority": "تثبيت ملكية التسليم",
+                "recommendation": "تحديد مسؤول واحد لكل تسليم",
+                "plan": "تطبيق المسؤولية على مشروع واحد ثم مراجعة النتيجة",
+                "next_action": "سمّ مسؤول التسليم للمشروع الجاري",
+                "references": [{"label": "دليل التسليم", "url": "https://example.com/delivery"}],
+                "knowledge_candidate": {
+                    "text": f"في {self.company_id} يظهر نمط: وضوح مالك التسليم يقلل تعثر المتابعة",
+                    "scope": "sector",
+                    "sector": "consulting",
+                },
+            },
         )
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 
@@ -189,14 +219,20 @@ class ExpertReviewSliceTest(unittest.TestCase):
         self.assertEqual(client_payload.status_code, 200)
         serialized = json.dumps(client_payload.get_json(), ensure_ascii=False)
         self.assertNotIn(notes, serialized)
+        self.assertNotIn(client_observation, serialized)
         self.assertNotIn("reviewer_note", serialized)
+        self.assertNotIn("expert_inputs_json", serialized)
 
         response = admin.post(
             f"/api/admin/human-reviews/{self.review_id}/format-summary"
         )
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         summary = response.get_json()["data"]["summary"]
-        self.assertEqual(summary["expert_observations"], notes)
+        self.assertEqual(summary["expert_observations"], client_observation)
+        self.assertNotIn(notes, json.dumps(summary, ensure_ascii=False))
+        self.assertEqual(summary["priority"], "تثبيت ملكية التسليم")
+        self.assertIn("مشروع واحد", summary["plan"])
+        self.assertEqual(summary["references"][0]["label"], "دليل التسليم")
         self.assertIn("سجل مواعيد التسليم", json.dumps(summary, ensure_ascii=False))
 
         query = (
@@ -212,11 +248,24 @@ class ExpertReviewSliceTest(unittest.TestCase):
             f"/api/admin/human-reviews/{self.review_id}/approve-summary"
         )
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        candidate_id = response.get_json()["data"]["knowledge_candidate_id"]
+        self.assertTrue(candidate_id)
+        with sana_app.app.app_context():
+            candidate = sana_app.get_db().execute(
+                "SELECT summary,knowledge_scope,review_status FROM research_sources WHERE research_source_id=?",
+                (candidate_id,),
+            ).fetchone()
+            self.assertEqual(candidate["knowledge_scope"], "shared_candidate")
+            self.assertEqual(candidate["review_status"], "inbox")
+            self.assertNotIn(self.company_id, candidate["summary"])
 
         html = client.get(f"/company/{self.company_id}/scan-report{query}")
         self.assertEqual(html.status_code, 200, html.get_data(as_text=True))
         self.assertIn("ملخص مراجعة الخبير", html.get_data(as_text=True))
-        self.assertIn(notes, html.get_data(as_text=True))
+        self.assertIn(client_observation, html.get_data(as_text=True))
+        self.assertNotIn(notes, html.get_data(as_text=True))
+        self.assertIn("خطة الخبير", html.get_data(as_text=True))
+        self.assertIn("دليل التسليم", html.get_data(as_text=True))
 
         pdf = client.get(
             f"/api/companies/{self.company_id}/passport/report-pdf{query}"
@@ -235,6 +284,7 @@ class ExpertReviewSliceTest(unittest.TestCase):
             }
         self.assertTrue({
             "expert_review_notes_saved",
+            "expert_review_inputs_saved",
             "expert_review_summary_formatted",
             "expert_review_summary_approved",
         }.issubset(actions))

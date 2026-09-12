@@ -95,10 +95,11 @@
 <body>
 
 <div class="concept-nav">
-  <a href="/">① الدخول</a>
-  <a href="/home">② CEO Home</a>
-  <a href="/articles" class="active">📚 مقالات</a>
-  <a href="/passport">④ جواز الشركة</a>
+  <a href="/">الرئيسية</a>
+  <a href="/articles" class="active">المقالات</a>
+  <a href="/guide">كيف يعمل سنع</a>
+  <a href="/pricing">الباقة</a>
+  <a href="/login">تسجيل الدخول</a>
 </div>
 
 <header>
@@ -130,10 +131,10 @@
   </div>
   {% endif %}
 
-  <!-- 3. كيف تُشخَّص -->
+  <!-- 3. كيف تعرف أنها عندك -->
   {% if c.diagnose %}
   <div class="art-section">
-    <div class="label">كيف تُشخَّص</div>
+    <div class="label">كيف تعرف أنها عندك</div>
     <div class="content-card">
       {% if c.diagnose is iterable and c.diagnose is not string %}
         <ul>{% for item in c.diagnose %}<li>{{ item | safe }}</li>{% endfor %}</ul>
@@ -144,18 +145,18 @@
   </div>
   {% endif %}
 
-  <!-- 4. الحل -->
+  <!-- 4. ما الذي يستحق فعله -->
   {% if c.solution %}
   <div class="art-section">
-    <div class="label">الحل</div>
+    <div class="label">ما الذي يستحق فعله</div>
     <div class="content-card"><p>{{ c.solution | safe }}</p></div>
   </div>
   {% endif %}
 
-  <!-- 5. خطوات التنفيذ -->
+  <!-- 5. خطوات عملية -->
   {% if c.steps %}
   <div class="art-section">
-    <div class="label">خطوات التنفيذ</div>
+    <div class="label">خطوات عملية</div>
     <ol class="steps-list">
       {% for step in c.steps %}<li><span>{{ step | safe }}</span></li>{% endfor %}
     </ol>
@@ -165,7 +166,7 @@
   <!-- 6. Checklist -->
   {% if c.checklist %}
   <div class="art-section">
-    <div class="label">Checklist — هل نجحتَ؟</div>
+    <div class="label">علامات أنك على الطريق الصحيح</div>
     <ul class="checklist">
       {% for item in c.checklist %}<li>{{ item | safe }}</li>{% endfor %}
     </ul>
@@ -188,8 +189,8 @@
 
   <!-- CTA -->
   <div class="cta-block">
-    <p>جاهز تطبق هذا على شركتك؟ ابدأ جلسة التشخيص داخل سنع الآن — مجانًا وبدون تعقيد.</p>
-    <a class="cta-btn" href="/discovery">ابدأ التشخيص داخل سنع ←</a>
+    <p>إذا كانت هذه المشكلة قريبة من واقع شركتك، ابدأ سنع لتعرف أين تستحق أن تركز أولًا.</p>
+    <a class="cta-btn" href="/discovery">ابدأ بشركتك ←</a>
   </div>
 </main>
 

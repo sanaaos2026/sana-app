@@ -84,10 +84,28 @@ footer{display:flex;justify-content:space-between;gap:12px;border-top:1px solid 
       <div class="value">{{ summary.recommendation }}</div>
     </section>
 
+    {% if summary.plan %}
+    <section class="block wide">
+      <h2>خطة الخبير</h2>
+      <div class="value">{{ summary.plan }}</div>
+    </section>
+    {% endif %}
+
     <section class="block wide action">
       <h2>الخطوة التالية</h2>
       <div class="value">{{ summary.next_step }}</div>
     </section>
+
+    {% if summary.references %}
+    <section class="block wide">
+      <h2>ملفات ومراجع مرتبطة بالرحلة</h2>
+      <ul>
+        {% for item in summary.references %}
+        <li><a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.label }}</a></li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
   </div>
 
   <div class="warning">{{ summary.trust_note }}</div>

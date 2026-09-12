@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 {% include '_csrf-fetch.html' %}
-<title>جلسة الاكتشاف — سنع</title>
+<title>ابدأ بشركتك — سنع</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -478,8 +478,8 @@ const Q = [
   // Q2 — التحدي (لا "القرار")
   {
     id: 'q2', icon: ICONS.q2,
-     title: 'وش أكثر جانب في الشركة يتعطل أو يبطئ العمل حاليًا؟',
-     sub: 'اختر ما يحدث فعليًا، ولا تحاول تشخيص السبب.',
+     title: 'وش أكثر شيء مأثر على الشغل حاليًا؟',
+     sub: 'اختر الأقرب لواقع شركتك الآن.',
     type: 'single',
     key: 'q2',
     motivation: '🧠 وضّحت لنا أهم تحدٍّ نبدأ فيه.',
@@ -498,8 +498,8 @@ const Q = [
   // Q3 — الأصل الأهم (5 خيارات مطابقة للأصول + ما أعرف)
   {
     id: 'q3', icon: ICONS.q3,
-     title: 'ما الأصل الذي تعتمد عليه الشركة أكثر في تقديم خدمتها اليوم؟',
-    sub: 'اختر الواقع الأقرب، وسنع نستنتج ما يحتاج اهتمامًا.',
+     title: 'وش أكثر شيء تعتمد عليه شركتك في تقديم خدمتها اليوم؟',
+    sub: 'اختر الأقرب.',
     type: 'single',
     key: 'q3',
     motivation: '⭐ بدأنا نشوف وين قوتك الحقيقية.',
@@ -519,7 +519,7 @@ const Q = [
      title: 'من أي قناة يأتي أغلب عملاء الشركة الآن؟',
     type: 'single+followup-choice',
     key: 'q4', fuKey: 'q4_fu',
-     fuLabel: 'لو توقف مصدر العملاء الرئيسي شهرًا، كيف تتأثر المبيعات؟',
+     fuLabel: 'لو توقف هذا المصدر شهرًا، وش يصير على المبيعات؟',
     motivation: '🤝 وهذا يكشف مستوى الهشاشة الحقيقي بمصدر عملائك.',
     choices: [
       '🌟 الإحالات',
@@ -544,11 +544,11 @@ const Q = [
   // Q5 — الاعتماد على المؤسس
   {
     id: 'q5', icon: ICONS.q5,
-     title: 'عند غياب صاحب القرار عن الشركة شهرًا، كيف يستمر العمل؟',
-     sub: 'صف ما يحدث فعليًا، لا التوقع المثالي.',
+     title: 'لو غاب صاحب القرار شهرًا، كيف يمشي الشغل؟',
+     sub: 'اختر اللي يحدث فعليًا.',
     type: 'single+text',
     key: 'q5', textKey: 'q5_text',
-     textLabel: 'لو غاب صاحب القرار شهرًا، ما أول عملية ستتباطأ أو تتوقف؟ اذكر مثالًا واقعيًا يساعدنا نحدد أين يبدأ التحسين. (اختياري)',
+     textLabel: 'وش أول شيء بيتأثر؟ مثال بسيط يكفي (اختياري)',
      textPlaceholder: 'مثال: اعتماد الأسعار أو متابعة العملاء',
     hideFollowupFor: ['😎 العمل يستمر طبيعيًا'],
     motivation: '🏖️ سؤال يكشف الكثير — شكرًا على صراحتك.',
@@ -564,8 +564,8 @@ const Q = [
   // Q6 — أسلوب اتخاذ القرار
   {
     id: 'q6', icon: ICONS.q6,
-     title: 'عند اتخاذ قرار مهم يخص الشركة — مثل توظيف، تسويق، تسعير أو مصروف كبير — ما المصدر الذي تعتمد عليه غالبًا؟',
-     sub: 'اختر ما يحدث غالبًا في الشركة.',
+     title: 'لما تتخذ قرار مهم في الشركة، وش تعتمد عليه غالبًا؟',
+     sub: 'مثل التوظيف أو التسعير أو التسويق.',
     type: 'single',
     key: 'q6',
     motivation: '📈 صار عندنا فكرة عن أسلوبك بالقرار.',
@@ -582,8 +582,8 @@ const Q = [
   // Q7 — معايير النجاح (multi، max 3) — يُحفظ في success_criteria
   {
     id: 'q7', icon: ICONS.q7,
-     title: 'بعد سنة من اليوم، ما النتيجة التي تريد أن تراها الشركة؟',
-     sub: 'اختر حتى 3 نتائج فعلية.',
+     title: 'وش النتيجة اللي تبي تشوفها بعد سنة؟',
+     sub: 'اختر حتى 3 نتائج.',
     type: 'multi',
     key: 'q7', maxSelect: 3,
      motivation: 'آخر نقطة ونكمل الصورة.',
@@ -754,9 +754,9 @@ function renderWelcome() {
   $screen.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; gap:0; width:100%; max-width:420px;">
       <div class="welcome-logo">${LOGO_LG}</div>
-       <div class="welcome-title">اعرف أين تتعطل شركتك، وما الذي يستحق أن تصلحه أولًا.</div>
-       <div class="welcome-sub">سنع يشخّص شركتك الخدمية من واقع معلوماتها، يرتب المشاكل والفرص، ويخرج لك بأولويات وقرارات واضحة بدل التخمين.</div>
-       <div class="journey-hint">احكِ لنا عن شركتك ← سنع يرتب الصورة ← يسألك فقط عما ينقص ← يعطيك التشخيص والأولويات والقرارات.</div>
+       <div class="welcome-title">خلنا نشوف صورة شركتك بوضوح</div>
+       <div class="welcome-sub">جاوب بطريقتك وسنع يرتب الصورة ويحدد وش يستحق التركيز أولًا</div>
+       <div class="journey-hint">7 أسئلة قصيرة · سؤال واحد كل مرة</div>
       <button class="start-btn" style="width:100%;" onclick="skipWelcome()">ابدأ</button>
       <div style="color:var(--muted); font-size:12px; margin-top:12px;">دقائق قليلة · بدون نموذج طويل</div>
     </div>`;
@@ -777,8 +777,8 @@ const FIT_FIELDS = [
 function renderFitGate() {
   $screen.innerHTML = `
     <div class="calibration-wrap">
-      <div class="calibration-kicker">هل Sana Scan مناسب لمرحلتك الآن؟</div>
-      <div class="calibration-note">ثلاث إجابات فقط. حجم الفريق وحده لا يحدد الملاءمة.</div>
+      <div class="calibration-kicker">قبل نبدأ</div>
+      <div class="calibration-note">3 أسئلة سريعة عشان نعرف إذا سنع مناسب لمرحلتك</div>
       ${FIT_FIELDS.map(field => `
         <div style="margin-top:18px;">
           <div style="font-weight:700; margin-bottom:8px;">${field.title}</div>
@@ -791,7 +791,7 @@ function renderFitGate() {
         </div>
       `).join('')}
       <div id="fit-error" class="error-msg" style="margin-top:12px;"></div>
-      <button id="fit-continue" class="start-btn" style="width:100%; margin-top:18px;" onclick="submitFitGate()">ابدأ التقييم</button>
+      <button id="fit-continue" class="start-btn" style="width:100%; margin-top:18px;" onclick="submitFitGate()">كمّل</button>
     </div>`;
 }
 
@@ -834,7 +834,7 @@ async function submitFitGate() {
   } catch (_) {
     error.textContent = 'تعذر التحقق الآن. حاول مرة أخرى بعد قليل.';
     button.disabled = false;
-    button.textContent = 'ابدأ التقييم';
+    button.textContent = 'كمّل';
   }
 }
 

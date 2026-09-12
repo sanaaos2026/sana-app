@@ -358,22 +358,22 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         self.assertEqual(200, decision_file.status_code)
         decision_html = decision_file.get_data(as_text=True)
         self.assertNotIn(">ملف القرار</a>", decision_html)
-        self.assertIn("نتيجة التشخيص", decision_html)
+        self.assertIn("وش ظهر لنا؟", decision_html)
         self.assertIn("وش عرفنا؟", decision_html)
-        self.assertIn("رتّب المعلومات", decision_html)
-        self.assertIn("احفظ وكمل", decision_html)
-        self.assertIn("وش يرفع موثوقية التقرير؟", decision_html)
-        self.assertIn("وش الاتجاه المقترح؟", decision_html)
+        self.assertIn("رتّب الصورة", decision_html)
+        self.assertIn("كمّل", decision_html)
+        self.assertIn("وش ناقصنا؟", decision_html)
+        self.assertIn("وش ظهر لنا؟", decision_html)
         self.assertIn("وش تسوي الآن؟", decision_html)
         self.assertIn("وش تغيّر؟", decision_html)
-        self.assertIn("الاتجاه الأولي الآن", decision_html)
+        self.assertIn("وش ظهر لنا الآن", decision_html)
         self.assertNotIn("ما فيه قرار حتى الآن.", decision_html)
         self.assertNotIn("المعلومة غير متاحة الآن", decision_html)
-        self.assertIn("اكتب المعلومة", decision_html)
-        self.assertIn("مثال: تقرير مبيعات أو كشف حساب", decision_html)
+        self.assertIn("اكتب الرقم أو المعلومة", decision_html)
+        self.assertIn("مثال: تقرير المبيعات", decision_html)
         self.assertNotIn("N/A — Deferred", decision_html)
         self.assertNotIn("حفظ الدليل وإعادة التحليل", decision_html)
-        self.assertIn("جهّز القرار", decision_html)
+        self.assertIn("شوف القرار", decision_html)
         self.assertNotIn("Sana Scan", decision_html)
         self.assertNotIn("المعرفة المرجعية — ليست Evidence", decision_html)
         self.assertNotIn("Knowledge Console", decision_html)
@@ -636,9 +636,9 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         pdf_report = client_a.get(
             f"/api/companies/{customer_a['company_id']}/passport/report-pdf"
         )
-        self.assertEqual(200, pdf_report.status_code)
-        self.assertEqual("application/pdf", pdf_report.mimetype)
-        self.assertTrue(pdf_report.data.startswith(b"%PDF"))
+        self.assertEqual(302, pdf_report.status_code)
+        self.assertIn("/pricing", pdf_report.headers["Location"])
+        self.assertIn("feature=report_pdf", pdf_report.headers["Location"])
 
         own_case = client_a.get(f"/api/cases/{customer_a['case_id']}")
         self.assertEqual(200, own_case.status_code)
@@ -715,9 +715,12 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
             f"/case/{customer_a['case_id']}",
             login.get_json()["data"]["redirect"],
         )
-        self.assertEqual(
-            200,
-            client_a.get(f"/case/{customer_a['case_id']}").status_code,
+        post_login_case = client_a.get(f"/case/{customer_a['case_id']}")
+        self.assertEqual(302, post_login_case.status_code)
+        self.assertTrue(
+            post_login_case.headers["Location"].endswith(
+                f"/case/{customer_a['case_id']}/result"
+            )
         )
         self.assertEqual(200, client_a.get("/home").status_code)
 

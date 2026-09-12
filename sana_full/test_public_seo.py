@@ -4,11 +4,23 @@ import unittest
 import xml.etree.ElementTree as ET
 
 import app as sana_app
+from sana_articles import ARTICLES
+from sana_content_governance import SAFE_ARTICLE_BACKLOG, validate_public_catalog
 
 
 class PublicSeoAcceptanceTest(unittest.TestCase):
     def setUp(self):
         self.client = sana_app.app.test_client()
+
+
+    def test_public_articles_pass_sana_ip_firewall(self):
+        self.assertTrue(validate_public_catalog(ARTICLES))
+
+    def test_internal_safe_content_backlog_has_100_unique_topics(self):
+        self.assertEqual(100, len(SAFE_ARTICLE_BACKLOG))
+        self.assertEqual(100, len({item["number"] for item in SAFE_ARTICLE_BACKLOG}))
+        self.assertEqual(100, len({item["title"] for item in SAFE_ARTICLE_BACKLOG}))
+        self.assertTrue(all(item["visibility"] == "internal_backlog" for item in SAFE_ARTICLE_BACKLOG))
 
     def test_public_pages_have_unique_search_and_social_metadata(self):
         pages = {

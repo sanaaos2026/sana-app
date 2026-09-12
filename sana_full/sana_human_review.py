@@ -5,6 +5,7 @@ before_snapshot_json is never overwritten, while the reviewer outcome lives in
 after_snapshot_json and status history is stored separately.
 """
 import json
+import re
 import uuid
 from datetime import date
 
@@ -67,6 +68,7 @@ def ensure_schema(db):
         next_action TEXT,
         client_note TEXT,
         reviewer_note TEXT,
+        expert_inputs_json TEXT NOT NULL DEFAULT '{}',
         expert_summary_json TEXT,
         expert_summary_status TEXT NOT NULL DEFAULT 'DRAFT',
         notes_updated_at TIMESTAMPTZ,
@@ -80,6 +82,8 @@ def ensure_schema(db):
     )""")
     for statement in (
         "ALTER TABLE case_human_reviews ADD COLUMN IF NOT EXISTS client_note TEXT",
+        "ALTER TABLE case_human_reviews ADD COLUMN IF NOT EXISTS "
+        "expert_inputs_json TEXT NOT NULL DEFAULT '{}'",
         "ALTER TABLE case_human_reviews ADD COLUMN IF NOT EXISTS expert_summary_json TEXT",
         "ALTER TABLE case_human_reviews ADD COLUMN IF NOT EXISTS "
         "expert_summary_status TEXT NOT NULL DEFAULT 'DRAFT'",
@@ -195,7 +199,9 @@ def add_event(db, review_id, company_id, from_status, to_status, actor_id, detai
 
 
 def client_payload(db, company_id, case_id):
+    from sana_billing import has_company_access
     config = settings(db)
+    paid_access = has_company_access(db, company_id)
     review = latest_for_case(db, company_id, case_id)
     snapshot = snapshot_for_case(db, company_id, case_id)
     critical = bool(
@@ -234,6 +240,8 @@ def client_payload(db, company_id, case_id):
             "available": not (
                 config["offer_mode"] == "PAID" and not config["paid_enabled"]
             ),
+            "paid_access": paid_access,
+            "requires_subscription": not paid_access,
         },
         "review": client_review,
         "slots": [] if review and review["status"] in {"REQUESTED", "SCHEDULED"} else available_slots(db),
@@ -266,6 +274,89 @@ def _display_text(value):
     return ""
 
 
+def expert_inputs(review):
+    """Return bounded expert additions stored separately from source facts."""
+    if not review:
+        return {}
+    try:
+        raw = review["expert_inputs_json"]
+    except (KeyError, TypeError, IndexError):
+        raw = None
+    return _json_object(raw)
+
+
+def _sanitize_candidate_text(value, company_name=None):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if company_name:
+        text = re.sub(re.escape(str(company_name)), "[الشركة]", text, flags=re.I)
+    text = re.sub(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[بريد محذوف]", text)
+    text = re.sub(r"(?<!\d)(?:\+?966|0)?5\d{8}(?!\d)", "[رقم محذوف]", text)
+    return text
+
+
+def create_knowledge_candidate_from_review(db, review_id, actor_id):
+    """Create an inbox-only shared candidate from an explicitly anonymized expert note."""
+    from sana_knowledge import ensure_schema as ensure_knowledge_schema
+
+    row = db.execute(
+        """SELECT r.review_id,r.company_id,r.case_id,r.expert_inputs_json,
+                  c.name AS company_name,c.sector
+           FROM case_human_reviews r
+           JOIN companies c ON c.company_id=r.company_id
+           WHERE r.review_id=?""",
+        (review_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("REVIEW_NOT_FOUND")
+    inputs = expert_inputs(row)
+    candidate = inputs.get("knowledge_candidate") or {}
+    text = _sanitize_candidate_text(
+        candidate.get("text"), row["company_name"]
+    )
+    for identifier in (row["company_id"], row["case_id"]):
+        if identifier:
+            text = re.sub(re.escape(str(identifier)), "[معرّف محذوف]", text, flags=re.I)
+    if not text:
+        return None
+    existing = str(candidate.get("research_source_id") or "").strip()
+    if existing:
+        return existing
+
+    ensure_knowledge_schema(db)
+    source_id = "RS-EXP-" + uuid.uuid4().hex[:10].upper()
+    scope = str(candidate.get("scope") or "sector").lower()
+    if scope not in {"sector", "general"}:
+        scope = "sector"
+    sector = str(candidate.get("sector") or row["sector"] or "general").strip()
+    if scope == "general":
+        sector = "general"
+    tags = ",".join(filter(None, ["expert-review", scope, sector]))
+    db.execute(
+        """INSERT INTO research_sources
+           (research_source_id,title,source_kind,origin,company_id,author,language,
+            summary,notes,tags,rights_status,review_status,is_private,owner_account_id,
+            sensitivity,knowledge_scope,storage_destination,ingestion_event)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            source_id, "مرشح معرفة من مراجعة خبير سنع", "summary", "manual",
+            row["company_id"], "Sana Expert Review", "ar", text,
+            f"Case {row['case_id']} / Review {review_id}", tags, "owned", "inbox",
+            1, actor_id, "internal", "shared_candidate",
+            "Knowledge OS review inbox", "expert_review_candidate",
+        ),
+    )
+    candidate["research_source_id"] = source_id
+    candidate["review_status"] = "inbox"
+    inputs["knowledge_candidate"] = candidate
+    db.execute(
+        "UPDATE case_human_reviews SET expert_inputs_json=? WHERE review_id=?",
+        (json.dumps(inputs, ensure_ascii=False), review_id),
+    )
+    return source_id
+
+
 def format_expert_summary(db, review_id):
     """Build a bounded summary from persisted case data and human notes only."""
     review = db.execute(
@@ -283,9 +374,7 @@ def format_expert_summary(db, review_id):
     ).fetchone()
     if not review:
         raise ValueError("REVIEW_NOT_FOUND")
-    notes = str(review["reviewer_note"] or "").strip()
-    if not notes:
-        raise ValueError("EXPERT_NOTES_REQUIRED")
+    inputs = expert_inputs(review)
 
     scan_row = db.execute(
         """SELECT result FROM scan_runs
@@ -359,21 +448,34 @@ def format_expert_summary(db, review_id):
         ).fetchone()
 
     current_situation = (
-        review["real_question"]
+        str(inputs.get("current_situation") or "").strip()
+        or review["real_question"]
         or review["declared_problem"]
         or review["case_title"]
     )
     recommendation = (
-        review["final_decision"]
+        str(inputs.get("recommendation") or "").strip()
+        or review["final_decision"]
         or review["decision_title"]
         or proposed
         or "لم تُسجّل توصية عملية في الحالة حتى الآن."
     )
     next_step = (
-        task["title"] if task
-        else review["recommended_action"]
+        str(inputs.get("next_action") or "").strip()
+        or (task["title"] if task else None)
+        or review["recommended_action"]
         or "لم تُسجّل خطوة تالية في الحالة حتى الآن."
     )
+    priority = (
+        str(inputs.get("priority") or "").strip()
+        or bottleneck
+        or "لم تُسجّل أولوية صريحة في الحالة حتى الآن."
+    )
+    client_observation = str(inputs.get("client_observation") or "").strip()
+    plan = str(inputs.get("plan") or "").strip()
+    references = inputs.get("references") or []
+    if not isinstance(references, list):
+        references = []
     return {
         "title": "ملخص مراجعة الخبير",
         "review_id": review["review_id"],
@@ -384,16 +486,18 @@ def format_expert_summary(db, review_id):
         "reviewer": review["reviewer_email"] or "مراجع سنع",
         "classification": "Expert Observation / Human Review",
         "current_situation": current_situation,
-        "expert_observations": notes,
+        "expert_observations": client_observation or "تمت مراجعة الحالة من خبير سنع وإضافة التوجيه العملي أدناه.",
         "evidence": evidence,
         "needs_confirmation": missing,
         "conflicts": conflicts,
-        "priority": bottleneck or "لم تُسجّل أولوية صريحة في الحالة حتى الآن.",
+        "priority": priority,
         "recommendation": recommendation,
         "next_step": next_step,
+        "plan": plan,
+        "references": references[:5],
         "trust_note": (
             "هذا الملخص يعيد تنظيم ملاحظات بشرية وبيانات محفوظة في الحالة فقط. "
-            "لا يحوّل ملاحظة الخبير إلى Fact، ولا يضيف سببًا جذريًا أو KPI أو نتيجة."
+            "لا يحوّل ملاحظة الخبير أو النص المضاف إلى Fact، ولا يغيّر الأرقام أو الأدلة أو KPI أو النتيجة الأصلية."
         ),
     }
 

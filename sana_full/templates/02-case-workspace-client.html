@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 {% include '_csrf-fetch.html' %}
 <meta name="color-scheme" content="light">
-<title>سنع — نتيجة التشخيص</title>
+<title>سنع — صورة شركتك</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -37,12 +37,36 @@ const JOURNEY_URLS={{ journey_urls|tojson }};
 const routeFor=(template,id)=>template.replace('__CASE_ID__',encodeURIComponent(id));
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const humanLabel=v=>({NOT_RUN:'لم نرتب الصورة بعد',INCOMPLETE:'نحتاج معلومة إضافية',REVIEW_REQUIRED:'الصورة جاهزة للمراجعة',COMPLETE:'الصورة مكتملة',Evidence:'معلومة بمصدر',Source:'مصدر المعلومة',Hypothesis:'احتمال يحتاج تأكيدًا',Inference:'استنتاج أولي',Opportunity:'فرصة للتحسين',Unknown:'غير واضح بعد',N_A:'غير متاح',Deferred:'نؤجله إلى أن نتأكد',Actual:'نتيجة فعلية',Fact:'معلومة متحققة'}[String(v)]||v||'—');
-const clientText=v=>String(v??'').replace(/\[[a-z0-9_-]+\]\s*/gi,'').replaceAll('SDS-001','جلسة الاكتشاف').replaceAll('Evidence Gate','ما نحتاج نتأكد منه').replaceAll('Decision Readiness','جاهزية القرار').replaceAll('Re-analysis','إعادة النظر').replaceAll('Contradiction','معلومة متعارضة').replaceAll('Baseline','نقطة البداية').replaceAll('Diagnostic Review','مراجعة الصورة').replaceAll('Impact Review','مراجعة التغيّر').replaceAll('Actual','نتيجة فعلية').replaceAll('Fact','معلومة متحققة').replaceAll('Evidence','معلومة بمصدر').replaceAll('Source','مصدر المعلومة').replaceAll('Unknown','غير واضح بعد').replaceAll('Deferred','نؤجله إلى أن نتأكد').replaceAll('N/A','غير متاح');
+const clientText=v=>String(v??'')
+  .replace(/\[[a-z0-9_-]+\]\s*/gi,'')
+  .replaceAll('SDS-001','جلسة التعريف')
+  .replaceAll('إفادة Discovery','ما شاركته معنا')
+  .replaceAll('إجابة Discovery','ما شاركته معنا')
+  .replaceAll('Discovery / Case','معلومات الشركة')
+  .replaceAll('Discovery','جلسة التعريف')
+  .replaceAll('Evidence Gate','ما نحتاج نتأكد منه')
+  .replaceAll('Decision Readiness','جاهزية القرار')
+  .replaceAll('Re-analysis','إعادة النظر')
+  .replaceAll('Contradiction','معلومة متعارضة')
+  .replaceAll('Baseline','نقطة البداية')
+  .replaceAll('Diagnostic Review','مراجعة الصورة')
+  .replaceAll('Impact Review','مراجعة التغيّر')
+  .replaceAll('Actual','نتيجة فعلية')
+  .replaceAll('Fact','معلومة متحققة')
+  .replaceAll('Evidence','معلومة بمصدر')
+  .replaceAll('Source','مصدر المعلومة')
+  .replaceAll('Unknown','غير واضح بعد')
+  .replaceAll('Deferred','نؤجله إلى أن نتأكد')
+  .replaceAll('N/A','غير متاح')
+  .replaceAll('أصل المعرفة','المعرفة داخل الشركة')
+  .replace(/نتيجة فعلية موث[ّ]?ق(?:ة)? أو معلومة بمصدر مستقل حديث يؤكد ما شاركته معنا/g,'رقم أو تقرير حديث يؤكد ما شاركته معنا')
+  .replace(/نتيجة فعلية موث[ّ]?ق(?:ة)? أو معلومة بمصدر مستقل حديث/g,'رقم أو تقرير حديث')
+  .replace(/معلومة بمصدر مستقل حديث/g,'رقم أو تقرير حديث');
 function rows(items, render, empty){
   return items&&items.length?items.map(render).join(''):`<p class="empty">${empty}</p>`;
 }
 function sharedInformation(items=[]){
-  if(!items.length)return '<div class="finding"><strong>إجابات الشركة كوّنت الصورة الأولية</strong><div>إضافة رقم أو وثيقة لاحقًا سترفع موثوقية هذا الاتجاه.</div></div>';
+  if(!items.length)return '<div class="finding"><strong>إجاباتك كوّنت الصورة الأولية</strong><div>إذا توفر رقم أو تقرير لاحقًا نقدر نخليها أدق.</div></div>';
   return `<details class="shared-details"><summary>عرض التفاصيل (${items.length})</summary><div class="shared-details-content">${rows(items,e=>`<div class="item"><strong>${esc(clientText(e.statement))}</strong><div class="meta">المصدر: ${esc(clientText(e.source_ref||'غير محدد'))}</div></div>`,'')}</div></details>`;
 }
 function firstStatement(...items){
@@ -52,8 +76,8 @@ function firstStatement(...items){
 function confidenceSummary(review,scan){
   const confidence=review.client_confidence||{},evidenceCount=(review.client_evidence||[]).length;
   const score=confidence.decision_score;
-  const scoreText=score!==null&&score!==undefined&&score!==''?`درجة الثقة الحالية ${esc(score)}٪`:`قوة المعلومات ${esc(confidence.quality_label||'أولية')}`;
-  return `${scoreText} · بُنيت القراءة على ${evidenceCount} ${evidenceCount===1?'معلومة':'معلومات'} من الشركة · موثوقية البيانات ${esc(confidence.data_label||'قيد التحسين')}`;
+  const scoreText=score!==null&&score!==undefined&&score!==''?`وضوح الصورة ${esc(score)}٪`:`وضوح الصورة ${esc(confidence.quality_label||'أولي')}`;
+  return `${scoreText} · بُنيت الصورة على ${evidenceCount} ${evidenceCount===1?'معلومة':'معلومات'} من شركتك · جودة المعلومات ${esc(confidence.data_label||'تحتاج تأكيدًا')}`;
 }
 let clarityMeta=null,clarityChoice='',clarityAttachment=null,clarityRecorder=null,clarityChunks=[];
 async function loadClarityQuestion(){
@@ -67,11 +91,11 @@ async function loadClarityQuestion(){
     const options=(clarityMeta.options||[]).map(option=>`<button type="button" class="clarity-option" data-choice="${esc(option)}">${esc(option)}</button>`).join('');
     box.hidden=false;
     box.innerHTML=`<div class="clarity-card">
-      <div class="clarity-kicker">سؤال واحد يزيد وضوح التشخيص</div>
+      <div class="clarity-kicker">سؤال واحد يكمل الصورة</div>
       <div class="clarity-question">${esc(clarityMeta.question)}</div>
-      <div class="clarity-why">اختر الأقرب. التوضيح أو المرفق اختياري، لكنه يساعدنا نفهم وضع شركتك بدقة أكبر.</div>
+      <div class="clarity-why">اختر الأقرب لواقع شركتك الآن. التوضيح اختياري.</div>
       <div class="clarity-options">${options}</div>
-      <textarea id="clarityText" class="field clarity-note" maxlength="6000" placeholder="أضف توضيحًا بسيطًا إذا رغبت…"></textarea>
+      <textarea id="clarityText" class="field clarity-note" maxlength="6000" placeholder="أضف توضيحًا إذا احتجت"></textarea>
       <div class="clarity-tools">
         <label class="clarity-tool" for="clarityFile">⌁ ارفع صورة أو تقرير</label>
         <input id="clarityFile" type="file" hidden accept=".png,.jpg,.jpeg,.webp,.pdf,.docx,.xlsx,.txt,.csv,.mp3,.m4a,.wav,.webm,.ogg">
@@ -244,35 +268,35 @@ function render(d){
   else if(activeTask){action=`<a class="btn" href="${JOURNEY_URLS.home}">افتح خطوة اليوم</a>`}
   else if(activeDecision&&activeDecision.status==='مقترح'){action=clientApprovalForm(activeDecision)}
   else if(activeDecision){action=`<a class="btn" href="${JOURNEY_URLS.home}">راجع القرار واعتمده</a>`}
-   else if(!scan){action=`${AUTO_SCAN_RETRY?'<div class="deferred">تعذر إكمال الفحص التلقائي. بياناتك محفوظة؛ أعد المحاولة مرة واحدة.</div>':''}<button class="btn" onclick="runAnalysis()">${AUTO_SCAN_RETRY?'أعد تشغيل الفحص':'رتّب المعلومات'}</button><div id="actionError" class="error"></div>`}
-   else if(!scanReady&&nextRequest){action=`<div class="meta">التقدم ${progress.completed}/${progress.total}</div><strong>${esc(clientText(nextRequest.label||nextRequest.question))}</strong><input id="evidenceTitle" class="field" aria-label="اكتب المعلومة أو الرقم" placeholder="اكتب المعلومة أو الرقم"><input id="sourceRef" class="field" aria-label="من وين جبتها؟" placeholder="مثال: تقرير مبيعات أو كشف حساب"><button class="btn" onclick="addAndAnalyze()">احفظ وكمل</button><button class="btn" style="margin-top:7px;background:#6E7580" onclick="saveUnknown()">ما عندي هذه المعلومة الآن</button><div id="actionError" class="error"></div>`}
+   else if(!scan){action=`${AUTO_SCAN_RETRY?'<div class="deferred">تعذر إكمال الفحص التلقائي. بياناتك محفوظة؛ أعد المحاولة مرة واحدة.</div>':''}<button class="btn" onclick="runAnalysis()">${AUTO_SCAN_RETRY?'أعد المحاولة':'رتّب الصورة'}</button><div id="actionError" class="error"></div>`}
+   else if(!scanReady&&nextRequest){action=`<div class="meta">باقي ${Math.max(1,progress.total-progress.completed)} ${Math.max(1,progress.total-progress.completed)===1?'معلومة':'معلومات'}</div><strong>${esc(clientText(nextRequest.label||nextRequest.question))}</strong><input id="evidenceTitle" class="field" aria-label="اكتب الرقم أو المعلومة" placeholder="اكتب الرقم أو المعلومة"><input id="sourceRef" class="field" aria-label="من وين جبتها؟" placeholder="مثال: تقرير المبيعات"><button class="btn" onclick="addAndAnalyze()">كمّل</button><button class="btn" style="margin-top:7px;background:#6E7580" onclick="saveUnknown()">ما أعرف الآن</button><div id="actionError" class="error"></div>`}
    else if(!scanReady){action=`<div class="deferred">استلمنا المعلومات المطلوبة (${progress.completed}/${progress.total}). تحتاج مراجعة بشرية قبل القرار.</div>`}
-   else {action=`<button class="btn" onclick="buildDecision()">جهّز القرار</button><div id="actionError" class="error"></div>`}
+   else {action=`<button class="btn" onclick="buildDecision()">شوف القرار</button><div id="actionError" class="error"></div>`}
    const refs=(review.reference_knowledge||{}).references||[];
    const preliminaryText=firstStatement(review.inference,review.hypothesis,review.bottleneck,review.opportunity,review.problem);
    const directionText=firstStatement(review.opportunity,review.inference,review.hypothesis,review.bottleneck,review.problem);
    const confidenceText=confidenceSummary(review,scan);
    const decisionView=activeDecision
      ?`<div class="item"><strong>${esc(clientText(activeDecision.title))}</strong><div>${esc(clientText(activeDecision.reason||directionText))}</div><div class="meta">الحالة: ${esc(humanLabel(activeDecision.status))} · ${confidenceText}</div></div>`
-     :`<div class="finding"><strong>الاتجاه الأولي الآن</strong><div>${esc(directionText)}</div><div class="meta">هذا اتجاه مستنتج من إجابات الشركة، وليس قرارًا نهائيًا. ${confidenceText}</div></div>`;
+     :`<div class="finding"><strong>وش ظهر لنا الآن</strong><div>${esc(directionText)}</div><div class="meta">هذه قراءة أولية من المعلومات اللي شاركتها معنا. ${confidenceText}</div></div>`;
    const nextStepView=activeTask
      ?`<div class="item"><strong>${esc(activeTask.title)}</strong><div class="meta">الحالة: ${esc(humanLabel(activeTask.status))}${activeTask.due_date?' · الموعد: '+esc(activeTask.due_date):''}</div></div>`
      :activeDecision
        ?`<div class="item"><strong>راجع الاتجاه المقترح واعتمده</strong><div class="meta">بعد الاعتماد نحوله إلى خطوة لها مسؤول وموعد ومقياس نجاح.</div></div>`
        :nextRequest
-         ?`<div class="item"><strong>ارفع موثوقية الاتجاه الحالي</strong><div>${esc(clientText(nextRequest.label||nextRequest.question))}</div><div class="meta">${confidenceText}</div></div>`
+         ?`<div class="item"><strong>نكمل الصورة</strong><div>${esc(clientText(nextRequest.label||nextRequest.question))}</div><div class="meta">${confidenceText}</div></div>`
          :`<div class="item"><strong>راجع الاتجاه الأولي مع فريق سنع</strong><div>${esc(directionText)}</div><div class="meta">الخطوة التالية هي تحويله إلى تجربة صغيرة قابلة للقياس بعد المراجعة البشرية.</div></div>`;
    const progressView=nextRequest
-     ?`<div class="gate"><strong>المعلومة الأكثر تأثيرًا الآن</strong><div>${esc(clientText(nextRequest.label||nextRequest.question))}</div><div class="meta">التقدم ${progress.completed}/${progress.total}</div></div>`
+     ?`<div class="gate"><strong>المعلومة الأهم الآن</strong><div>${esc(clientText(nextRequest.label||nextRequest.question))}</div><div class="meta">التقدم ${progress.completed}/${progress.total}</div></div>`
      :terminalUnknown
-       ?`<div class="finding"><strong>كيف نرفع الثقة لاحقًا؟</strong><div>أضف رقمًا أو وثيقة تقيس مباشرة هذا الاتجاه: ${esc(preliminaryText)}</div><div class="meta">عدم توفرها الآن لا يلغي الفرضية؛ يبقيها اتجاهًا أوليًا يحتاج تحققًا.</div></div>`
+       ?`<div class="finding"><strong>وش ممكن نضيف لاحقًا؟</strong><div>رقم أو تقرير يساعدنا نتأكد من هذا الاتجاه: ${esc(preliminaryText)}</div><div class="meta">إذا ما هو متوفر الآن نكمل بالصورة الحالية ونرجع له لاحقًا.</div></div>`
        :`<div class="finding"><strong>الصورة الحالية كافية للمراجعة</strong><div>${esc(preliminaryText)}</div><div class="meta">${confidenceText}</div></div>`;
    const journeyResult=terminalUnknown
      ?`<strong>خرجنا باتجاه أولي قابل للتحقق</strong><div class="lead" style="margin:4px 0 0">${esc(preliminaryText)} — لن نحوله إلى قرار نهائي قبل المراجعة.</div>`
      :`<strong>${esc(clientText(humanLabel(journey.label)))}</strong><div class="lead" style="margin:4px 0 0">${esc(clientText(journey.message))}</div>`;
   document.getElementById('app').innerHTML=`
      <div class="eyebrow">نشوف الصورة · موضوع واحد</div>
-    <h1>${esc(d.case.title||'نتيجة التشخيص')}</h1>
+    <h1>${esc(d.case.title||'صورة شركتك')}</h1>
     <p class="lead">${esc(d.case.real_question||d.case.declared_problem||'هذا ما نعرفه الآن. وما يحتاج تأكيد يبقى واضحًا.')}</p>
      <section><h2>وش عرفنا؟</h2>
        <div class="item"><strong>ما نعرفه:</strong> ${esc(clientText((review.problem||{}).statement||d.case.declared_problem||'لم تتضح الصورة بعد'))}</div>
@@ -281,10 +305,10 @@ function render(d){
       ${findingCard('الفرصة',review.opportunity)}
     </section>
      ${periodSummary((scan||{}).diagnostic_baseline||{})}
-      <section><h2>وش يرفع موثوقية التقرير؟</h2>${progressView}</section>
+      <section><h2>وش ناقصنا؟</h2>${progressView}</section>
       <section><h2>المعلومات التي شاركتها</h2>${sharedInformation(review.client_evidence||[])}</section>
-      <section class="reference"><h2>معلومات عامة تساعدنا نفهم</h2><div class="deferred">تفيدنا هذه المعلومات في الفهم، لكنها لا تتحول إلى حقيقة عن شركتك دون دليل منها.</div>${rows(refs,r=>`<div class="item"><strong>${esc(r.title)}</strong><div>${esc(r.original_summary||r.problem||'')}</div><div class="meta">الإصدار ${esc(r.source_version||r.version||'—')} · سبب الصلة: ${esc((r.match_reasons||[]).join(' · ')||'معلومة عامة')}<br>ما نحتاجه منك: ${esc(r.required_client_evidence||'رقم أو معلومة خاصة بالشركة')}</div></div>`,'<div class="item"><strong>هذه القراءة مبنية على وضع الشركة نفسه</strong><div>لم نستخدم مرجعًا عامًا في هذا الاستنتاج؛ اعتمدنا على إجابات الشركة ومصادرها الحالية.</div></div>')}</section>
-       <section><h2>وش الاتجاه المقترح؟</h2>${decisionView}</section>
+      <section class="reference"><h2>معلومات تساعدنا نفهم السياق</h2><div class="deferred">تفيدنا هذه المعلومات في الفهم، لكنها لا تتحول إلى حقيقة عن شركتك دون دليل منها.</div>${rows(refs,r=>`<div class="item"><strong>${esc(r.title)}</strong><div>${esc(r.original_summary||r.problem||'')}</div><div class="meta">الإصدار ${esc(r.source_version||r.version||'—')} · سبب الصلة: ${esc((r.match_reasons||[]).join(' · ')||'معلومة عامة')}<br>ما نحتاجه منك: ${esc(r.required_client_evidence||'رقم أو معلومة خاصة بالشركة')}</div></div>`,'<div class="item"><strong>هذه القراءة مبنية على وضع الشركة نفسه</strong><div>لم نستخدم مرجعًا عامًا في هذا الاستنتاج؛ اعتمدنا على إجابات الشركة ومصادرها الحالية.</div></div>')}</section>
+       <section><h2>وش ظهر لنا؟</h2>${decisionView}</section>
        <section class="next"><h2>وش تسوي الآن؟</h2>${nextStepView}<div id="clarityQuestion" hidden></div><div id="legacyAction">${action}</div></section>
        <section class="state ${journey.status==='INCOMPLETE'?'warning':''}"><h2>وش تغيّر؟</h2>${journeyResult}</section>`;
    loadClarityQuestion();

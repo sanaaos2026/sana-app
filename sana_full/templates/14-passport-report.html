@@ -338,21 +338,29 @@
   {% set current_review = human_review.review if human_review else none %}
   <div class="report-actions" data-testid="report-actions">
     {% if report_view == 'main' %}
+      {% if report_paid_access %}
       <a class="report-action primary" href="{{ report_pdf_url }}">تحميل التقرير</a>
+      {% else %}
+      <a class="report-action primary" href="{{ pricing_url }}">تحميل التقرير</a>
+      {% endif %}
       <a class="report-action" href="{{ report_details_url }}">عرض التفاصيل</a>
       {% if human_review and current_review and current_review.expert_summary_status == 'APPROVED' %}
-        <a class="report-action small" href="{{ current_review.summary_url }}">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}راجع مع خبير</a>
+        <a class="report-action small" href="{{ current_review.summary_url }}">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}مراجعة خبير سنع</a>
       {% elif human_review and current_review and current_review.status in ['REQUESTED','SCHEDULED'] %}
         <span class="report-action small">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}راجع مع خبير — قيد الانتظار</span>
       {% elif human_review and current_review and current_review.status == 'COMPLETED' %}
         <span class="report-action small">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}راجع مع خبير — تمت المراجعة</span>
       {% elif human_review and human_review.settings.available and not current_review %}
-        <button class="report-action small" id="openReview">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}راجع مع خبير</button>
+        {% if report_paid_access %}
+        <button class="report-action small" id="openReview">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}مراجعة خبير سنع</button>
+        {% else %}
+        <a class="report-action small" href="{{ pricing_url }}">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}مراجعة خبير سنع</a>
+        {% endif %}
       {% else %}
         <span class="report-action small" aria-disabled="true">{{ sana_mark(size=15, color='currentColor', accent_color='currentColor', class_name='expert-review-mark', decorative=true) }}راجع مع خبير</span>
       {% endif %}
     {% elif report_view == 'plan' %}
-      <a class="report-action primary" href="{{ execution_plan_pdf_url }}">تحميل خطة التنفيذ</a>
+      {% if report_paid_access %}<a class="report-action primary" href="{{ execution_plan_pdf_url }}">تحميل خطة التنفيذ</a>{% else %}<a class="report-action primary" href="{{ pricing_url }}">تحميل خطة التنفيذ</a>{% endif %}
       <a class="report-action" href="{{ journey_urls.company_report }}">الملخص التنفيذي</a>
     {% else %}
       <a class="report-action primary" href="{{ report_summary_url }}">العودة للملخص</a>
@@ -360,7 +368,7 @@
       <a class="report-action" href="{{ report_next_url }}">تابع الخطوة التالية</a>
     {% endif %}
   </div>
-  {% if report_view == 'main' and human_review and human_review.settings.available and not current_review %}
+  {% if report_view == 'main' and report_paid_access and human_review and human_review.settings.available and not current_review %}
   <div class="compact-review review-fields" id="reviewFields" hidden>
     <textarea id="reviewClientNote" maxlength="500" aria-label="ملاحظة قصيرة اختيارية" placeholder="ملاحظة قصيرة للخبير (اختياري)"></textarea>
     <div><button class="review-action" id="confirmReview">إرسال طلب المراجعة</button> <button class="review-action secondary" id="cancelReview">رجوع</button></div>
@@ -837,6 +845,7 @@ document.getElementById('confirmReview').onclick=async()=>{
   try{
     const response=await fetch(`/api/cases/${encodeURIComponent(reviewCaseId)}/human-review`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_note})});
     const result=await response.json();
+    if(response.status===402&&result.redirect){location.href=result.redirect;return}
     if(!response.ok||!result.success)throw new Error(result.message||'تعذر إرسال طلب المراجعة');
     location.reload();
   }catch(error){msg.classList.add('error');msg.textContent=error.message;button.disabled=false;button.textContent=original}

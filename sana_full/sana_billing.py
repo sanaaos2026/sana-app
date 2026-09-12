@@ -16,12 +16,11 @@ from database_config import acquire_schema_lock
 
 PLAN_ID = "SANA-P0"
 DEFAULT_FEATURES = (
-    "Sana Scan",
-    "تحديد أهم مشكلة تستحق التركيز",
-    "قرار واضح مبني على المعلومات",
-    "خطوة تنفيذ",
-    "قياس قبل وبعد",
-    "تقرير محفوظ للشركة",
+    "التقرير الكامل القابل للتنزيل",
+    "مراجعة خبير سنع",
+    "خطة تنفيذ واضحة",
+    "متابعة القرار وقياس الأثر",
+    "حفظ رحلة الشركة وتطورها",
 )
 ACTIVE_SUBSCRIPTION_STATUSES = {"active", "free"}
 STALE_CHECKOUT_MIN_AGE_HOURS = 24
@@ -224,6 +223,24 @@ def subscription_for_company(db, company_id):
         (company_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def has_company_access(db, company_id):
+    """Return True only for an active or granted-free company subscription."""
+    subscription = subscription_for_company(db, company_id)
+    if not subscription or subscription.get("status") not in ACTIVE_SUBSCRIPTION_STATUSES:
+        return False
+    period_end = subscription.get("current_period_end")
+    if not period_end:
+        return True
+    try:
+        if getattr(period_end, "tzinfo", None):
+            now = datetime.now(period_end.tzinfo)
+        else:
+            now = datetime.utcnow()
+        return period_end >= now
+    except TypeError:
+        return True
 
 
 def activate_free(db, company_id, *, coupon_code=None, period_days=30):
