@@ -69,9 +69,17 @@ class OfficialSuperAdminAcceptanceTest(unittest.TestCase):
 
         page = authenticated.get("/admin")
         self.assertEqual(200, page.status_code)
+        page_text = page.get_data(as_text=True)
+        self.assertIn('"role": "SUPER_ADMIN"', page_text)
+        self.assertIn("Promise.allSettled", page_text)
         overview = authenticated.get("/api/admin/overview")
         self.assertEqual(200, overview.status_code)
-        self.assertEqual("SUPER_ADMIN", overview.get_json()["data"]["role"])
+        overview_data = overview.get_json()["data"]
+        self.assertEqual("SUPER_ADMIN", overview_data["role"])
+        self.assertEqual(1, overview_data["metrics"]["production_super_admins"])
+        self.assertGreaterEqual(
+            overview_data["metrics"]["test_super_admins"], 1
+        )
 
         tenant_route = authenticated.get(f"/api/companies/{COMPANY_ID}/summary")
         self.assertEqual(403, tenant_route.status_code)
@@ -80,6 +88,20 @@ class OfficialSuperAdminAcceptanceTest(unittest.TestCase):
             f"/api/admin/companies/{COMPANY_ID}"
         )
         self.assertEqual(200, explicit_admin_route.status_code)
+
+        users = authenticated.get("/api/admin/users")
+        self.assertEqual(200, users.status_code)
+        official = next(
+            row for row in users.get_json()["data"]
+            if row["email"] == OFFICIAL_EMAIL
+        )
+        self.assertEqual("production", official["account_classification"])
+        test_super_admins = [
+            row for row in users.get_json()["data"]
+            if row["admin_role"] == "SUPER_ADMIN"
+            and row["account_classification"] == "test"
+        ]
+        self.assertTrue(test_super_admins)
 
     def test_athar_account_is_only_company_member_and_has_user_access(self):
         db = sana_app._connect_pg()

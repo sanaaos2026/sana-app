@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="csrf-token" content="{{ csrf_token() }}">
-<script>(function(){var m=document.querySelector('meta[name="csrf-token"]');if(!m)return;var t=m.content;var S=new Set(['POST','PUT','PATCH','DELETE']);var F=window.fetch.bind(window);window.fetch=function(u,o){o=o||{};if(S.has((o.method||'GET').toUpperCase())){o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});}return F(u,o);};})();</script>
+{% include '_csrf-fetch.html' %}
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#F5F6FB">
 <title>سنع — لوحة المهام</title>
@@ -98,7 +97,7 @@ async function renderPackPicker(){
   let html = `
     <span class="eyebrow">لوحة المهام</span>
     <h1>ابدأ بحزمة مهام جاهزة</h1>
-    <p class="sub">لا توجد مهام بعد لهذه الشركة — اختر حزمة تناسب قطاعك لتُنشأ المهام تلقائيًا ومرتبطة بأصول الشركة.</p>
+    <p class="sub">اختر نقطة بداية تناسب نشاطك، ثم نفّذ الخطوات بالترتيب.</p>
   `;
   if(packs.length === 0){
     html += `<p class="empty-note">لا توجد حزم متاحة حاليًا.</p>`;
@@ -139,7 +138,7 @@ function renderTasks(){
   let html = `
     <span class="eyebrow">لوحة المهام</span>
     <h1>مهام الشركة</h1>
-    <p class="sub">إنجاز أي مهمة يرفع الأصل المرتبط بها تلقائيًا، وينعكس في جواز الشركة فورًا.</p>
+    <p class="sub">ابدأ بالمهام غير المنجزة. كل إنجاز يحدّث صورة الشركة مباشرة.</p>
     <div class="stamp-row">
       <div class="stamp-num">${pct}٪</div>
       <div><div class="stamp-num" style="font-size:18px;">${done}<span style="color:#9AA0AB; font-weight:400;"> / ${total}</span></div><div class="stamp-text">مهمة مُنجزة</div></div>
@@ -163,7 +162,7 @@ function renderTasks(){
               : '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C7CBD1" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>'}
           </button>
           <div class="task-body"><div class="task-title ${isDone ? 'done' : ''}">${t.title}</div>
-            <div class="task-meta">Owner: ${t.owner_user_id||'غير محدد'} · Approver: ${t.approver_user_id||'غير محدد'} · Deadline: ${t.deadline||'غير محدد'} · KPI: ${t.kpi||'غير محدد'}${t.delay_reason?' · سبب التأخير: '+t.delay_reason:''}</div>
+            <div class="task-meta">المسؤول: ${t.owner_user_id||'غير محدد'} · الاعتماد: ${t.approver_user_id||'غير محدد'} · الموعد: ${t.deadline||'غير محدد'} · علامة النجاح: ${t.kpi||'غير محدد'}${t.delay_reason?' · سبب التأخير: '+t.delay_reason:''}</div>
           </div>
           ${isDone?'':`<button class="edit-btn" onclick="configureTask('${t.task_id}')">ضبط المسؤولية</button>`}
         </div>
@@ -183,10 +182,10 @@ async function toggle(taskId, isDone){
 async function configureTask(taskId){
   const all=Object.values(boardData.groups).flat();
   const t=all.find(x=>x.task_id===taskId)||{};
-  const owner=prompt('Owner',t.owner_user_id||''); if(owner===null)return;
-  const approver=prompt('Approver',t.approver_user_id||''); if(approver===null)return;
-  const deadline=prompt('Deadline بصيغة YYYY-MM-DD',t.deadline||''); if(deadline===null)return;
-  const kpi=prompt('KPI',t.kpi||''); if(kpi===null)return;
+  const owner=prompt('المسؤول',t.owner_user_id||''); if(owner===null)return;
+  const approver=prompt('صاحب الاعتماد',t.approver_user_id||''); if(approver===null)return;
+  const deadline=prompt('الموعد بصيغة YYYY-MM-DD',t.deadline||''); if(deadline===null)return;
+  const kpi=prompt('كيف نعرف أنها نجحت؟',t.kpi||''); if(kpi===null)return;
   const status=prompt('الحالة: لم تبدأ / قيد التنفيذ / متوقفة / منجزة',t.status||'لم تبدأ'); if(status===null)return;
   let delay_reason='';
   if(status==='متوقفة'){delay_reason=prompt('سبب التأخير','')||'';}

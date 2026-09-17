@@ -1,11 +1,11 @@
 <!DOCTYPE html>
+{% from '_sana-mark.html' import sana_mark %}
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="csrf-token" content="{{ csrf_token() }}">
-<script>(function(){var m=document.querySelector('meta[name="csrf-token"]');if(!m)return;var t=m.content;var S=new Set(['POST','PUT','PATCH','DELETE']);var F=window.fetch.bind(window);window.fetch=function(u,o){o=o||{};if(S.has((o.method||'GET').toUpperCase())){o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});}return F(u,o);};})();</script>
-<title>جلسة الاكتشاف — سنع</title>
+{% include '_csrf-fetch.html' %}
+<title>ابدأ بشركتك — سنع</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -41,12 +41,23 @@
     font-family: 'IBM Plex Mono', monospace; font-size: 11px;
     color: var(--muted); letter-spacing: .04em; text-align: left; direction: ltr;
   }
+  .reset-experience-tool{
+    position:fixed; top:12px; left:12px; z-index:120;
+    border:1px solid rgba(178,58,46,.38); background:#fff; color:#8F3027;
+    border-radius:8px; padding:7px 10px; font:600 11.5px 'IBM Plex Sans Arabic',sans-serif;
+    cursor:pointer; box-shadow:0 4px 14px rgba(11,19,43,.08);
+  }
+  .journey-hint {
+    width: 100%; margin-bottom: 16px; padding: 9px 12px;
+    border: 1px solid rgba(255,255,255,.1); border-radius: 9px;
+    color: var(--muted); font-size: 12px; line-height: 1.65; text-align: center;
+  }
 
   /* ── Stage ── */
   #stage {
     width: 100%; max-width: 480px;
     flex: 1; display: flex; align-items: center; justify-content: center;
-    padding: 80px 20px 100px; position: relative;
+    padding: 64px 20px 72px; position: relative;
   }
 
   /* ── Screen ── */
@@ -70,7 +81,7 @@
   }
   .q-sub {
     font-size: 14px; color: var(--muted); text-align: center;
-    margin-bottom: 26px; line-height: 1.6;
+    margin-bottom: 20px; line-height: 1.6;
   }
 
   /* ── Choice grid ── */
@@ -84,7 +95,8 @@
     background: rgba(255,255,255,.04); border: 1.5px solid var(--line);
     border-radius: 12px; padding: 13px 16px;
     font-size: 14px; font-weight: 500; color: var(--ink);
-    cursor: pointer; text-align: right;
+    cursor: pointer; text-align: right; width: 100%; font-family: inherit;
+    appearance: none; -webkit-appearance: none;
     transition: background .15s, border-color .15s, color .15s;
     user-select: none; -webkit-tap-highlight-color: transparent;
   }
@@ -119,6 +131,97 @@
   }
   .followup-input:focus { border-bottom-color: var(--gold); }
   .followup-input::placeholder { color: var(--muted); }
+  .followup-input[type="date"] {
+    direction: ltr;
+    unicode-bidi: plaintext;
+    text-align: left;
+    color-scheme: dark;
+  }
+
+  /* ── Mobile-first period picker ── */
+  .calibration-wrap {
+    width: 100%; max-width: 420px; text-align: right; direction: rtl;
+  }
+  .calibration-kicker {
+    color: #fff; font-family: 'Cairo', sans-serif; font-weight: 800;
+    font-size: clamp(20px, 5.4vw, 25px); line-height: 1.45;
+    text-align: center;
+  }
+  .calibration-note {
+    color: var(--muted); font-size: 13px; text-align: center;
+    margin: 4px 0 24px;
+  }
+  .calibration-question {
+    color: var(--ink); font-family: 'Cairo', sans-serif; font-size: 17px;
+    font-weight: 800; margin-bottom: 12px;
+  }
+  .period-options {
+    display: flex; flex-direction: column; gap: 10px; width: 100%;
+  }
+  .period-option {
+    width: 100%; min-height: 58px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px; direction: rtl;
+    background: rgba(255,255,255,.04); border: 1.5px solid var(--line);
+    border-radius: 14px; padding: 13px 16px; color: var(--ink);
+    font-family: inherit; text-align: right; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background .15s, border-color .15s, transform .1s;
+  }
+  .period-option:active { transform: scale(.985); }
+  .period-option.selected {
+    background: var(--gold-dim); border-color: var(--gold);
+  }
+  .period-option-copy { display: flex; flex-direction: column; gap: 2px; }
+  .period-option-title { font-size: 15px; font-weight: 700; color: #fff; }
+  .period-option.selected .period-option-title { color: var(--gold); }
+  .period-option-hint { color: var(--muted); font-size: 11px; line-height: 1.4; }
+  .period-radio {
+    width: 19px; height: 19px; flex: 0 0 19px; border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,.32); position: relative;
+  }
+  .period-option.selected .period-radio { border-color: var(--gold); }
+  .period-option.selected .period-radio::after {
+    content: ""; position: absolute; inset: 4px; border-radius: 50%;
+    background: var(--gold);
+  }
+  .period-confirmation {
+    color: rgba(255,255,255,.52); font-size: 11px; line-height: 1.6;
+    margin-top: 12px; text-align: right;
+  }
+  .period-custom-fields {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line);
+  }
+  .period-field { min-width: 0; }
+  .period-field label {
+    display: block; color: var(--ink); font-size: 13px; font-weight: 700;
+    margin-bottom: 5px; text-align: right;
+  }
+  .period-field .followup-input {
+    background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.2);
+    border-radius: 10px; padding: 11px 10px; min-height: 45px;
+    width: 100%; min-width: 0; box-sizing: border-box;
+  }
+  .period-field .followup-input[type="date"] {
+    display: block;
+    font-size: 16px;
+    color: #fff;
+    -webkit-text-fill-color: #fff;
+  }
+  .period-field .followup-input::-webkit-calendar-picker-indicator {
+    cursor: pointer; opacity: .78;
+  }
+  .period-error {
+    color: #ffb4a8; font-size: 12px; min-height: 20px; margin-top: 9px;
+  }
+  .period-continue {
+    margin-top: 18px; opacity: 1; pointer-events: auto; transform: none;
+  }
+  @media (max-width: 380px) {
+    .period-custom-fields { grid-template-columns: 1fr; gap: 10px; }
+    .period-option { padding: 12px 14px; }
+    .period-field .followup-input { font-size: 16px; }
+  }
 
   /* ── Next / submit button ── */
   .next-btn {
@@ -154,8 +257,23 @@
   }
   .welcome-sub {
     font-size: 15px; color: var(--muted); text-align: center;
-    margin-bottom: 36px; line-height: 1.7; max-width: 340px;
+    margin-bottom: 28px; line-height: 1.7; max-width: 340px;
   }
+  .memory-card {
+    width:100%; box-sizing:border-box; margin:0 0 18px; padding:14px 16px;
+    border:1px solid rgba(45,212,191,.32); border-radius:14px;
+    background:rgba(45,212,191,.07); color:var(--ink); text-align:right;
+  }
+  .memory-card-title { color:var(--teal); font-weight:700; font-size:12px; margin-bottom:6px; }
+  .memory-card-value { color:#fff; font-size:14px; line-height:1.6; }
+  .memory-card-meta { color:var(--muted); font-size:11px; margin-top:5px; }
+  .memory-card-actions { display:flex; gap:8px; margin-top:11px; }
+  .memory-card-actions button {
+    flex:1; padding:9px 10px; border-radius:9px; cursor:pointer;
+    font-family:'IBM Plex Sans Arabic',sans-serif; font-weight:600;
+  }
+  .memory-confirm { border:0; background:var(--teal); color:var(--navy); }
+  .memory-update { border:1px solid rgba(255,255,255,.18); background:transparent; color:var(--ink); }
   .start-btn {
     background: var(--gold); color: var(--navy);
     font-family: 'Cairo', sans-serif; font-weight: 800; font-size: 16px;
@@ -218,11 +336,17 @@
     margin-bottom: 10px;
   }
 
-  /* ── Sana logo SVG inline ── */
+  /* ── Sana logo ── */
   .sana-logo { display: block; }
 </style>
+{% include '_customer-journey-styles.html' %}
 </head>
 <body>
+{% set journey_step = 'discovery' %}
+{% include '_customer-journey-nav.html' %}
+{% if can_reset_experience %}
+<button type="button" class="reset-experience-tool" onclick="confirmExperienceReset()" aria-label="إعادة ضبط التجربة">↺ إعادة ضبط التجربة</button>
+{% endif %}
 
 <!-- Progress bar -->
 <div id="progress-wrap">
@@ -246,21 +370,26 @@ const PREVIEW_QUERY = (() => {
   if (!adminKey || !companyId) return '';
   return `?${new URLSearchParams({admin_key: adminKey, company_id: companyId}).toString()}`;
 })();
+const JOURNEY_URLS = {{ journey_urls|tojson }};
+const withContext = url => `${url}${PREVIEW_QUERY}`;
+const caseUrl = (template, caseId) =>
+  template.replace('__CASE_ID__', encodeURIComponent(caseId));
+const FULL_REASSESSMENT = {{ (full_reassessment|default(false))|tojson }};
+const COMPANY_MEMORY = {{ (company_memory|default({"items": []}))|tojson }};
+const INITIAL_DISCOVERY_DRAFT = {{ (discovery_draft or {})|tojson }};
+const MEMORY_KEY_BY_QUESTION = {
+  q1: 'goal:primary',
+  q2: 'problem:declared',
+  q4: 'acquisition:source',
+  q5: 'founder:dependency',
+  q6: 'decision:style'
+};
 
 // ────────────────────────────────────────────────
-// SANA LOGO SVG
+// SANA LOGO
 // ────────────────────────────────────────────────
-const LOGO_SVG = `<svg class="sana-logo" width="44" height="44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M76 20 H24 V80 H76 V64" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/>
-  <path d="M76 20 V36" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" fill="none"/>
-  <rect x="50" y="42" width="16" height="16" fill="#F2B233"/>
-</svg>`;
-
-const LOGO_LG = `<svg class="sana-logo" width="60" height="60" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M76 20 H24 V80 H76 V64" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter" fill="none"/>
-  <path d="M76 20 V36" stroke="#FFFFFF" stroke-width="7" stroke-linecap="butt" fill="none"/>
-  <rect x="50" y="42" width="16" height="16" fill="#F2B233"/>
-</svg>`;
+const LOGO_SVG = `{{ sana_mark(size=44, color='#FFFFFF', class_name='sana-logo', decorative=true) }}`;
+const LOGO_LG = `{{ sana_mark(size=60, color='#FFFFFF', class_name='sana-logo', decorative=true) }}`;
 
 // ────────────────────────────────────────────────
 // ICONS per question
@@ -328,8 +457,8 @@ const Q = [
   // Q1 — الوجهة
   {
     id: 'q1', icon: ICONS.q1,
-    title: '🎯 لماذا جئت لسنع اليوم؟',
-    sub: 'ما النتيجة الأهم اللي تبيها خلال 12 شهر؟',
+     title: 'وش النتيجة الأهم لشركتك الآن؟',
+     sub: 'خلال 12 شهر، وش تبي يتغير في الشركة؟',
     type: 'single',
     key: 'q1',
     motivation: '🎯 تمام، صار عندنا وجهة واضحة.',
@@ -349,8 +478,8 @@ const Q = [
   // Q2 — التحدي (لا "القرار")
   {
     id: 'q2', icon: ICONS.q2,
-    title: 'لو قدرت تعالج تحديًا واحدًا الآن…',
-    sub: 'ما الأكثر تأثيرًا على شركتك؟',
+     title: 'وش أكثر شيء مأثر على الشغل حاليًا؟',
+     sub: 'اختر الأقرب لواقع شركتك الآن.',
     type: 'single',
     key: 'q2',
     motivation: '🧠 وضّحت لنا أهم تحدٍّ نبدأ فيه.',
@@ -369,7 +498,7 @@ const Q = [
   // Q3 — الأصل الأهم (5 خيارات مطابقة للأصول + ما أعرف)
   {
     id: 'q3', icon: ICONS.q3,
-    title: '⭐ أكثر شيء تعتمد عليه شركتك اليوم؟',
+     title: 'وش أكثر شيء تعتمد عليه شركتك في تقديم خدمتها اليوم؟',
     sub: 'اختر الأقرب.',
     type: 'single',
     key: 'q3',
@@ -387,10 +516,10 @@ const Q = [
   // Q4 — مصدر العملاء + هشاشته
   {
     id: 'q4', icon: ICONS.q4,
-    title: '🤝 من وين يجيك أغلب عملائك اليوم؟',
+     title: 'من أي قناة يأتي أغلب عملاء الشركة الآن؟',
     type: 'single+followup-choice',
     key: 'q4', fuKey: 'q4_fu',
-    fuLabel: 'لو توقف هذا المصدر شهرًا كاملًا، هل تتأثر مبيعاتك؟',
+     fuLabel: 'لو توقف هذا المصدر شهرًا، وش يصير على المبيعات؟',
     motivation: '🤝 وهذا يكشف مستوى الهشاشة الحقيقي بمصدر عملائك.',
     choices: [
       '🌟 الإحالات',
@@ -404,21 +533,23 @@ const Q = [
       '❓ ما أعرف'
     ],
     fuChoices: [
-      '😰 نعم، بشكل كبير',
-      '🙂 نعم، بدرجة متوسطة',
+      '😰 انخفاض كبير',
+      '😟 انخفاض متوسط',
       '😌 تأثير محدود',
-      '🤷 ما أعرف'
+      '🙂 لا تأثير',
+      '🤷 معلومات غير كافية'
     ]
   },
 
   // Q5 — الاعتماد على المؤسس
   {
     id: 'q5', icon: ICONS.q5,
-    title: '🏖️ تخيّل إنك سافرت شهرًا كاملًا بدون أي تواصل مع الشركة…',
-    sub: 'ماذا تتوقع أن يحدث؟',
+     title: 'لو غاب صاحب القرار شهرًا، كيف يمشي الشغل؟',
+     sub: 'اختر اللي يحدث فعليًا.',
     type: 'single+text',
     key: 'q5', textKey: 'q5_text',
-    textLabel: 'ما أكثر شيء سيتعطل؟ (اختياري)',
+     textLabel: 'وش أول شيء بيتأثر؟ مثال بسيط يكفي (اختياري)',
+     textPlaceholder: 'مثال: اعتماد الأسعار أو متابعة العملاء',
     hideFollowupFor: ['😎 العمل يستمر طبيعيًا'],
     motivation: '🏖️ سؤال يكشف الكثير — شكرًا على صراحتك.',
     choices: [
@@ -433,8 +564,8 @@ const Q = [
   // Q6 — أسلوب اتخاذ القرار
   {
     id: 'q6', icon: ICONS.q6,
-    title: '📊 لما تواجه قرارًا مهمًا…',
-    sub: 'غالبًا على شنو تعتمد؟',
+     title: 'لما تتخذ قرار مهم في الشركة، وش تعتمد عليه غالبًا؟',
+     sub: 'مثل التوظيف أو التسعير أو التسويق.',
     type: 'single',
     key: 'q6',
     motivation: '📈 صار عندنا فكرة عن أسلوبك بالقرار.',
@@ -443,19 +574,19 @@ const Q = [
       '💡 خبرتي الشخصية',
       '👥 رأي الفريق',
       '📚 رأي مستشار',
-      '❤️ الحدس',
-      '😅 حسب الموقف، بلا طريقة ثابتة'
+       '🔀 خليط من أكثر من مصدر',
+       '😅 لا توجد طريقة ثابتة'
     ]
   },
 
   // Q7 — معايير النجاح (multi، max 3) — يُحفظ في success_criteria
   {
     id: 'q7', icon: ICONS.q7,
-    title: '🚀 بعد 12 شهرًا من اليوم…',
-    sub: 'ما النتائج الثلاث اللي بتخليك تقول "سنع صنعت فرقًا"؟ اختر ثلاثة.',
+     title: 'وش النتيجة اللي تبي تشوفها بعد سنة؟',
+     sub: 'اختر حتى 3 نتائج.',
     type: 'multi',
     key: 'q7', maxSelect: 3,
-    motivation: '🚀 آخر سؤال، وأهمه — تخيّلنا المستقبل معك.',
+     motivation: 'آخر نقطة ونكمل الصورة.',
     choices: [
       '📈 مبيعات أعلى',
       '💰 أرباح وسيولة أفضل',
@@ -474,8 +605,15 @@ const Q = [
 // step 0 = welcome, steps 1-7 = Q1-Q7, step 8 = baseline, step 9 = outro
 // ────────────────────────────────────────────────
 let step = 0;
-const ans = {};
+const ans = {
+  fit_gate: {operating_duration:null, paying_customers:null, delivery_mode:null}
+};
 let firstCaseId = null;
+let calibrationPeriodChoice = null;
+const calibrationDraft = {
+  baseline_start: '',
+  baseline_end: ''
+};
 
 // ────────────────────────────────────────────────
 // HELPERS
@@ -484,15 +622,29 @@ const $screen   = document.getElementById('screen');
 const $progress = document.getElementById('progress-wrap');
 const $fill     = document.getElementById('progress-fill');
 const $label    = document.getElementById('progress-label');
+
+async function confirmExperienceReset(){
+  const first = window.confirm('سيتم مسح بيانات التجربة الحالية لهذه الشركة فقط، مع إبقاء حساب الدخول والبريد وكلمة المرور. لا يمكن التراجع عن هذه العملية. هل تريد المتابعة؟');
+  if (!first) return;
+  const second = window.confirm('تأكيد أخير: هل تريد إعادة هذا الحساب إلى أول خطوة في سنع؟');
+  if (!second) return;
+  const response = await fetch(withContext(JOURNEY_URLS.reset_experience), { method:'POST' });
+  const payload = await response.json();
+  if (response.ok && payload.success) {
+    window.location.assign(payload.data.redirect || JOURNEY_URLS.onboarding);
+    return;
+  }
+  window.alert(payload.message || 'تعذر إعادة ضبط التجربة.');
+}
 const $toast    = document.getElementById('motivation');
 
 function updateProgress(s) {
   if (s === 0 || s >= 8) { $progress.classList.remove('visible'); return; }
   $progress.classList.add('visible');
+  // لا نعرض عدد الأسئلة؛ التقدم هنا هو تقدم المستخدم في بناء الصورة.
   const pct = Math.round((s / 7) * 100);
   $fill.style.width = pct + '%';
-  const rem = 7 - s;
-  $label.textContent = rem === 0 ? 'السؤال الأخير' : `بقي ${rem === 1 ? 'سؤال واحد' : rem + ' أسئلة'}`;
+  $label.textContent = `وضوح الصورة ${pct}%`;
 }
 
 let toastTimer;
@@ -504,6 +656,74 @@ function showToast(msg, cb) {
     $toast.classList.remove('show');
     if (cb) setTimeout(cb, 300);
   }, 1600);
+}
+
+let draftSaveTimer = null;
+let draftSaveInFlight = null;
+let discoveryFinalizing = false;
+const DRAFT_ENABLED = {{ (discovery_drafts_enabled|default(false))|tojson }};
+
+function draftSnapshot() {
+  const snapshot = JSON.parse(JSON.stringify(ans));
+  snapshot.calibration_draft = {
+    baseline_start: calibrationDraft.baseline_start || '',
+    baseline_end: calibrationDraft.baseline_end || '',
+    period_choice: calibrationPeriodChoice || ''
+  };
+  return snapshot;
+}
+
+async function saveDraftNow(keepalive = false) {
+  if (!DRAFT_ENABLED || discoveryFinalizing || step > 8) return null;
+  const request = fetch(withContext(JOURNEY_URLS.discovery_draft), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    keepalive,
+    body: JSON.stringify({ payload: draftSnapshot(), current_step: step })
+  });
+  draftSaveInFlight = request.catch(() => null).finally(() => {
+    draftSaveInFlight = null;
+  });
+  return draftSaveInFlight;
+}
+
+function scheduleDraftSave() {
+  if (!DRAFT_ENABLED || discoveryFinalizing) return;
+  clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(() => {
+    draftSaveTimer = null;
+    saveDraftNow();
+  }, 350);
+}
+
+function restoreDiscoveryDraft(draft) {
+  if (!draft || !draft.payload) return false;
+  const payload = draft.payload;
+  if (payload.fit_gate && typeof payload.fit_gate === 'object') {
+    ans.fit_gate = {
+      operating_duration: payload.fit_gate.operating_duration || null,
+      paying_customers: payload.fit_gate.paying_customers || null,
+      delivery_mode: payload.fit_gate.delivery_mode || null
+    };
+  }
+  ['q1', 'q2', 'q3', 'q4', 'q4_fu', 'q5', 'q5_text', 'q6'].forEach(key => {
+    if (typeof payload[key] === 'string') ans[key] = payload[key];
+  });
+  if (Array.isArray(payload.q7)) ans.q7 = payload.q7.slice(0, 3);
+  if (payload.diagnostic_baseline && typeof payload.diagnostic_baseline === 'object') {
+    ans.diagnostic_baseline = {...payload.diagnostic_baseline};
+  }
+  const calibration = payload.calibration_draft;
+  if (calibration && typeof calibration === 'object') {
+    calibrationDraft.baseline_start = calibration.baseline_start || '';
+    calibrationDraft.baseline_end = calibration.baseline_end || '';
+    calibrationPeriodChoice = calibration.period_choice || null;
+  }
+  const restoredStep = Number(draft.current_step);
+  if (Number.isInteger(restoredStep) && restoredStep >= 0 && restoredStep <= 8) {
+    step = restoredStep;
+  }
+  return true;
 }
 
 function transitionTo(renderFn, backward = false) {
@@ -534,117 +754,276 @@ function renderWelcome() {
   $screen.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; gap:0; width:100%; max-width:420px;">
       <div class="welcome-logo">${LOGO_LG}</div>
-      <div class="welcome-title" style="margin-bottom:20px;">مرحبًا في سنع</div>
-
-      <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.10);
-                  border-radius:14px; padding:22px 22px; text-align:right; margin-bottom:24px;
-                  display:flex; flex-direction:column; gap:14px;">
-        <p style="color:#fff; font-size:15px; font-weight:600; line-height:1.6; margin:0;">
-          سنع ليس CRM، وليس ERP.
-        </p>
-        <p style="color:rgba(255,255,255,0.65); font-size:13.5px; line-height:1.75; margin:0;">
-          سنع هو نظام الوضوح الإداري لشركتك — يساعدك تشوف شركتك من الداخل بعيون موضوعية،
-          وتعرف أين القوة الحقيقية، وأين الخطر قبل ما يكبر.
-        </p>
-        <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:14px;
-                    display:flex; flex-direction:column; gap:8px;">
-          <div style="display:flex; gap:10px; align-items:flex-start; color:rgba(255,255,255,0.7); font-size:13px;">
-            <span>📌</span><span>تشخيص واضح لأكبر تحدٍّ تواجهه اليوم</span>
-          </div>
-          <div style="display:flex; gap:10px; align-items:flex-start; color:rgba(255,255,255,0.7); font-size:13px;">
-            <span>📌</span><span>خريطة أصول شركتك الخمسة</span>
-          </div>
-          <div style="display:flex; gap:10px; align-items:flex-start; color:rgba(255,255,255,0.7); font-size:13px;">
-            <span>📌</span><span>أول توصية قابلة للتنفيذ هذا الأسبوع</span>
-          </div>
-        </div>
-      </div>
-
-      <div style="display:flex; align-items:center; gap:14px; width:100%;">
-        <button class="start-btn" style="flex:1; margin:0;" onclick="skipWelcome()">
-          ابدأ الجلسة ←
-        </button>
-        <div style="display:flex; flex-direction:column; align-items:center; gap:2px; min-width:44px;">
-          <div id="welcome-count" style="font-family:'IBM Plex Mono',monospace; font-size:20px;
-               font-weight:600; color:var(--gold);">30</div>
-          <div style="font-size:10px; color:var(--muted);">ثانية</div>
-        </div>
-      </div>
+       <div class="welcome-title">خلنا نشوف صورة شركتك بوضوح</div>
+       <div class="welcome-sub">جاوب بطريقتك وسنع يرتب الصورة ويحدد وش يستحق التركيز أولًا</div>
+       <div class="journey-hint">7 أسئلة قصيرة · سؤال واحد كل مرة</div>
+      <button class="start-btn" style="width:100%;" onclick="skipWelcome()">ابدأ</button>
+      <div style="color:var(--muted); font-size:12px; margin-top:12px;">دقائق قليلة · بدون نموذج طويل</div>
     </div>`;
+}
 
-  // عدّاد 30 ثانية — يبدأ فور ظهور الشاشة
-  let count = 30;
-  _welcomeTimer = setInterval(() => {
-    count--;
-    const el = document.getElementById('welcome-count');
-    if (el) el.textContent = count;
-    if (count <= 0) { clearInterval(_welcomeTimer); _welcomeTimer = null; goNext(); }
-  }, 1000);
+const FIT_FIELDS = [
+  {key:'operating_duration', title:'من متى بدأ التشغيل الفعلي؟', options:[
+    ['IDEA','ما زلنا في مرحلة الفكرة أو التجهيز'],['UNDER_YEAR','أقل من سنة'],['ONE_PLUS','سنة أو أكثر']
+  ]},
+  {key:'paying_customers', title:'هل لديكم عملاء دفعوا مقابل الخدمة أو المنتج؟', options:[
+    ['NO','لا، لم نصل لأول إيراد بعد'],['YES','نعم، لدينا عملاء أو إيراد فعلي']
+  ]},
+  {key:'delivery_mode', title:'كيف يتم تقديم العمل اليوم؟', options:[
+    ['BUILDING','نبني العرض ولم يبدأ التسليم'],['OWNER_DELIVERY','المؤسس يقدّم العمل للعملاء'],['TEAM_DELIVERY','فريق أو نظام يقدّم العمل']
+  ]}
+];
+
+function renderFitGate() {
+  $screen.innerHTML = `
+    <div class="calibration-wrap">
+      <div class="calibration-kicker">قبل نبدأ</div>
+      <div class="calibration-note">3 أسئلة سريعة عشان نعرف إذا سنع مناسب لمرحلتك</div>
+      ${FIT_FIELDS.map(field => `
+        <div style="margin-top:18px;">
+          <div style="font-weight:700; margin-bottom:8px;">${field.title}</div>
+          <div class="period-options" data-fit-group="${field.key}">
+            ${field.options.map(([value,label]) => `
+              <button type="button" class="period-option${ans.fit_gate[field.key] === value ? ' selected' : ''}"
+                onclick="selectFit('${field.key}','${value}',this)">${label}</button>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')}
+      <div id="fit-error" class="error-msg" style="margin-top:12px;"></div>
+      <button id="fit-continue" class="start-btn" style="width:100%; margin-top:18px;" onclick="submitFitGate()">كمّل</button>
+    </div>`;
+}
+
+function selectFit(key, value, button) {
+  ans.fit_gate[key] = value;
+  document.querySelectorAll(`[data-fit-group="${key}"] .period-option`).forEach(el => el.classList.remove('selected'));
+  button.classList.add('selected');
+  scheduleDraftSave();
+}
+
+async function submitFitGate() {
+  const error = document.getElementById('fit-error');
+  if (FIT_FIELDS.some(field => !ans.fit_gate[field.key])) {
+    error.textContent = 'أكمل الإجابات الثلاثة للمتابعة.';
+    return;
+  }
+  const button = document.getElementById('fit-continue');
+  button.disabled = true;
+  button.textContent = 'جارٍ التحقق…';
+  try {
+    const response = await fetch(withContext(JOURNEY_URLS.fit_gate), {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({fit_gate:ans.fit_gate})
+    });
+    let result = null;
+    try {
+      result = await response.json();
+    } catch (_) {
+      throw new Error('FIT_GATE_RESPONSE_INVALID');
+    }
+    if (!response.ok || !result || !result.success) throw new Error('FIT_GATE_CHECK_FAILED');
+    if (!result.data.qualified) {
+      window.location.href = result.data.redirect;
+      return;
+    }
+    step = 1;
+    scheduleDraftSave();
+    transitionTo(render);
+  } catch (_) {
+    error.textContent = 'تعذر التحقق الآن. حاول مرة أخرى بعد قليل.';
+    button.disabled = false;
+    button.textContent = 'كمّل';
+  }
 }
 
 function skipWelcome() {
   if (_welcomeTimer) { clearInterval(_welcomeTimer); _welcomeTimer = null; }
-  goNext();
+  transitionTo(renderFitGate);
 }
 
 function renderCalibration() {
   const baseline = ans.diagnostic_baseline || {};
+  if (!calibrationPeriodChoice) {
+    calibrationPeriodChoice = baseline.baseline_start && baseline.baseline_end
+      ? 'custom' : 'last_3_months';
+  }
+  const isCustom = calibrationPeriodChoice === 'custom';
+  const period = isCustom
+    ? {
+        start: calibrationDraft.baseline_start || baseline.baseline_start || '',
+        end: calibrationDraft.baseline_end || baseline.baseline_end || ''
+      }
+    : getPresetPeriod(calibrationPeriodChoice);
   $screen.innerHTML = `
-    <div class="outro-wrap" style="align-items:stretch;max-width:520px;">
-      <div class="outro-title">عاير الفترة قبل التشخيص</div>
-      <div class="outro-body">حدد الفترتين اللتين تصفان واقع الشركة. لا يعني ذلك أن أي رقم أصبح مثبتًا؛ سنظل نطلب مصدره ودليله عند إدخاله.</div>
-      <label class="followup-label">فترة الأساس</label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <input class="followup-input" type="date" id="baseline-start" value="${escHtml(baseline.baseline_start || '')}">
-        <input class="followup-input" type="date" id="baseline-end" value="${escHtml(baseline.baseline_end || '')}">
+    <div class="calibration-wrap">
+      <div class="calibration-kicker">على أي فترة نبني الصورة؟</div>
+      <div class="calibration-note">اختر الفترة التي تعكس وضع شركتك الآن بأدق صورة.</div>
+      <div class="period-options" role="radiogroup" aria-label="الفترة التي تمثل وضع الشركة">
+        ${renderPeriodOption('last_30_days', 'آخر 30 يوم', 'صورة سريعة عن الوضع الحالي')}
+        ${renderPeriodOption('last_3_months', 'آخر 3 أشهر', 'الاختيار المقترح')}
+        ${renderPeriodOption('last_6_months', 'آخر 6 أشهر', 'لصورة أوسع عن الأداء')}
+        ${renderPeriodOption('last_12_months', 'آخر 12 شهرًا', 'لرؤية دورة سنة كاملة')}
+        ${renderPeriodOption('custom', 'أحدّد الفترة بنفسي', 'إذا كانت لديك فترة محددة')}
       </div>
-      <label class="followup-label" style="margin-top:12px;">فترة المقارنة</label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <input class="followup-input" type="date" id="comparison-start" value="${escHtml(baseline.comparison_start || '')}">
-        <input class="followup-input" type="date" id="comparison-end" value="${escHtml(baseline.comparison_end || '')}">
-      </div>
-      <label class="followup-label" style="margin-top:12px;">سياق الموسمية</label>
-      <select class="followup-input" id="seasonality-context">
-        <option value="فترة تشغيل اعتيادية">فترة تشغيل اعتيادية</option>
-        <option value="موسم مرتفع">موسم مرتفع</option>
-        <option value="موسم منخفض">موسم منخفض</option>
-        <option value="غير معروف — يحتاج تحقق">غير معروف — يحتاج تحقق</option>
-      </select>
-      <div id="calibration-error" style="color:#ffb4a8;font-size:12px;min-height:20px;margin-top:8px;"></div>
-      <button class="outro-btn" onclick="submitCalibration()">حفظ السياق والمتابعة ←</button>
+      ${isCustom ? `
+        <div class="period-custom-fields" aria-label="حدد الفترة بنفسك">
+          <div class="period-field">
+            <label for="baseline-start">من</label>
+            <input class="followup-input" type="date" id="baseline-start" dir="ltr" lang="en-CA"
+              aria-label="تاريخ بداية الفترة" value="${escHtml(period.start)}"
+              onchange="refreshCustomPeriod()">
+          </div>
+          <div class="period-field">
+            <label for="baseline-end">إلى</label>
+            <input class="followup-input" type="date" id="baseline-end" dir="ltr" lang="en-CA"
+              aria-label="تاريخ نهاية الفترة" value="${escHtml(period.end)}"
+              onchange="refreshCustomPeriod()">
+          </div>
+        </div>` : ''}
+      ${period.start && period.end ? `
+        <div class="period-confirmation">الفترة: ${formatPeriodForDisplay(period.start, period.end)}</div>
+        ` : ''}
+      <div id="calibration-error" class="period-error"></div>
+      <button class="outro-btn period-continue" onclick="submitCalibration()">متابعة</button>
       <button class="back-btn" onclick="goBack()">← رجوع للسؤال السابق</button>
     </div>`;
-  document.getElementById('seasonality-context').value =
-    baseline.seasonality_context || 'فترة تشغيل اعتيادية';
+}
+
+function renderPeriodOption(key, title, hint) {
+  const selected = calibrationPeriodChoice === key;
+  return `<button type="button" class="period-option${selected ? ' selected' : ''}"
+      role="radio" aria-checked="${selected}" onclick="selectCalibrationPeriod('${key}')">
+    <span class="period-option-copy">
+      <span class="period-option-title">${title}</span>
+      <span class="period-option-hint">${hint}</span>
+    </span>
+    <span class="period-radio" aria-hidden="true"></span>
+  </button>`;
+}
+
+function isoDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function shiftCalendarMonths(date, months) {
+  const shifted = new Date(date);
+  const originalDay = shifted.getDate();
+  shifted.setDate(1);
+  shifted.setMonth(shifted.getMonth() + months);
+  const lastDay = new Date(
+    shifted.getFullYear(), shifted.getMonth() + 1, 0
+  ).getDate();
+  shifted.setDate(Math.min(originalDay, lastDay));
+  return shifted;
+}
+
+function getPresetPeriod(choice) {
+  const end = new Date();
+  end.setHours(12, 0, 0, 0);
+  let start = new Date(end);
+  if (choice === 'last_30_days') {
+    start.setDate(start.getDate() - 29);
+  } else {
+    const months = choice === 'last_6_months' ? 6 :
+      choice === 'last_12_months' ? 12 : 3;
+    start = shiftCalendarMonths(start, -months);
+    start.setDate(start.getDate() + 1);
+  }
+  return { start: isoDate(start), end: isoDate(end) };
+}
+
+function getMatchingPreviousPeriod(start, end) {
+  if (!start || !end) return { start: '', end: '' };
+  const startDate = new Date(`${start}T12:00:00`);
+  const endDate = new Date(`${end}T12:00:00`);
+  const duration = Math.round((endDate - startDate) / 86400000) + 1;
+  const previousEnd = new Date(startDate);
+  previousEnd.setDate(previousEnd.getDate() - 1);
+  const previousStart = new Date(previousEnd);
+  previousStart.setDate(previousStart.getDate() - duration + 1);
+  return { start: isoDate(previousStart), end: isoDate(previousEnd) };
+}
+
+function formatPeriodForDisplay(start, end) {
+  const format = value => {
+    const date = new Date(`${value}T12:00:00`);
+    return new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', {
+      day: 'numeric', month: 'short', year: 'numeric'
+    }).format(date);
+  };
+  return `من ${format(start)} إلى ${format(end)}`;
+}
+
+function captureCalibrationDraft() {
+  [
+    ['baseline-start', 'baseline_start'],
+    ['baseline-end', 'baseline_end']
+  ].forEach(([id, key]) => {
+    const input = document.getElementById(id);
+    if (input) calibrationDraft[key] = input.value;
+  });
+}
+
+function refreshCustomPeriod() {
+  captureCalibrationDraft();
+  scheduleDraftSave();
+  if (calibrationDraft.baseline_start && calibrationDraft.baseline_end) {
+    renderCalibration();
+  }
+}
+
+function selectCalibrationPeriod(choice) {
+  captureCalibrationDraft();
+  calibrationPeriodChoice = choice;
+  scheduleDraftSave();
+  renderCalibration();
 }
 
 function submitCalibration() {
-  const baseline = {
-    baseline_start: document.getElementById('baseline-start').value,
-    baseline_end: document.getElementById('baseline-end').value,
-    comparison_start: document.getElementById('comparison-start').value,
-    comparison_end: document.getElementById('comparison-end').value,
-    seasonality_context: document.getElementById('seasonality-context').value
-  };
   const error = document.getElementById('calibration-error');
-  if (!baseline.baseline_start || !baseline.baseline_end ||
-      !baseline.comparison_start || !baseline.comparison_end) {
-    error.textContent = 'حدد بداية ونهاية فترة الأساس والمقارنة.';
+  const previous = ans.diagnostic_baseline || {};
+  let period;
+  if (calibrationPeriodChoice === 'custom') {
+    period = {
+      start: document.getElementById('baseline-start')?.value || '',
+      end: document.getElementById('baseline-end')?.value || ''
+    };
+    if (!period.start || !period.end) {
+      error.textContent = 'حدد تاريخ البداية والنهاية.';
+      return;
+    }
+  } else {
+    period = getPresetPeriod(calibrationPeriodChoice || 'last_3_months');
+  }
+  if (period.end < period.start) {
+    error.textContent = 'تأكد أن تاريخ «إلى» بعد تاريخ «من».';
     return;
   }
-  if (baseline.baseline_end < baseline.baseline_start ||
-      baseline.comparison_end < baseline.comparison_start) {
-    error.textContent = 'نهاية الفترة يجب ألا تسبق بدايتها.';
+  const comparison = getMatchingPreviousPeriod(period.start, period.end);
+  if (comparison.end >= period.start) {
+    error.textContent = 'خلّ فترة المقارنة قبل الفترة الحالية.';
     return;
   }
-  ans.diagnostic_baseline = baseline;
+  ans.diagnostic_baseline = {
+    ...previous,
+    baseline_start: period.start,
+    baseline_end: period.end,
+    comparison_start: comparison.start,
+    comparison_end: comparison.end,
+    seasonality_context: previous.seasonality_context || 'غير معروف — يحتاج تحقق'
+  };
   goNext();
 }
 
 // step 9 — شاشة انتظار مؤقتة بينما يحفظ سنع الجلسة في الخلفية
 function renderOutro() {
   $screen.innerHTML = `
-    <div class="outro-wrap" style="align-items:center;">
+    <div class="outro-wrap journey-state-panel dark" role="status" style="align-items:center;">
       <div class="outro-logo">${LOGO_LG}</div>
       <div class="loading-dots" style="margin:24px 0; font-size:28px; color:var(--gold);">· · ·</div>
       <div style="color:rgba(255,255,255,0.5); font-size:13px;">يجمع سنع ملخص شركتك…</div>
@@ -661,7 +1040,10 @@ function renderPassport(data) {
     '📊 البيانات والتقارير':      'البيانات',
     '👤 وجود المؤسس ومتابعته':   'الاستقلالية',
   };
-  const dest = data.case_id ? `/case/${data.case_id}` : '/home';
+  const retryQuery = data.scan_has_run === false ? '?scan=failed' : '';
+  const dest = data.case_id
+    ? `${caseUrl(JOURNEY_URLS.case_result_template, data.case_id)}${retryQuery}`
+    : JOURNEY_URLS.home;
 
   const rows = [
     data.sector        ? `<div class="pp-row"><span class="pp-icon">🏢</span><div><span class="pp-label">القطاع</span><span class="pp-val">${data.sector}</span></div></div>` : '',
@@ -675,9 +1057,9 @@ function renderPassport(data) {
   $screen.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; width:100%; max-width:420px;">
       <div class="outro-logo">${LOGO_LG}</div>
-      <div class="outro-title" style="font-size:17px; margin-bottom:6px;">🏢 جواز شركتك</div>
+      <div class="outro-title" style="font-size:17px; margin-bottom:6px;">هذا ما فهمناه</div>
       <div style="color:rgba(255,255,255,0.45); font-size:12px; margin-bottom:20px;">
-        ملخص ما رصده سنع من جلسة الاكتشاف
+        ملخص ما فهمناه من حديثك
       </div>
       <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10);
                   border-radius:14px; padding:18px 20px; width:100%;
@@ -686,29 +1068,41 @@ function renderPassport(data) {
       </div>
       <button class="outro-btn" style="margin-top:22px; width:100%;"
               onclick="location.href='${dest}'">
-        ابدأ أول تشخيص ←
+        شوف أول شيء يستحق انتباهك
       </button>
     </div>`;
 }
 
 async function saveAndFinish() {
+  discoveryFinalizing = true;
+  if (draftSaveTimer) {
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = null;
+  }
+  if (draftSaveInFlight) {
+    await draftSaveInFlight.catch(() => {});
+  }
   let saveData = { case_id: null };
   try {
-    const res = await fetch(`/api/discovery/save${PREVIEW_QUERY}`, {
+    const res = await fetch(withContext(JOURNEY_URLS.discovery_save), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ans)
+      body: JSON.stringify({...ans, full_reassessment: FULL_REASSESSMENT})
     });
     const json = await res.json();
     if (json.success && json.data) {
       saveData    = json.data;
+      if (saveData.qualified === false && saveData.redirect) {
+        window.location.href = saveData.redirect;
+        return;
+      }
       firstCaseId = json.data.case_id;
     } else {
       throw new Error(json.message || 'تعذر حفظ جلسة الاكتشاف.');
     }
   } catch(e) {
     $screen.innerHTML = `
-      <div class="outro-wrap">
+      <div class="outro-wrap journey-state-panel dark error" role="alert">
         <div class="outro-title">لم تُحفظ الإجابات بعد</div>
         <div class="outro-body">${escHtml(e.message || 'تعذر الاتصال بالخادم. إجاباتك ما زالت في هذه الصفحة.')}</div>
         <button class="outro-btn" onclick="saveAndFinish()">أعد المحاولة</button>
@@ -729,8 +1123,18 @@ async function saveAndFinish() {
 
 function renderQuestion(q) {
   const chosen = ans[q.key];
+  const journeyCopy = {
+    q1: 'نحدد النتيجة التي تريدها الشركة.',
+    q2: 'نفهم أين يتعطل العمل فعليًا.',
+    q3: 'نرصد ما تعتمد عليه الشركة في تقديم خدمتها.',
+    q4: 'نفهم كيف يصل العملاء وما مدى ثبات القناة.',
+    q5: 'نفهم كيف يستمر العمل عند غياب صاحب القرار.',
+    q6: 'نفهم الآن طريقة اتخاذ القرار في شركتك.',
+    q7: 'نحدد النتيجة التي سنقيسها لاحقًا.'
+  };
 
   let body = '';
+  body += renderMemorySuggestion(q);
 
   if (q.type === 'single') {
     body += renderChoices(q.choices, q.key, 'single', chosen);
@@ -745,11 +1149,11 @@ function renderQuestion(q) {
         <div class="followup-wrap show" id="fu-wrap">
           <div class="followup-label">${q.textLabel}</div>
           <input class="followup-input" type="text"
-            placeholder="اكتب هنا..."
+            placeholder="${escHtml(q.textPlaceholder || 'اكتب هنا...')}"
             value="${escHtml(textVal)}"
             id="fu-input"
-            onchange="ans['${q.textKey}']=this.value"
-            oninput="ans['${q.textKey}']=this.value">
+            onchange="ans['${q.textKey}']=this.value; scheduleDraftSave()"
+            oninput="ans['${q.textKey}']=this.value; scheduleDraftSave()">
         </div>`;
     }
     body += `
@@ -770,7 +1174,7 @@ function renderQuestion(q) {
 
   if (q.type === 'multi') {
     const sel = ans[q.key] || [];
-    body += `<div class="multi-count" id="multi-count">مختار ${sel.length}/${q.maxSelect}</div>`;
+    body += `<div class="multi-count" id="multi-count">محدد ${sel.length}/${q.maxSelect}</div>`;
     body += renderChoices(q.choices, q.key, 'multi', sel);
     body += `<button class="next-btn${sel.length > 0 ? ' show' : ''}" id="next-btn"
       onclick="submitMulti()">إنهاء ←</button>`;
@@ -784,8 +1188,78 @@ function renderQuestion(q) {
   $screen.innerHTML = `
     ${q.icon}
     <div class="q-title">${q.title}</div>
+    <div class="journey-hint">${journeyCopy[q.key] || 'نبني صورة واقعية عن شركتك.'}</div>
     ${q.sub ? `<div class="q-sub">${q.sub}</div>` : ''}
     ${body}`;
+}
+
+function memoryValueText(value) {
+  if (value === null || value === undefined) return 'غير معروف';
+  if (Array.isArray(value)) return value.join('، ');
+  if (typeof value === 'object') {
+    if (value.value !== undefined) return `${value.value}${value.unit ? ` ${value.unit}` : ''}`;
+    return Object.values(value).filter(v => v !== null && v !== '').join('، ');
+  }
+  return String(value);
+}
+
+function memoryForQuestion(q) {
+  const key = MEMORY_KEY_BY_QUESTION[q.key];
+  if (!key) return null;
+  return (COMPANY_MEMORY.items || []).find(item => item.memory_key === key) || null;
+}
+
+function renderMemorySuggestion(q) {
+  const item = memoryForQuestion(q);
+  if (!item) return '';
+  const hasConflict = item.conflict_status === 'OPEN';
+  const freshness = item.freshness === 'STALE' ? 'قديمة وتحتاج تحديثًا' :
+    hasConflict ? 'يوجد تعارض مفتوح ويتطلب مراجعة' :
+    item.reusable ? 'موثقة وحديثة' : 'تحتاج تأكيدًا سريعًا';
+  return `<div class="memory-card" id="memory-${escHtml(q.key)}">
+    <div class="memory-card-title">معلومة سابقة من ذاكرة شركتك</div>
+    <div class="memory-card-value">${escHtml(memoryValueText(item.value))}</div>
+    <div class="memory-card-meta">${escHtml(freshness)} · آخر تحقق ${escHtml(item.observed_at || 'غير معروف')}</div>
+    <div class="memory-card-actions">
+      ${hasConflict
+        ? '<button class="memory-confirm" disabled style="opacity:.55;cursor:not-allowed">راجع التعارض أولًا</button>'
+        : `<button class="memory-confirm" onclick="confirmMemory('${escHtml(q.key)}','${escHtml(item.memory_id)}','${escHtml(item.version_id)}')">صحيحة، استخدمها</button>`}
+      <button class="memory-update" onclick="updateMemory('${escHtml(q.key)}')">تغيّرت، سأحدّثها</button>
+    </div>
+  </div>`;
+}
+
+async function confirmMemory(questionKey, memoryId, displayedVersionId) {
+  const item = (COMPANY_MEMORY.items || []).find(row => row.memory_id === memoryId);
+  if (!item) return;
+  try {
+    const response = await fetch(`/api/companies/{{ company_id|default('') }}/memory/${encodeURIComponent(memoryId)}/confirm${PREVIEW_QUERY}`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        reason:'تأكيد من تدفق Discovery',
+        presented_version_id:displayedVersionId
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) throw new Error(payload.error || 'تعذر التأكيد');
+    if (!payload.data || payload.data.status !== 'ACTIVE' ||
+        payload.data.current_version_id !== payload.data.version_id) {
+      throw new Error('لم تصبح المعلومة مؤكدة؛ راجع التعارض قبل استخدامها.');
+    }
+    ans[questionKey] = item.value;
+    scheduleDraftSave();
+    showToast('تم التأكيد؛ ستُستخدم المعلومة في هذه الإجابة.', () => render());
+  } catch (error) {
+    showToast(error.message || 'تعذر تأكيد المعلومة الآن.');
+  }
+}
+
+function updateMemory(questionKey) {
+  const card = document.getElementById(`memory-${questionKey}`);
+  if (card) card.remove();
+  delete ans[questionKey];
+  scheduleDraftSave();
+  showToast('لن نستخدم القيمة القديمة؛ اختر الإجابة الحالية.');
 }
 
 function renderChoices(choices, key, mode, current, inline = false) {
@@ -805,7 +1279,7 @@ function renderChoices(choices, key, mode, current, inline = false) {
       : isFu
         ? `pickFuChoice('${escJs(key)}','${escJs(c)}')`
         : `pickChoice('${escJs(key)}','${escJs(c)}')`;
-    return `<div class="choice${selectedCls}" onclick="${clickFn}">${c}</div>`;
+    return `<button type="button" class="choice${selectedCls}" aria-pressed="${selectedCls ? 'true' : 'false'}" onclick="${clickFn}">${c}</button>`;
   }).join('');
 
   return `<div class="${cls}" id="${isFu ? 'fu-choices' : 'main-choices'}">${items}</div>`;
@@ -816,6 +1290,7 @@ function renderChoices(choices, key, mode, current, inline = false) {
 // ────────────────────────────────────────────────
 function pickChoice(key, value) {
   ans[key] = value;
+  scheduleDraftSave();
   const q = Q[step - 1];
   const choiceEls = document.getElementById('main-choices');
   if (choiceEls) {
@@ -849,6 +1324,7 @@ function shouldShowFollowup(q, choice) {
 
 function pickFuChoice(fuKey, value) {
   ans[fuKey] = value;
+  scheduleDraftSave();
   const q = Q[step - 1];
   const fuEl = document.getElementById('fu-choices');
   if (fuEl) {
@@ -861,6 +1337,7 @@ function pickFuChoice(fuKey, value) {
 
 function afterFollowupText() {
   const q = Q[step - 1];
+  scheduleDraftSave();
   showToast(q.motivation, goNext);
 }
 
@@ -874,9 +1351,10 @@ function toggleMulti(value) {
   } else if (arr.length < q.maxSelect) {
     arr.push(value);
   }
+  scheduleDraftSave();
   const cnt = document.getElementById('multi-count');
   const nb  = document.getElementById('next-btn');
-  if (cnt) cnt.textContent = `مختار ${arr.length}/${q.maxSelect}`;
+  if (cnt) cnt.textContent = `محدد ${arr.length}/${q.maxSelect}`;
   if (nb) nb.classList.toggle('show', arr.length > 0);
   const mainCh = document.getElementById('main-choices');
   if (mainCh) {
@@ -894,11 +1372,13 @@ function submitMulti() {
 
 function goNext() {
   step++;
+  scheduleDraftSave();
   transitionTo(render, false);
 }
 
 function goBack() {
   step--;
+  scheduleDraftSave();
   transitionTo(render, true);
 }
 
@@ -913,8 +1393,38 @@ function escJs(str) { return (str||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")
 // dev: ?step=N يفتح سؤالًا محددًا مباشرة (للمعاينة فقط)
 // ────────────────────────────────────────────────
 const _devStep = parseInt(new URL(location.href).searchParams.get('step') || '0');
-if (_devStep > 0 && _devStep <= 8) step = _devStep;
-render();
+function showDiscoveryLoadError(error) {
+  console.error('Discovery failed to render', error);
+  $progress.classList.remove('visible');
+  $screen.innerHTML = `
+    <div class="journey-state-panel dark error">
+      <div>تعذر فتح أسئلة الاكتشاف الآن.</div>
+      <button type="button" class="journey-retry" onclick="window.location.reload()">أعد المحاولة</button>
+      <a class="journey-retry" href="${JOURNEY_URLS.onboarding}">ارجع للبيانات الأساسية</a>
+    </div>`;
+}
+
+try {
+  if (_devStep > 0 && _devStep <= 8) step = _devStep;
+  if (!_devStep) restoreDiscoveryDraft(INITIAL_DISCOVERY_DRAFT);
+  if (
+    !_devStep &&
+    INITIAL_DISCOVERY_DRAFT &&
+    INITIAL_DISCOVERY_DRAFT.payload &&
+    INITIAL_DISCOVERY_DRAFT.current_step === 0 &&
+    INITIAL_DISCOVERY_DRAFT.payload.fit_gate &&
+    Object.values(INITIAL_DISCOVERY_DRAFT.payload.fit_gate).some(Boolean)
+  ) {
+    renderFitGate();
+  } else {
+    render();
+  }
+} catch (error) {
+  showDiscoveryLoadError(error);
+}
+window.addEventListener('pagehide', () => {
+  if (DRAFT_ENABLED && !discoveryFinalizing) saveDraftNow(true);
+});
 </script>
 </body>
 </html>

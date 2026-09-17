@@ -1,10 +1,10 @@
 <!DOCTYPE html>
+{% from '_sana-mark.html' import sana_mark %}
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="csrf-token" content="{{ csrf_token() }}">
-<script>(function(){var m=document.querySelector('meta[name="csrf-token"]');if(!m)return;var t=m.content;var S=new Set(['POST','PUT','PATCH','DELETE']);var F=window.fetch.bind(window);window.fetch=function(u,o){o=o||{};if(S.has((o.method||'GET').toUpperCase())){o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});}return F(u,o);};})();</script>
+{% include '_csrf-fetch.html' %}
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#F5F6FB">
 <title>سنع — إنشاء حساب</title>
@@ -48,25 +48,22 @@
 </head>
 <body>
 
-  <svg class="mark" viewBox="0 0 100 100">
-    <path d="M78,32 L78,17 L19,17 L19,83 L78,83 L78,68" fill="none" stroke="#0B132B" stroke-width="9" stroke-linecap="square"/>
-    <rect x="44" y="41" width="19" height="19" fill="#F2B233"/>
-  </svg>
+  {{ sana_mark(size=36, class_name='mark', decorative=true, stroke_width=9) }}
 
   <div class="card">
-    <h1>إنشاء حساب جديد</h1>
-    <div class="sub">حساب واحد لشركتك أنت فقط — تبدأ بمساحة عمل فارغة ومنعزلة تمامًا عن أي شركة أخرى.</div>
+    <h1>أنشئ حساب شركتك</h1>
+    <div class="sub">ابدأ الآن واحفظ معلومات عملك في مكان واحد.</div>
 
     <div class="error" id="errorMsg"></div>
 
     <label for="email">البريد الإلكتروني</label>
-    <input type="email" id="email" autocomplete="username" placeholder="you@company.com">
+    <input type="email" id="email" autocomplete="username" placeholder="بريدك الإلكتروني">
 
     <label for="password">كلمة المرور</label>
     <input type="password" id="password" autocomplete="new-password" placeholder="8 أحرف على الأقل">
 
     <label for="referralSource">من أين سمعت عنا؟ <span style="font-weight:400; color:var(--slate);">(اختياري)</span></label>
-    <input type="text" id="referralSource" placeholder="مثال: توصية صديق، تويتر، بحث جوجل...">
+    <input type="text" id="referralSource" placeholder="مثال: توصية من صديق">
 
     <button class="btn" id="submitBtn" onclick="doSignup()">إنشاء الحساب</button>
 
@@ -94,7 +91,7 @@ async function doSignup(){
   }
 
   btn.disabled = true;
-  btn.textContent = 'جارٍ الإنشاء...';
+   btn.textContent = 'جارٍ إنشاء الحساب...';
   try{
     const res = await fetch('/signup', {
       method: 'POST',
@@ -112,13 +109,13 @@ async function doSignup(){
       }
       errorMsg.classList.add('show');
       btn.disabled = false;
-      btn.textContent = 'إنشاء الحساب';
+       btn.textContent = 'إنشاء الحساب';
     }
   } catch(e){
     errorMsg.textContent = 'تعذّر الاتصال بالخادم، حاول مرة أخرى.';
     errorMsg.classList.add('show');
     btn.disabled = false;
-    btn.textContent = 'إنشاء الحساب';
+     btn.textContent = 'إنشاء الحساب';
   }
 }
 </script>

@@ -1,0 +1,7 @@
+<nav class="customer-journey-nav" aria-label="رحلة سنع">
+  <a href="{{ journey_urls.discovery }}{{ context_query|default('') }}" class="{% if journey_step == 'discovery' %}active{% endif %}">1 · الاكتشاف</a>
+  <a href="{{ journey_urls.home }}{{ context_query|default('') }}" class="{% if journey_step == 'result' %}active{% endif %}">2 · النتيجة</a>
+  <a href="{{ journey_urls.passport }}{{ context_query|default('') }}" class="{% if journey_step == 'passport' %}active{% endif %}">3 · الجواز</a>
+  <a href="{{ journey_urls.company_report }}{{ context_query|default('') }}" class="{% if journey_step == 'report' %}active{% endif %}">4 · التقرير</a>
+  <a class="journey-exit" href="{{ journey_urls.logout }}">خروج</a>
+</nav>

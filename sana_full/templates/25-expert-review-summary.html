@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+{% from '_sana-mark.html' import sana_mark %}
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>سنع — ملخص مراجعة الخبير</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+@page{size:A4;margin:10mm}
+:root{--navy:#0B132B;--teal:#0EA5A5;--gold:#F2B233;--ink:#333940;--muted:#6E7580;--line:#DEE1EC;--paper:#F5F6FB}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:"IBM Plex Sans Arabic",sans-serif}
+.sheet{width:min(210mm,100%);min-height:277mm;margin:18px auto;background:#fff;border:1px solid var(--line);padding:15mm 14mm 11mm}
+header{border-bottom:3px solid var(--navy);padding-bottom:12px;margin-bottom:14px}.brand{display:flex;align-items:center;gap:8px;color:var(--navy);font-weight:800}.mark{width:25px;height:25px}
+.kicker{color:var(--teal);font-size:10px;font-weight:700;letter-spacing:1px;margin-top:16px}.title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font:800 25px/1.3 Cairo,sans-serif;color:var(--navy);margin:2px 0}.meta{font-size:10.5px;color:var(--muted);line-height:1.8;text-align:left}
+.classification{display:inline-block;margin-top:7px;padding:4px 9px;border-radius:20px;background:#E9F8F6;color:#08706d;font-size:9.5px;font-weight:700;direction:ltr}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.block{border:1px solid var(--line);border-radius:10px;padding:11px 12px;break-inside:avoid}.block.wide{grid-column:1/-1}.block.highlight{border-right:4px solid var(--gold);background:#FFFCF3}.block.action{border-right:4px solid var(--teal);background:#F7FFFD}
+h2{font:700 12px Cairo,sans-serif;color:var(--navy);margin:0 0 6px}.value{font-size:11.5px;line-height:1.75;white-space:pre-wrap}.muted{color:var(--muted)}
+ul{margin:0;padding-right:17px}li{font-size:10.5px;line-height:1.7;margin:2px 0}.evidence{padding:5px 0;border-bottom:1px solid #EEF0F4}.evidence:last-child{border-bottom:0}.source{font-size:9.5px;color:var(--muted)}.status{font-size:8.5px;border-radius:10px;padding:2px 6px;background:#F0F2F5}.status.VERIFIED{background:#E9F8F6;color:#08706d}
+.warning{margin-top:10px;padding:9px 11px;border:1px solid #F0D795;background:#FFF9E9;border-radius:9px;color:#765B00;font-size:9.5px;line-height:1.7}
+footer{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);margin-top:13px;padding-top:9px;color:var(--muted);font-size:8.5px}
+@media(max-width:700px){.sheet{margin:0;border:0;padding:24px 17px;min-height:100vh}.grid{grid-template-columns:1fr}.block.wide{grid-column:auto}.title-row{display:block}.meta{text-align:right;margin-top:7px}}
+@media print{body{background:#fff}.sheet{margin:0;border:0;width:auto;min-height:auto;padding:0}.block{break-inside:avoid}a{color:inherit;text-decoration:none}}
+</style>
+</head>
+<body>
+<main class="sheet" data-testid="expert-review-summary">
+  <header>
+    <div class="brand">
+      {{ sana_mark(size=25, class_name='mark', decorative=true, stroke_width=9) }}
+      سنع
+    </div>
+    <div class="kicker">HUMAN REVIEW</div>
+    <div class="title-row">
+      <h1>ملخص مراجعة الخبير</h1>
+      <div class="meta">{{ summary.company_name }}<br>{{ summary.review_date }} · {{ summary.reviewer }}</div>
+    </div>
+    <span class="classification">{{ summary.classification }}</span>
+  </header>
+
+  <div class="grid">
+    <section class="block wide">
+      <h2>الوضع الحالي</h2>
+      <div class="value">{{ summary.current_situation }}</div>
+    </section>
+
+    <section class="block wide highlight">
+      <h2>أهم ما لاحظه الخبير</h2>
+      <div class="value">{{ summary.expert_observations }}</div>
+    </section>
+
+    <section class="block">
+      <h2>ما الذي تدعمه الأدلة/البيانات المتاحة؟</h2>
+      {% if summary.evidence %}
+        {% for item in summary.evidence %}
+        <div class="evidence">
+          <div class="value">{{ item.title }} <span class="status {{ item.verification_status }}">{{ 'موثّق' if item.verification_status == 'VERIFIED' else 'غير مؤكد' }}</span></div>
+          <div class="source">{{ item.source_ref }}{% if item.date_collected %} · {{ item.date_collected }}{% endif %}</div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="value muted">لا توجد أدلة مرتبطة بهذه الحالة حتى الآن.</div>
+      {% endif %}
+      <div class="source">إدراج الدليل هنا لا يعني تلقائيًا أنه يثبت ملاحظة الخبير.</div>
+    </section>
+
+    <section class="block">
+      <h2>ما الذي ما زال يحتاج تأكيدًا؟</h2>
+      <ul>{% for item in summary.needs_confirmation %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% if summary.conflicts %}
+      <div class="warning"><b>تعارض ظاهر:</b><ul>{% for item in summary.conflicts %}<li>{{ item }}</li>{% endfor %}</ul></div>
+      {% endif %}
+    </section>
+
+    <section class="block">
+      <h2>الأولوية الآن</h2>
+      <div class="value">{{ summary.priority }}</div>
+    </section>
+
+    <section class="block">
+      <h2>القرار أو التوصية العملية</h2>
+      <div class="value">{{ summary.recommendation }}</div>
+    </section>
+
+    {% if summary.plan %}
+    <section class="block wide">
+      <h2>خطة الخبير</h2>
+      <div class="value">{{ summary.plan }}</div>
+    </section>
+    {% endif %}
+
+    <section class="block wide action">
+      <h2>الخطوة التالية</h2>
+      <div class="value">{{ summary.next_step }}</div>
+    </section>
+
+    {% if summary.references %}
+    <section class="block wide">
+      <h2>ملفات ومراجع مرتبطة بالرحلة</h2>
+      <ul>
+        {% for item in summary.references %}
+        <li><a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.label }}</a></li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+  </div>
+
+  <div class="warning">{{ summary.trust_note }}</div>
+  <footer><span>سنع — وضوح يصنع النمو</span><span>Case {{ summary.case_id }} · Review {{ summary.review_id }}</span></footer>
+</main>
+</body>
+</html>

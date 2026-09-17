@@ -1,0 +1,33 @@
+<meta name="csrf-token" content="{{ csrf_value if csrf_value is defined else csrf_token() }}">
+<script>
+(function () {
+  "use strict";
+  if (window.__sanaCsrfFetchInstalled) return;
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  if (!meta) throw new Error("Sana CSRF meta tag is missing");
+  var token = meta.content;
+  var unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+  var originalFetch = window.fetch.bind(window);
+
+  window.fetch = async function (input, options) {
+    options = options || {};
+    var method = (options.method || (input && input.method) || "GET").toUpperCase();
+    var target = typeof input === "string" ? input : input && input.url;
+    var isSameOrigin = !target || new URL(target, window.location.href).origin === window.location.origin;
+    if (isSameOrigin && unsafeMethods.has(method)) {
+      var headers = new Headers(options.headers || (input && input.headers) || {});
+      if (!headers.has("X-CSRFToken")) headers.set("X-CSRFToken", token);
+      options.headers = headers;
+    }
+    var response = await originalFetch(input, options);
+    if (response.status === 401) {
+      try {
+        var payload = await response.clone().json();
+        if (payload.redirect) window.location.assign(payload.redirect);
+      } catch (_) {}
+    }
+    return response;
+  };
+  window.__sanaCsrfFetchInstalled = true;
+})();
+</script>

@@ -8,18 +8,25 @@ import json
 import uuid
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from unittest.mock import patch
 
 import app as sana_app
 import sana_knowledge
+from sana_company_memory import retrieve_memory
 
 
 DISCOVERY_ANSWERS = {
+    "fit_gate": {
+        "operating_duration": "ONE_PLUS",
+        "paying_customers": "YES",
+        "delivery_mode": "TEAM_DELIVERY",
+    },
     "q1": "زيادة المبيعات بشكل منضبط",
     "q2": "📉 المبيعات",
     "q3": "📊 البيانات والتقارير",
     "q4": "الإحالات",
-    "q4_fu": "🙂 نعم، بدرجة متوسطة",
+    "q4_fu": "😟 انخفاض متوسط",
     "q5": "😰 يتعطل أغلب العمل",
     "q5_text": "تتوقف بعض العمليات المهمة",
     "q6": "الحدس والخبرة الشخصية",
@@ -145,7 +152,8 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
                 "name": f"شركة رحلة {label}",
                 "sector": "consulting",
                 "employee_count": 12,
-                "business_description": "خدمات استشارية للشركات الصغيرة",
+                "business_type": "management_consulting",
+                "respondent_role": "owner_founder",
                 "goal_90_days": "تحسين التحويل خلال 90 يومًا",
                 "primary_challenge": "تشتت الأدلة والقرارات",
             },
@@ -173,7 +181,15 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         landing = sana_app.app.test_client().get("/")
         landing_html = landing.get_data(as_text=True)
         self.assertIn('href="/signup"', landing_html)
-        self.assertIn("أنشئ حسابك وابدأ", landing_html)
+        self.assertIn("ابدأ الآن", landing_html)
+        self.assertIn("سنع يشخّص شركتك الخدمية من واقع معلوماتها", landing_html)
+        self.assertIn("ويرتّب المشاكل والفرص", landing_html)
+        self.assertIn("أولويات وقرارات واضحة بدل التخمين", landing_html)
+        self.assertIn("احكِ لنا عن شركتك", landing_html)
+        self.assertIn("سنع يرتب الصورة", landing_html)
+        self.assertIn("يسألك فقط عما ينقص", landing_html)
+        self.assertIn("يعطيك التشخيص والأولويات والقرارات", landing_html)
+        self.assertIn("دقائق قليلة · بدون نموذج طويل", landing_html)
 
         customer_a = self._new_customer("A")
         customer_b = self._new_customer("B")
@@ -215,6 +231,61 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
             "فترة الأساس التشخيصي" in item
             for item in later_scan_data["missing_evidence"]
         ))
+
+        case_page = client_a.get(
+            f"/case/{later_case_id}",
+            follow_redirects=True,
+        )
+        case_html = case_page.get_data(as_text=True)
+        self.assertIn("وش الفترة اللي عندك عنها بيانات فعلية؟", case_html)
+        self.assertIn("آخر 30 يوم", case_html)
+        self.assertIn("آخر 3 أشهر", case_html)
+        self.assertIn("هل هذه الفترة مختلفة عن المعتاد؟", case_html)
+        self.assertIn("احفظ وكمل", case_html)
+        self.assertNotIn(">بداية الأساس<", case_html)
+        self.assertNotIn(">بداية المقارنة<", case_html)
+
+        future_comparison = client_a.put(
+            f"/api/cases/{later_case_id}/diagnostic-baseline",
+            json={
+                "baseline_start": "2026-08-01",
+                "baseline_end": "2026-08-31",
+                "comparison_start": "2099-07-01",
+                "comparison_end": "2099-07-31",
+                "seasonality_context": "فترة تشغيل اعتيادية",
+            },
+        )
+        self.assertEqual(400, future_comparison.status_code)
+        self.assertEqual(
+            "المقارنة تحتاج فترة انتهت فعليًا",
+            future_comparison.get_json()["message"],
+        )
+
+        baseline_only = client_a.put(
+            f"/api/cases/{later_case_id}/diagnostic-baseline",
+            json={
+                "baseline_start": "2026-08-01",
+                "baseline_end": "2026-08-31",
+                "comparison_start": None,
+                "comparison_end": None,
+                "seasonality_context": "غير معروف — يحتاج تحقق",
+            },
+        )
+        self.assertEqual(200, baseline_only.status_code, baseline_only.get_data(as_text=True))
+        self.assertIsNone(baseline_only.get_json()["data"]["comparison_start"])
+        self.assertIsNone(baseline_only.get_json()["data"]["comparison_end"])
+
+        restored = client_a.put(
+            f"/api/cases/{later_case_id}/diagnostic-baseline",
+            json={
+                "baseline_start": "2026-08-01",
+                "baseline_end": "2026-08-31",
+                "comparison_start": "2026-07-01",
+                "comparison_end": "2026-07-31",
+                "seasonality_context": "فترة تشغيل اعتيادية",
+            },
+        )
+        self.assertEqual(200, restored.status_code)
 
         from sana_growth_os import METRIC_DEFINITIONS
         forged_metrics = {
@@ -270,7 +341,7 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         self.assertNotIn("Research Library", today_html)
         self.assertNotIn("Deal Brain", today_html)
         self.assertIn("اليوم", today_html)
-        self.assertIn("ملف القرار", today_html)
+        self.assertNotIn(">ملف القرار</a>", today_html)
 
         legacy_new_case = client_a.get("/case/new")
         self.assertEqual(302, legacy_new_case.status_code)
@@ -280,15 +351,31 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
             )
         )
 
-        decision_file = client_a.get(f"/case/{customer_a['case_id']}")
+        decision_file = client_a.get(
+            f"/case/{customer_a['case_id']}",
+            follow_redirects=True,
+        )
         self.assertEqual(200, decision_file.status_code)
         decision_html = decision_file.get_data(as_text=True)
-        self.assertIn("فرصة تحسين", decision_html)
-        self.assertIn("حلّل الأدلة الحالية", decision_html)
-        self.assertIn("حفظ الدليل وإعادة التحليل", decision_html)
-        self.assertIn("إنشاء ملف قرار للمراجعة", decision_html)
-        self.assertIn("Sana Scan", decision_html)
-        self.assertIn("المعرفة المرجعية — ليست Evidence", decision_html)
+        self.assertNotIn(">ملف القرار</a>", decision_html)
+        self.assertIn("وش ظهر لنا؟", decision_html)
+        self.assertIn("وش عرفنا؟", decision_html)
+        self.assertIn("رتّب الصورة", decision_html)
+        self.assertIn("كمّل", decision_html)
+        self.assertIn("وش ناقصنا؟", decision_html)
+        self.assertIn("وش ظهر لنا؟", decision_html)
+        self.assertIn("وش تسوي الآن؟", decision_html)
+        self.assertIn("وش تغيّر؟", decision_html)
+        self.assertIn("وش ظهر لنا الآن", decision_html)
+        self.assertNotIn("ما فيه قرار حتى الآن.", decision_html)
+        self.assertNotIn("المعلومة غير متاحة الآن", decision_html)
+        self.assertIn("اكتب الرقم أو المعلومة", decision_html)
+        self.assertIn("مثال: تقرير المبيعات", decision_html)
+        self.assertNotIn("N/A — Deferred", decision_html)
+        self.assertNotIn("حفظ الدليل وإعادة التحليل", decision_html)
+        self.assertIn("شوف القرار", decision_html)
+        self.assertNotIn("Sana Scan", decision_html)
+        self.assertNotIn("المعرفة المرجعية — ليست Evidence", decision_html)
         self.assertNotIn("Knowledge Console", decision_html)
         self.assertNotIn("Research Library", decision_html)
 
@@ -549,9 +636,9 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         pdf_report = client_a.get(
             f"/api/companies/{customer_a['company_id']}/passport/report-pdf"
         )
-        self.assertEqual(200, pdf_report.status_code)
-        self.assertEqual("application/pdf", pdf_report.mimetype)
-        self.assertTrue(pdf_report.data.startswith(b"%PDF"))
+        self.assertEqual(302, pdf_report.status_code)
+        self.assertIn("/pricing", pdf_report.headers["Location"])
+        self.assertIn("feature=report_pdf", pdf_report.headers["Location"])
 
         own_case = client_a.get(f"/api/cases/{customer_a['case_id']}")
         self.assertEqual(200, own_case.status_code)
@@ -602,15 +689,75 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
         )
 
         client_a.get("/logout")
+        invalid_login = client_a.post(
+            "/login",
+            json={
+                "email": customer_a["email"],
+                "password": "definitely-wrong-password",
+                "next": f"/case/{customer_a['case_id']}",
+            },
+        )
+        self.assertEqual(401, invalid_login.status_code)
+        self.assertEqual(
+            "INVALID_CREDENTIALS",
+            invalid_login.get_json()["error"],
+        )
         login = client_a.post(
             "/login",
             json={
                 "email": customer_a["email"],
                 "password": customer_a["password"],
+                "next": f"/case/{customer_a['case_id']}",
             },
         )
         self.assertEqual(200, login.status_code)
-        self.assertEqual("/home", login.get_json()["data"]["redirect"])
+        self.assertEqual(
+            f"/case/{customer_a['case_id']}",
+            login.get_json()["data"]["redirect"],
+        )
+        post_login_case = client_a.get(f"/case/{customer_a['case_id']}")
+        self.assertEqual(302, post_login_case.status_code)
+        self.assertTrue(
+            post_login_case.headers["Location"].endswith(
+                f"/case/{customer_a['case_id']}/result"
+            )
+        )
+        self.assertEqual(200, client_a.get("/home").status_code)
+
+    def test_new_acquisition_impact_is_saved_as_self_report_and_links_risk(self):
+        customer = self._new_customer("acquisition-impact")
+        db = sana_app._connect_pg()
+        try:
+            evidence = db.execute(
+                """SELECT title, verification_status, source_category
+                   FROM evidence
+                   WHERE company_id=? AND source_ref='SDS-001 Q4 follow-up'""",
+                (customer["company_id"],),
+            ).fetchone()
+            self.assertEqual(
+                "هشاشة مصدر العملاء: 😟 انخفاض متوسط",
+                evidence["title"],
+            )
+            self.assertEqual("UNVERIFIED", evidence["verification_status"])
+            self.assertEqual("SELF_REPORTED", evidence["source_category"])
+
+            framework = db.execute(
+                """SELECT framework_id FROM case_frameworks
+                   WHERE company_id=? AND case_id=?""",
+                (customer["company_id"], customer["case_id"]),
+            ).fetchone()
+            self.assertEqual("sana-acquisition-system", framework["framework_id"])
+
+            memory = retrieve_memory(
+                db,
+                customer["company_id"],
+                memory_keys=["acquisition:fragility"],
+            )
+            self.assertEqual(1, len(memory["items"]))
+            self.assertEqual("😟 انخفاض متوسط", memory["items"][0]["value"])
+            self.assertTrue(memory["items"][0]["needs_confirmation"])
+        finally:
+            db.close()
 
     def test_internal_preview_does_not_create_customer_session(self):
         customer = self._new_customer("preview")
@@ -631,6 +778,20 @@ class CustomerJourneyIsolationAcceptanceTest(unittest.TestCase):
             session_status = preview_client.get("/api/session").get_json()["data"]
             self.assertFalse(session_status["authenticated"])
             self.assertFalse(session_status["admin_preview"])
+
+    def test_decision_maker_followup_is_specific_optional_and_conditionally_hidden(self):
+        template = (
+            Path(__file__).parent / "templates" / "06-sana-discovery.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "لو غاب صاحب القرار شهرًا، ما أول عملية ستتباطأ أو تتوقف؟ "
+            "اذكر مثالًا واقعيًا يساعدنا نحدد أين يبدأ التحسين. (اختياري)",
+            template,
+        )
+        self.assertIn("مثال: اعتماد الأسعار أو متابعة العملاء", template)
+        self.assertIn("hideFollowupFor: ['😎 العمل يستمر طبيعيًا']", template)
+        self.assertIn("const showFu = shouldShowFollowup(q, chosen);", template)
 
     def test_sales_pipeline_is_not_public(self):
         anonymous = sana_app.app.test_client()

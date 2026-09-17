@@ -1,10 +1,10 @@
 <!DOCTYPE html>
+{% from '_sana-mark.html' import sana_mark %}
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="csrf-token" content="{{ csrf_token() }}">
-<script>(function(){var m=document.querySelector('meta[name="csrf-token"]');if(!m)return;var t=m.content;var S=new Set(['POST','PUT','PATCH','DELETE']);var F=window.fetch.bind(window);window.fetch=function(u,o){o=o||{};if(S.has((o.method||'GET').toUpperCase())){o.headers=Object.assign({'X-CSRFToken':t},o.headers||{});}return F(u,o);};})();</script>
+{% include '_csrf-fetch.html' %}
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#F5F6FB">
 <title>سنع — أخبرنا عن شركتك</title>
@@ -22,7 +22,7 @@
     font-family:'IBM Plex Sans Arabic', sans-serif;
     min-height:100vh; display:flex; flex-direction:column;
     align-items:center; justify-content:flex-start;
-    padding:40px 20px 60px;
+    padding:28px 20px 40px;
   }
   .mark{ width:36px; height:36px; margin-bottom:18px; }
 
@@ -53,8 +53,9 @@
   }
   input:focus, select:focus, textarea:focus{ outline:none; border-color:var(--teal); background:#fff; }
 
-  .other-field{ display:none; margin-bottom:18px; }
+  .other-field,.dependent-field{ display:none; margin-bottom:18px; }
   .other-field.show{ display:block; }
+  .dependent-field.show{ display:block; }
   .other-field input{ margin-bottom:0; }
 
   .error{
@@ -73,10 +74,7 @@
 </head>
 <body>
 
-<svg class="mark" viewBox="0 0 100 100">
-  <path d="M78,32 L78,17 L19,17 L19,83 L78,83 L78,68" fill="none" stroke="#0B132B" stroke-width="9" stroke-linecap="square"/>
-  <rect x="44" y="41" width="19" height="19" fill="#F2B233"/>
-</svg>
+{{ sana_mark(size=36, class_name='mark', decorative=true, stroke_width=9) }}
 
 <div class="stepper">
   <div class="step done"></div>
@@ -85,53 +83,69 @@
 </div>
 
 <div class="card">
-  <h1>أخبرنا عن شركتك</h1>
-  <div class="sub">خمسة حقول حقيقية تجهّز سياق شركتك قبل جلسة الاكتشاف.</div>
+  <h1>أخبرنا عن عملك</h1>
+  <div class="sub">إجابات قصيرة تساعدنا على فهم أولويتك.</div>
 
   <div class="error" id="errorMsg"></div>
 
   <label for="name">اسم الشركة <span class="req">*</span></label>
   <input type="text" id="name" value="{{ company.name if company and company.name != 'شركة جديدة' else '' }}" placeholder="مثال: مؤسسة النجاح للتجارة">
 
-  <label for="sectorSelect">القطاع <span class="req">*</span></label>
+  <label for="sectorSelect">ما مجال العمل؟ <span class="req">*</span></label>
   <select id="sectorSelect" onchange="onSectorChange(this.value)">
-    <option value="">— اختر قطاع شركتك —</option>
-    <option value="legal">⚖️ قانوني / محاماة</option>
-    <option value="food">🍽️ مطاعم وضيافة</option>
-    <option value="manufacturing">🏭 تصنيع وعطور</option>
-    <option value="retail">🛒 تجارة تجزئة</option>
-    <option value="construction">🏗️ مقاولات وبناء</option>
-    <option value="tech">💻 تقنية وبرمجيات</option>
-    <option value="consulting">📊 استشارات إدارية</option>
-    <option value="realestate">🏢 عقارات</option>
-    <option value="health">🏥 صحة وطب</option>
-    <option value="education">📚 تعليم وتدريب</option>
-    <option value="other">⚡ أخرى</option>
+    <option value="">— اختر المجال —</option>
+    {% for sector in sectors %}
+    <option value="{{ sector.key }}" {% if company.sector == sector.key %}selected{% endif %}>{{ sector.icon }} {{ sector.label }}</option>
+    {% endfor %}
   </select>
 
   <div class="other-field" id="otherField">
-    <label for="otherInput">صف قطاعك بكلمة أو جملة قصيرة <span class="req">*</span></label>
-    <input type="text" id="otherInput" placeholder="مثال: عيادات أسنان، شركة شحن دولي...">
+    <label for="otherInput">اكتب مجالها باختصار <span class="req">*</span></label>
+    <input type="text" id="otherInput" value="{{ company.sector_other or '' }}" placeholder="مثال: شحن دولي، تنظيم فعاليات...">
   </div>
 
-  <label for="employeeCount" style="margin-top:2px;">عدد الموظفين تقريبًا</label>
+  <div class="dependent-field" id="businessTypeField">
+    <label for="businessTypeSelect">ما نوع النشاط؟ <span class="req">*</span></label>
+    <select id="businessTypeSelect">
+      <option value="">— اختر نوع النشاط —</option>
+    </select>
+  </div>
+
+  <label for="respondentRole">ما صفتك في العمل؟ <span class="req">*</span></label>
+  <select id="respondentRole">
+    <option value="">— اختر صفتك —</option>
+    {% for role in respondent_roles %}
+    <option value="{{ role.key }}" {% if company.respondent_role == role.key %}selected{% endif %}>{{ role.label }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="employeeCount" style="margin-top:2px;">كم شخصًا يعمل معك تقريبًا؟</label>
   <input type="number" id="employeeCount" min="1" placeholder="مثال: 12">
 
-  <label for="businessDescription">ماذا تقدم الشركة ولمن؟ <span class="req">*</span></label>
-  <textarea id="businessDescription" rows="3" placeholder="صف النشاط والعميل في جملة واضحة">{{ company.business_description or '' }}</textarea>
+  <label for="goal90Days">ما النتيجة الأهم خلال 90 يومًا؟ <span class="req">*</span></label>
+  <textarea id="goal90Days" rows="2" placeholder="مثال: زيادة المبيعات الشهرية">{{ company.goal_90_days or '' }}</textarea>
 
-  <label for="goal90Days">ما الهدف الأهم خلال 90 يومًا؟ <span class="req">*</span></label>
-  <textarea id="goal90Days" rows="2" placeholder="نتيجة محددة تريد الوصول إليها">{{ company.goal_90_days or '' }}</textarea>
+  <label for="primaryChallenge">ما أكبر تحدٍ في العمل الآن؟ <span class="req">*</span></label>
+  <textarea id="primaryChallenge" rows="2" placeholder="مثال: تأخر متابعة العملاء">{{ company.primary_challenge or '' }}</textarea>
 
-  <label for="primaryChallenge">ما التحدي الأكبر الآن؟ <span class="req">*</span></label>
-  <textarea id="primaryChallenge" rows="2" placeholder="العائق الذي يمنع الوصول إلى الهدف">{{ company.primary_challenge or '' }}</textarea>
-
-  <button class="btn" id="submitBtn" onclick="submitOnboarding()">متابعة ←</button>
+  <button class="btn" id="submitBtn" onclick="submitOnboarding()">حفظ ومتابعة</button>
 </div>
 
 <script>
+const SECTOR_BUSINESS_TYPES = {{ sector_business_types|tojson }};
+const CURRENT_BUSINESS_TYPE = {{ (company.business_type or '')|tojson }};
+const ONBOARDING_SUBMIT_URL = {{ onboarding_submit_url|tojson }};
+const DISCOVERY_URL = {{ discovery_url|tojson }};
+
 function onSectorChange(val){
   document.getElementById('otherField').classList.toggle('show', val === 'other');
+  const businessTypeField = document.getElementById('businessTypeField');
+  const businessTypeSelect = document.getElementById('businessTypeSelect');
+  const options = SECTOR_BUSINESS_TYPES[val] || [];
+  businessTypeSelect.innerHTML = '<option value="">— اختر نوع النشاط —</option>';
+  options.forEach(item => businessTypeSelect.add(new Option(item.label, item.key)));
+  businessTypeField.classList.toggle('show', options.length > 0);
+  businessTypeSelect.disabled = options.length === 0;
   document.getElementById('errorMsg').classList.remove('show');
 }
 
@@ -140,7 +154,8 @@ async function submitOnboarding(){
   const employee_count = document.getElementById('employeeCount').value.trim();
   const selectedSector = document.getElementById('sectorSelect').value;
   const otherText     = document.getElementById('otherInput').value.trim();
-  const business_description = document.getElementById('businessDescription').value.trim();
+  const business_type = document.getElementById('businessTypeSelect').value;
+  const respondent_role = document.getElementById('respondentRole').value;
   const goal_90_days = document.getElementById('goal90Days').value.trim();
   const primary_challenge = document.getElementById('primaryChallenge').value.trim();
   const errorMsg      = document.getElementById('errorMsg');
@@ -153,19 +168,31 @@ async function submitOnboarding(){
     return;
   }
   if(!selectedSector){
-    errorMsg.textContent = 'يرجى اختيار قطاع الشركة — هذا الحقل إلزامي.';
+     errorMsg.textContent = 'اختر مجال الشركة حتى نكمل الصورة.';
     errorMsg.classList.add('show');
     document.getElementById('sectorSelect').focus();
     return;
   }
   if(selectedSector === 'other' && !otherText){
-    errorMsg.textContent = 'يرجى كتابة وصف قصير للقطاع في حقل "أخرى".';
+     errorMsg.textContent = 'اكتب مجال الشركة باختصار.';
     errorMsg.classList.add('show');
     document.getElementById('otherInput').focus();
     return;
   }
-  if(!business_description || !goal_90_days || !primary_challenge){
-    errorMsg.textContent = 'أكمل وصف النشاط والهدف والتحدي قبل المتابعة.';
+  if(!business_type){
+    errorMsg.textContent = 'اختر نوع النشاط حتى نخصص الأسئلة لك.';
+    errorMsg.classList.add('show');
+    document.getElementById('businessTypeSelect').focus();
+    return;
+  }
+  if(!respondent_role){
+    errorMsg.textContent = 'اختر صفتك في العمل.';
+    errorMsg.classList.add('show');
+    document.getElementById('respondentRole').focus();
+    return;
+  }
+  if(!goal_90_days || !primary_challenge){
+     errorMsg.textContent = 'اكتب النتيجة التي تريدها وأكبر تحدٍ الآن.';
     errorMsg.classList.add('show');
     return;
   }
@@ -175,29 +202,35 @@ async function submitOnboarding(){
   try {
     const payload = {
       name, sector: selectedSector, employee_count,
-      business_description, goal_90_days, primary_challenge
+      business_type, respondent_role, goal_90_days, primary_challenge
     };
     if(selectedSector === 'other') payload.sector_other = otherText;
-    const res = await fetch('/onboarding', {
+    const res = await fetch(ONBOARDING_SUBMIT_URL, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
     });
-    const json = await res.json();
+    const contentType = res.headers.get('content-type') || '';
+    const json = contentType.includes('application/json') ? await res.json() : null;
     if(res.ok && json.success){
-      window.location.href = json.data.redirect || '/discovery';
+      window.location.assign(json.data.redirect || DISCOVERY_URL);
     } else {
-      errorMsg.textContent = json.message || 'تعذّر الحفظ، حاول مرة أخرى.';
+      errorMsg.textContent = (json && json.message) || `تعذّر الحفظ (${res.status}). حاول مرة أخرى.`;
       errorMsg.classList.add('show');
       btn.disabled = false;
-      btn.textContent = 'متابعة ←';
+       btn.textContent = 'حفظ ومتابعة';
     }
   } catch(e){
     errorMsg.textContent = 'تعذّر الاتصال بالخادم، حاول مرة أخرى.';
     errorMsg.classList.add('show');
     btn.disabled = false;
-    btn.textContent = 'متابعة ←';
+      btn.textContent = 'حفظ ومتابعة';
   }
+}
+
+onSectorChange(document.getElementById('sectorSelect').value);
+if(CURRENT_BUSINESS_TYPE){
+  document.getElementById('businessTypeSelect').value = CURRENT_BUSINESS_TYPE;
 }
 </script>
 

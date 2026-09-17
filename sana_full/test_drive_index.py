@@ -1,14 +1,18 @@
 """حواجز فهرس Drive: قراءة Metadata، idempotency، الخصوصية، والسلسلة."""
+import io
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import unittest
 import uuid
 import time
+import zipfile
 from contextlib import suppress
 from pathlib import Path
 from unittest.mock import patch
@@ -35,6 +39,115 @@ from drive_index import (
     sync_drive_metadata,
 )
 from sana_knowledge import ensure_schema as ensure_knowledge_schema, search_knowledge
+
+_BROWSER_DIAGNOSTICS_RETENTION_ENV = "SANA_BROWSER_DIAGNOSTICS_RETENTION"
+_BROWSER_DIAGNOSTICS_RETENTION = "google_drive"
+_BROWSER_DIAGNOSTICS_FOLDER = "03 - Browser Failure Diagnostics"
+_TRACE_SENSITIVE_KEYS = {
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "x-auth-token",
+    "x-access-token",
+    "api-key",
+    "client-secret",
+    "private-key",
+    "private_key",
+    "password",
+    "passwd",
+    "secret",
+    "session",
+    "session_id",
+    "sessionid",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "token",
+}
+_TRACE_SENSITIVE_KEY_RE = re.compile(
+    r"""((?:["']?)(?:authorization|proxy-authorization|cookie|set-cookie|
+    x-api-key|x-auth-token|x-access-token|api-key|client-secret|private-key|
+    password|passwd|secret|session(?:_id|id)?|access_token|refresh_token|
+    id_token|token)(?:["']?\s*[:=]\s*))(["'])(.*?)(\2)""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _redact_trace_payload(value):
+    """Remove credential-like values from structured Playwright trace data."""
+    if isinstance(value, dict):
+        header_name = str(value.get("name", "")).strip().lower()
+        redacted = {}
+        for key, child in value.items():
+            key_name = str(key).strip().lower().replace("-", "_")
+            if (
+                key_name in _TRACE_SENSITIVE_KEYS
+                or key_name.replace("_", "-") in _TRACE_SENSITIVE_KEYS
+            ):
+                redacted[key] = "[REDACTED]"
+            elif header_name in _TRACE_SENSITIVE_KEYS and key_name == "value":
+                redacted[key] = "[REDACTED]"
+            else:
+                redacted[key] = _redact_trace_payload(child)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_trace_payload(child) for child in value]
+    return value
+
+
+def _sanitize_trace_member(data, sensitive_values=()):
+    """Redact JSONL/text trace members while preserving binary resources."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data
+
+    sanitized_lines = []
+    for line in text.splitlines(keepends=True):
+        newline = "\n" if line.endswith("\n") else ""
+        content = line[:-1] if newline else line
+        try:
+            parsed = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            content = _TRACE_SENSITIVE_KEY_RE.sub(
+                r"\1\2[REDACTED]\4",
+                content,
+            )
+        else:
+            content = json.dumps(
+                _redact_trace_payload(parsed),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        for sensitive_value in sensitive_values:
+            if sensitive_value:
+                content = content.replace(str(sensitive_value), "[REDACTED]")
+        sanitized_lines.append(content + newline)
+    return "".join(sanitized_lines).encode("utf-8")
+
+
+def _sanitized_trace_copy(trace_path, sensitive_values=()):
+    """Create a temporary trace archive safe to upload outside the runner."""
+    trace_path = Path(trace_path)
+    sanitized_path = trace_path.with_name(
+        f".{trace_path.stem}-upload-{uuid.uuid4().hex}.zip"
+    )
+    with zipfile.ZipFile(trace_path, "r") as source, zipfile.ZipFile(
+        sanitized_path,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as destination:
+        for member in source.infolist():
+            destination.writestr(
+                member.filename,
+                _sanitize_trace_member(
+                    source.read(member),
+                    sensitive_values=sensitive_values,
+                ),
+            )
+    return sanitized_path
 
 
 class FakeDrive:
@@ -869,7 +982,19 @@ class DriveExcerptBrowserTest(unittest.TestCase):
             }
         )
         cls.server = subprocess.Popen(
-            [sys.executable, "app.py"],
+            [
+                sys.executable,
+                "-m",
+                "flask",
+                "--app",
+                "app",
+                "run",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(cls.port),
+                "--no-reload",
+            ],
             cwd=BASE_DIR,
             env=server_env,
             stdout=subprocess.DEVNULL,
@@ -957,21 +1082,118 @@ class DriveExcerptBrowserTest(unittest.TestCase):
                 full_page=True,
             )
         except Exception as exc:
-            errors.append(f"screenshot: {exc}")
+            errors.append(f"screenshot: {type(exc).__name__}")
         try:
             self.page.context.tracing.stop(path=str(self._diagnostics_trace))
         except Exception as exc:
-            errors.append(f"trace: {exc}")
+            errors.append(f"trace: {type(exc).__name__}")
+        retention = None
+        try:
+            retention = self._upload_browser_failure_diagnostics()
+        except Exception as exc:
+            retention = {
+                "status": "failed",
+                "errors": [f"{type(exc).__name__}: retention unavailable"],
+            }
+        retention_log = [f"  retention status: {retention.get('status', 'unknown')}"]
+        if retention.get("folder"):
+            retention_log.append(f"  retention folder: {retention['folder']}")
+        for label, target in retention.get("files", {}).items():
+            retention_log.append(f"  retention {label}: {target}")
+        for error in retention.get("errors", []):
+            retention_log.append(f"  retention error: {error}")
+        if retention.get("message"):
+            retention_log.append(f"  retention note: {retention['message']}")
         print(
             "Drive browser failure diagnostics "
             f"(run {self._diagnostics_run_id}):\n"
             f"  screenshot: {self._diagnostics_screenshot}\n"
             f"  trace: {self._diagnostics_trace}"
             + (f"\n  capture errors: {'; '.join(errors)}" if errors else ""),
+            "\n" + "\n".join(retention_log),
             file=sys.stderr,
             flush=True,
         )
         self._trace_started = False
+
+    def _upload_browser_failure_diagnostics(self):
+        """Retain only failed-run evidence in the private Google Drive mirror."""
+        if os.environ.get(_BROWSER_DIAGNOSTICS_RETENTION_ENV) != _BROWSER_DIAGNOSTICS_RETENTION:
+            return {
+                "status": "disabled",
+                "message": (
+                    f"set {_BROWSER_DIAGNOSTICS_RETENTION_ENV}="
+                    f"{_BROWSER_DIAGNOSTICS_RETENTION} in the browser workflow"
+                ),
+            }
+
+        files = [
+            ("screenshot", self._diagnostics_screenshot, "image/png"),
+            ("trace", self._diagnostics_trace, "application/zip"),
+        ]
+        files = [
+            (label, Path(path), mime)
+            for label, path, mime in files
+            if path and Path(path).is_file()
+        ]
+        if not files:
+            return {"status": "no_files"}
+
+        from knowledge_backup import DriveMirror
+
+        mirror = DriveMirror()
+        root_id = mirror.ensure_root()
+        evidence_root = mirror.ensure_folder(root_id, _BROWSER_DIAGNOSTICS_FOLDER)
+        run_folder = mirror.ensure_folder(
+            evidence_root["id"],
+            f"drive-excerpt-{self._diagnostics_run_id}",
+        )
+        remote = {}
+        errors = []
+        sensitive_values = (
+            getattr(self, "password", ""),
+            getattr(self, "email", ""),
+            os.environ.get("SESSION_SECRET", ""),
+        )
+        temporary_trace = None
+        try:
+            for label, path, content_type in files:
+                upload_path = path
+                if label == "trace":
+                    temporary_trace = _sanitized_trace_copy(
+                        path,
+                        sensitive_values=sensitive_values,
+                    )
+                    upload_path = temporary_trace
+                try:
+                    uploaded = mirror.upsert(
+                        run_folder["id"],
+                        path.name,
+                        upload_path.read_bytes(),
+                        content_type,
+                    )
+                    remote[label] = (
+                        uploaded.get("webViewLink")
+                        or f"Google Drive file id: {uploaded.get('id', 'unknown')}"
+                    )
+                except Exception as exc:
+                    errors.append(f"{label}: {type(exc).__name__}")
+        finally:
+            if temporary_trace:
+                with suppress(OSError):
+                    temporary_trace.unlink()
+
+        result = {
+            "status": "uploaded" if remote else "failed",
+            "folder": (
+                run_folder.get("webViewLink")
+                or f"Google Drive folder id: {run_folder.get('id', 'unknown')}"
+            ),
+            "files": remote,
+        }
+        if errors:
+            result["errors"] = errors
+        return result
 
     @classmethod
     def _stop_server(cls):
@@ -1025,6 +1247,10 @@ class DriveExcerptBrowserTest(unittest.TestCase):
                 (getattr(cls, "case_id", ""),),
             )
             cls.db.execute(
+                "DELETE FROM admin_audit_log WHERE actor_account_id=?",
+                (getattr(cls, "account_id", ""),),
+            )
+            cls.db.execute(
                 "DELETE FROM user_accounts WHERE account_id=?",
                 (getattr(cls, "account_id", ""),),
             )
@@ -1047,7 +1273,7 @@ class DriveExcerptBrowserTest(unittest.TestCase):
         page.locator("#email").fill(self.email)
         page.locator("#password").fill(self.password)
         page.locator("#submitBtn").click()
-        page.wait_for_url("**/home", timeout=10_000)
+        page.wait_for_url(re.compile(r".*/(?:home|admin)$"), timeout=10_000)
         self.page = page
         self._start_browser_trace(page)
 
@@ -1138,6 +1364,125 @@ class DriveExcerptBrowserTest(unittest.TestCase):
         ).fetchone()["count"]
         self.assertEqual("approved", review["review_status"])
         self.assertEqual(2, object_count)
+
+class BrowserDiagnosticsTests(unittest.TestCase):
+    def test_trace_sanitizer_removes_credentials_from_uploaded_copy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "failure-trace.zip"
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr(
+                    "trace.trace",
+                    (
+                        '{"headers":['
+                        '{"name":"cookie","value":"cookie-secret"},'
+                        '{"name":"authorization","value":"authorization-secret"}'
+                        '],"password":"password-secret",'
+                        '"session_id":"session-secret",'
+                        '"note":"known-test-secret"}\n'
+                    ).encode(),
+                )
+                archive.writestr("resources/page.html", b"<html>safe</html>")
+
+            sanitized = _sanitized_trace_copy(
+                source,
+                sensitive_values=("known-test-secret",),
+            )
+            try:
+                with zipfile.ZipFile(sanitized, "r") as archive:
+                    trace = archive.read("trace.trace").decode()
+                    for secret in (
+                        "cookie-secret",
+                        "authorization-secret",
+                        "password-secret",
+                        "session-secret",
+                        "known-test-secret",
+                    ):
+                        self.assertNotIn(secret, trace)
+                    self.assertIn("[REDACTED]", trace)
+                    self.assertEqual(
+                        b"<html>safe</html>",
+                        archive.read("resources/page.html"),
+                    )
+            finally:
+                sanitized.unlink(missing_ok=True)
+
+    @patch("knowledge_backup.DriveMirror")
+    def test_failed_run_uploads_only_sanitized_evidence_to_drive(
+        self,
+        mirror_class,
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            diagnostics_dir = Path(directory)
+            screenshot = diagnostics_dir / "failure-run.png"
+            trace = diagnostics_dir / "failure-run.zip"
+            screenshot.write_bytes(b"\x89PNG\r\n\x1a\n")
+            with zipfile.ZipFile(trace, "w") as archive:
+                archive.writestr(
+                    "trace.trace",
+                    b'{"headers":[{"name":"authorization","value":"Bearer secret"}]}\n',
+                )
+
+            mirror = mirror_class.return_value
+            mirror.ensure_root.return_value = "root-folder"
+            mirror.ensure_folder.side_effect = [
+                {"id": "evidence-folder", "webViewLink": "drive://evidence"},
+                {"id": "run-folder", "webViewLink": "drive://run"},
+            ]
+            mirror.upsert.side_effect = lambda _parent, name, _content, _mime: {
+                "id": name,
+                "webViewLink": f"drive://{name}",
+            }
+
+            browser_test = DriveExcerptBrowserTest()
+            browser_test._diagnostics_run_id = "run"
+            browser_test._diagnostics_screenshot = screenshot
+            browser_test._diagnostics_trace = trace
+            browser_test.password = "password-secret"
+            browser_test.email = "browser@example.test"
+            with patch.dict(
+                os.environ,
+                {_BROWSER_DIAGNOSTICS_RETENTION_ENV: _BROWSER_DIAGNOSTICS_RETENTION},
+            ):
+                result = browser_test._upload_browser_failure_diagnostics()
+
+            self.assertEqual("uploaded", result["status"])
+            self.assertEqual("drive://run", result["folder"])
+            self.assertEqual(
+                {
+                    "screenshot": "drive://failure-run.png",
+                    "trace": "drive://failure-run.zip",
+                },
+                result["files"],
+            )
+            self.assertEqual(2, mirror.upsert.call_count)
+            trace_upload = next(
+                call.args[2]
+                for call in mirror.upsert.call_args_list
+                if call.args[1] == "failure-run.zip"
+            )
+            with zipfile.ZipFile(io.BytesIO(trace_upload), "r") as uploaded_trace:
+                trace_content = uploaded_trace.read("trace.trace")
+            self.assertNotIn(b"Bearer secret", trace_content)
+            self.assertIn(b"[REDACTED]", trace_content)
+
+    @patch("knowledge_backup.DriveMirror")
+    def test_retention_is_disabled_outside_the_configured_browser_workflow(
+        self,
+        mirror_class,
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            browser_test = DriveExcerptBrowserTest()
+            browser_test._diagnostics_run_id = "run"
+            browser_test._diagnostics_screenshot = Path(directory) / "failure.png"
+            browser_test._diagnostics_trace = Path(directory) / "failure.zip"
+            browser_test._diagnostics_screenshot.write_bytes(b"png")
+            browser_test._diagnostics_trace.write_bytes(b"zip")
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop(_BROWSER_DIAGNOSTICS_RETENTION_ENV, None)
+                result = browser_test._upload_browser_failure_diagnostics()
+
+            self.assertEqual("disabled", result["status"])
+            mirror_class.assert_not_called()
 
 
 if __name__ == "__main__":

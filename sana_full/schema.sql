@@ -8,6 +8,9 @@ CREATE TABLE IF NOT EXISTS companies (
     company_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     sector TEXT,
+    sector_other TEXT,
+    business_type TEXT,
+    respondent_role TEXT,
     city TEXT,
     stage TEXT,
     employee_count INTEGER,
@@ -23,6 +26,9 @@ CREATE TABLE IF NOT EXISTS companies (
     website_url TEXT,
     social_media_url TEXT,
     business_reference_url TEXT,
+    source_prompt_last_shown_at TIMESTAMPTZ,
+    source_prompt_dismissed_at TIMESTAMPTZ,
+    source_last_confirmed_at TIMESTAMPTZ,
     business_description TEXT,
     goal_90_days TEXT,
     primary_challenge TEXT,
@@ -40,6 +46,7 @@ CREATE TABLE IF NOT EXISTS user_accounts (
     is_admin SMALLINT NOT NULL DEFAULT 0,
     admin_role TEXT NOT NULL DEFAULT 'USER',
     admin_permissions TEXT NOT NULL DEFAULT '[]',
+    pilot_cohort_number INTEGER,
     account_status TEXT NOT NULL DEFAULT 'active',
     last_login_at TIMESTAMPTZ,
     created_at TEXT DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')),
@@ -50,6 +57,9 @@ CREATE TABLE IF NOT EXISTS user_accounts (
         OR (admin_role IN ('ADMIN','SUPER_ADMIN') AND is_admin = 1)
       )
 );
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_accounts_pilot_cohort_number
+    ON user_accounts(pilot_cohort_number)
+    WHERE pilot_cohort_number IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS users (
     user_id TEXT PRIMARY KEY,
@@ -217,6 +227,23 @@ CREATE TABLE IF NOT EXISTS tasks (
     FOREIGN KEY (decision_id) REFERENCES decisions(decision_id)
 );
 
+CREATE TABLE IF NOT EXISTS returning_checkins (
+    checkin_id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL REFERENCES companies(company_id),
+    case_id TEXT REFERENCES cases(case_id),
+    decision_id TEXT REFERENCES decisions(decision_id),
+    prior_task_id TEXT REFERENCES tasks(task_id),
+    account_id TEXT REFERENCES user_accounts(account_id),
+    questions_json TEXT NOT NULL,
+    answers_json TEXT,
+    summary_json TEXT,
+    status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','COMPLETED')),
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_returning_checkins_company
+    ON returning_checkins(company_id,started_at DESC);
+
 -- سجل P0 تاريخي: النتيجة والأثر لا يكتبان فوق الحالة الحالية ولا يرفعان درجة أصل تلقائيًا.
 CREATE TABLE IF NOT EXISTS p0_impact_reviews (
     review_id TEXT PRIMARY KEY,
@@ -225,6 +252,22 @@ CREATE TABLE IF NOT EXISTS p0_impact_reviews (
     decision_id TEXT NOT NULL REFERENCES decisions(decision_id),
     task_id TEXT NOT NULL UNIQUE REFERENCES tasks(task_id),
     baseline_snapshot_json TEXT NOT NULL,
+    baseline_value TEXT NOT NULL,
+    baseline_source_ref TEXT NOT NULL,
+    baseline_observed_at DATE NOT NULL,
+    target_value TEXT NOT NULL,
+    target_source_ref TEXT NOT NULL,
+    target_observed_at DATE NOT NULL,
+    actual_value TEXT NOT NULL,
+    actual_source_ref TEXT NOT NULL,
+    actual_observed_at DATE NOT NULL,
+    baseline_numeric NUMERIC NOT NULL,
+    target_numeric NUMERIC NOT NULL,
+    actual_numeric NUMERIC NOT NULL,
+    measurement_unit TEXT NOT NULL,
+    kpi_direction TEXT NOT NULL CHECK (kpi_direction IN ('HIGHER_IS_BETTER','LOWER_IS_BETTER')),
+    baseline_evidence_id TEXT NOT NULL REFERENCES evidence(evidence_id),
+    actual_evidence_id TEXT NOT NULL REFERENCES evidence(evidence_id),
     result_summary TEXT NOT NULL,
     result_source_ref TEXT NOT NULL,
     impact_outcome TEXT NOT NULL
@@ -235,6 +278,79 @@ CREATE TABLE IF NOT EXISTS p0_impact_reviews (
 );
 CREATE INDEX IF NOT EXISTS idx_p0_impact_reviews_case
     ON p0_impact_reviews(company_id,case_id,reviewed_at DESC);
+
+CREATE TABLE IF NOT EXISTS human_review_settings (
+    singleton_key TEXT PRIMARY KEY DEFAULT 'default' CHECK (singleton_key='default'),
+    offer_mode TEXT NOT NULL DEFAULT 'FREE' CHECK (offer_mode IN ('INCLUDED','FREE','PAID')),
+    offer_name TEXT NOT NULL DEFAULT 'مراجعة القرار مع خبير سنع',
+    price_minor INTEGER,
+    duration_minutes INTEGER NOT NULL DEFAULT 30 CHECK (duration_minutes > 0),
+    free_first_case BOOLEAN NOT NULL DEFAULT true,
+    client_copy TEXT NOT NULL DEFAULT 'جلسة قصيرة لمراجعة النتيجة قبل التنفيذ',
+    paid_enabled BOOLEAN NOT NULL DEFAULT false,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO human_review_settings(singleton_key) VALUES ('default')
+ON CONFLICT (singleton_key) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS human_review_slots (
+    slot_id TEXT PRIMARY KEY,
+    starts_at TIMESTAMPTZ NOT NULL,
+    duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
+    reviewer_account_id TEXT REFERENCES user_accounts(account_id),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS case_human_reviews (
+    review_id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL REFERENCES companies(company_id),
+    case_id TEXT NOT NULL REFERENCES cases(case_id),
+    decision_id TEXT REFERENCES decisions(decision_id),
+    requested_by TEXT NOT NULL REFERENCES user_accounts(account_id),
+    reviewer_account_id TEXT REFERENCES user_accounts(account_id),
+    reason_code TEXT NOT NULL,
+    reason_label TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('REQUESTED','SCHEDULED','COMPLETED','CANCELLED')),
+    slot_id TEXT REFERENCES human_review_slots(slot_id),
+    scheduled_at TIMESTAMPTZ,
+    before_snapshot_json TEXT NOT NULL,
+    after_snapshot_json TEXT,
+    decision_changed BOOLEAN,
+    final_decision TEXT,
+    change_reason TEXT,
+    approved_kpi TEXT,
+    next_action TEXT,
+    client_note TEXT,
+    reviewer_note TEXT,
+    expert_inputs_json TEXT NOT NULL DEFAULT '{}',
+    expert_summary_json TEXT,
+    expert_summary_status TEXT NOT NULL DEFAULT 'DRAFT'
+        CHECK (expert_summary_status IN ('DRAFT','FORMATTED','APPROVED')),
+    notes_updated_at TIMESTAMPTZ,
+    formatted_at TIMESTAMPTZ,
+    approved_at TIMESTAMPTZ,
+    approved_by TEXT REFERENCES user_accounts(account_id),
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_human_review_active_slot
+    ON case_human_reviews(slot_id) WHERE status IN ('REQUESTED','SCHEDULED');
+CREATE INDEX IF NOT EXISTS idx_human_reviews_case
+    ON case_human_reviews(company_id,case_id,requested_at DESC);
+
+CREATE TABLE IF NOT EXISTS human_review_events (
+    event_id TEXT PRIMARY KEY,
+    review_id TEXT NOT NULL REFERENCES case_human_reviews(review_id),
+    company_id TEXT NOT NULL REFERENCES companies(company_id),
+    from_status TEXT,
+    to_status TEXT NOT NULL,
+    actor_account_id TEXT REFERENCES user_accounts(account_id),
+    details_json TEXT NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS admin_audit_log (
     audit_id TEXT PRIMARY KEY,
@@ -278,10 +394,43 @@ CREATE TABLE IF NOT EXISTS admin_notification_outbox (
     created_by TEXT NOT NULL REFERENCES user_accounts(account_id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     sent_at TIMESTAMPTZ,
-    error_code TEXT
+    error_code TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TIMESTAMPTZ,
+    next_attempt_at TIMESTAMPTZ,
+    delivery_lock_token TEXT,
+    delivery_locked_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_admin_notification_outbox_status
     ON admin_notification_outbox(status,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_notification_outbox_retry
+    ON admin_notification_outbox(notification_type,status,next_attempt_at,created_at);
+
+-- آخر نتيجة موثوقة لتنظيف جلسات الدفع؛ لا يحتفظ العامل بتاريخ أو معرّفات Stripe.
+CREATE TABLE IF NOT EXISTS sana_billing_cleanup_runs (
+    singleton_key TEXT PRIMARY KEY DEFAULT 'latest'
+        CHECK (singleton_key = 'latest'),
+    run_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    status TEXT NOT NULL CHECK (status = 'completed'),
+    scanned INTEGER NOT NULL DEFAULT 0 CHECK (scanned >= 0),
+    expired INTEGER NOT NULL DEFAULT 0 CHECK (expired >= 0),
+    already_completed INTEGER NOT NULL DEFAULT 0 CHECK (already_completed >= 0),
+    already_expired INTEGER NOT NULL DEFAULT 0 CHECK (already_expired >= 0),
+    failed INTEGER NOT NULL DEFAULT 0 CHECK (failed >= 0)
+);
+
+-- تجاوز القفل نتيجة تشغيل مستقلة، ولا يجوز أن يستبدل آخر تنظيف مكتمل.
+CREATE TABLE IF NOT EXISTS sana_billing_cleanup_skips (
+    singleton_key TEXT PRIMARY KEY DEFAULT 'latest'
+        CHECK (singleton_key = 'latest'),
+    run_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    status TEXT NOT NULL CHECK (status = 'skipped_locked'),
+    scanned INTEGER NOT NULL DEFAULT 0 CHECK (scanned >= 0),
+    expired INTEGER NOT NULL DEFAULT 0 CHECK (expired >= 0),
+    already_completed INTEGER NOT NULL DEFAULT 0 CHECK (already_completed >= 0),
+    already_expired INTEGER NOT NULL DEFAULT 0 CHECK (already_expired >= 0),
+    failed INTEGER NOT NULL DEFAULT 0 CHECK (failed >= 0)
+);
 
 -- وثائق منهجية عامة (مثل "نظام سنع لجلب العملاء") — مراجع مستقلة عن أي شركة،
 -- يمكن الرجوع إليها وربطها من أي Case Workspace مستقبلي.
@@ -814,6 +963,72 @@ CREATE TABLE IF NOT EXISTS sana_memory_entries (
     CHECK (shared_scope IN ('private','company','shared')),
     CHECK (shared_scope <> 'shared' OR verification_status = 'reviewed')
 );
+
+-- Company Memory — طبقة إضافية إصدارّية وخاصة بالشركة فوق الأدلة والقضايا والقرارات.
+-- لا تُستخدم كبديل للسجلات المصدرية ولا تسمح بترقية Client Learning تلقائيًا.
+CREATE TABLE IF NOT EXISTS company_memory_governance (
+    governance_id TEXT PRIMARY KEY,
+    storage_destination TEXT NOT NULL,
+    case_link TEXT NOT NULL,
+    asset_link TEXT NOT NULL,
+    framework_link TEXT NOT NULL,
+    business_event TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT 'v1.0',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO company_memory_governance
+    (governance_id,storage_destination,case_link,asset_link,framework_link,business_event)
+VALUES
+    ('CM-COMPANY-MEMORY','company_memory_items/company_memory_versions',
+     'case_id → cases','asset_id → assets','framework:B2B-OS-001',
+     'company.memory.version.recorded')
+ON CONFLICT (governance_id) DO NOTHING;
+CREATE TABLE IF NOT EXISTS company_memory_items (
+    memory_id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(company_id) ON DELETE CASCADE,
+    memory_key TEXT NOT NULL, memory_type TEXT NOT NULL, current_version_id TEXT,
+    current_status TEXT NOT NULL DEFAULT 'UNKNOWN', owner_id TEXT,
+    access_level TEXT NOT NULL DEFAULT 'company', confidentiality TEXT NOT NULL DEFAULT 'private',
+    retention_policy TEXT NOT NULL DEFAULT 'retain_history',
+    usage_rights TEXT NOT NULL DEFAULT 'no_cross_company',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(company_id,memory_key)
+);
+CREATE TABLE IF NOT EXISTS company_memory_versions (
+    version_id TEXT PRIMARY KEY, memory_id TEXT NOT NULL REFERENCES company_memory_items(memory_id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL, memory_type TEXT NOT NULL,
+    value_json TEXT NOT NULL, context_json TEXT NOT NULL DEFAULT '{}',
+    period_start DATE, period_end DATE, observed_at DATE NOT NULL, source_ref TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'unknown', case_id TEXT,
+    asset_id TEXT, decision_id TEXT,
+    task_id TEXT, result_ref TEXT, reason TEXT,
+    lifecycle_status TEXT NOT NULL DEFAULT 'CAPTURED',
+    verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED',
+    freshness_class TEXT NOT NULL DEFAULT 'MEDIUM',
+    source_strength INTEGER NOT NULL DEFAULT 0, verification_confidence INTEGER NOT NULL DEFAULT 0,
+    freshness_confidence INTEGER NOT NULL DEFAULT 0, owner_id TEXT,
+    governance_id TEXT NOT NULL REFERENCES company_memory_governance(governance_id),
+    supersedes_version_id TEXT REFERENCES company_memory_versions(version_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS company_memory_links (
+    link_id TEXT PRIMARY KEY, company_id TEXT NOT NULL,
+    version_id TEXT NOT NULL REFERENCES company_memory_versions(version_id) ON DELETE CASCADE,
+    source_type TEXT NOT NULL, source_id TEXT NOT NULL,
+    relationship TEXT NOT NULL DEFAULT 'supports', created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(company_id,version_id,source_type,source_id,relationship)
+);
+CREATE TABLE IF NOT EXISTS company_memory_conflicts (
+    conflict_id TEXT PRIMARY KEY, company_id TEXT NOT NULL,
+    memory_id TEXT NOT NULL REFERENCES company_memory_items(memory_id) ON DELETE CASCADE,
+    existing_version_id TEXT NOT NULL REFERENCES company_memory_versions(version_id),
+    incoming_version_id TEXT NOT NULL REFERENCES company_memory_versions(version_id),
+    status TEXT NOT NULL DEFAULT 'OPEN', conflict_reason TEXT NOT NULL,
+    resolution_action TEXT, resolved_version_id TEXT REFERENCES company_memory_versions(version_id),
+    resolved_by TEXT, resolved_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_memory_items_company ON company_memory_items(company_id,updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_versions_company ON company_memory_versions(company_id,observed_at DESC,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_conflicts_company ON company_memory_conflicts(company_id,status,created_at DESC);
 CREATE TABLE IF NOT EXISTS drive_provenance_links (
     provenance_id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
     drive_file_id TEXT NOT NULL REFERENCES drive_files(drive_file_id), source_id TEXT,
@@ -1210,6 +1425,25 @@ CREATE TABLE IF NOT EXISTS zubair_capture_drafts (
     framework_link TEXT NOT NULL, business_event TEXT NOT NULL,
     UNIQUE(company_id, input_hash)
 );
+
+-- مسودة جلسة الاكتشاف — مؤقتة وخاصة بالحساب والشركة، وليست دليلاً أو نتيجة Scan.
+CREATE TABLE IF NOT EXISTS sana_discovery_drafts (
+    draft_id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL REFERENCES companies(company_id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES user_accounts(account_id) ON DELETE CASCADE,
+    payload_json TEXT NOT NULL,
+    current_step SMALLINT NOT NULL DEFAULT 0 CHECK (current_step BETWEEN 0 AND 8),
+    status TEXT NOT NULL DEFAULT 'ACTIVE'
+        CHECK (status IN ('ACTIVE', 'COMPLETED', 'EXPIRED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    UNIQUE(company_id, account_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sana_discovery_drafts_expiry
+    ON sana_discovery_drafts(expires_at);
+CREATE INDEX IF NOT EXISTS idx_sana_discovery_drafts_owner
+    ON sana_discovery_drafts(company_id, account_id, status, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS zubair_attachments (
     attachment_id TEXT PRIMARY KEY,

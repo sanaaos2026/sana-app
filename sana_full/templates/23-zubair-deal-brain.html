@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="csrf-token" content="{{ csrf_token() }}">
+  {% include '_csrf-fetch.html' %}
   <title>Zubair Deal Brain — Private Beta</title>
   <style>
     :root{--navy:#0B132B;--deep:#080E1F;--teal:#0EA5A5;--gold:#F2B233;--paper:#F5F6FB;--line:#DEE1EC;--muted:#6E7580;--red:#B23A2E}
@@ -26,20 +26,6 @@
   </style>
 </head>
 <body>
-<script>
-(function(){
-  const meta=document.querySelector('meta[name="csrf-token"]');
-  if(!meta)return;
-  const original=window.fetch.bind(window);
-  window.fetch=function(url,options){
-    options=options||{};
-    if(new Set(['POST','PUT','PATCH','DELETE']).has((options.method||'GET').toUpperCase())){
-      options.headers=Object.assign({'X-CSRFToken':meta.content},options.headers||{});
-    }
-    return original(url,options);
-  };
-})();
-</script>
 <header><div><h1>Zubair Deal Brain</h1><div class="beta">PRIVATE BETA · حساب المؤسس/المشرف فقط</div></div><a href="/home" style="color:#fff;font-size:12px">غرفة القرار ←</a></header>
 <main>
   <div class="intro"><h2>سجّل ما حدث…</h2><p>حوّل ملاحظة أو اتصالًا إلى مسودة قابلة للمراجعة. لا يُحدَّث أي سجل تجاري قبل تأكيدك.</p></div>
@@ -90,7 +76,8 @@ function renderReview(r){
  const samples=(r.audit_sample&&r.audit_sample.drafts)||[];
  const recommendations=(r.audit_sample&&r.audit_sample.recommendations)||[];
  let html=samples.length?'<div><strong>عينة المسودات والمطابقات وعدم الاختلاق</strong></div>'+samples.map(x=>{const fields=Object.entries(x.fields||{}).filter(([,v])=>v&&v.value).map(([k,v])=>`${k}: ${v.value} [${v.classification}]`).join(' · ');const matches=[...(x.match.contact||[]).map(v=>v.name),...(x.match.prospect_company||[]).map(v=>v.name),...(x.match.opportunity||[]).map(v=>v.title)].filter(Boolean).join(' · ');return `<div class="review-sample"><strong>${esc(x.draft_id)}</strong><small>${esc(x.raw_text||'بدون نص')} · ${esc(x.status)} · زمن التسجيل: ${esc(x.processing_ms)}</small><small>الحقول المستخرجة: ${esc(fields||'لا توجد حقائق مستخرجة')}</small><small>المطابقات: ${esc(matches||'لا توجد مطابقة')}</small><div class="review-controls">${reviewSelect(x.draft_id,'draft_accuracy')}${reviewSelect(x.draft_id,'match_accuracy')}${reviewSelect(x.draft_id,'no_fabrication')}<input data-review-note="${esc(x.draft_id)}" placeholder="ملاحظة التدقيق"></div></div>`}).join(''):'<div class="message">لا توجد مسودات في النافذة؛ لا يمكن اختلاق نتيجة غير موجودة.</div>';
- if(recommendations.length)html+='<div><strong>عينة التوصيات/التنبيهات</strong></div>'+recommendations.map(x=>`<div class="review-sample"><strong>${esc(x.opp_id)} · ${esc(x.title)}</strong><small>${esc(x.category)} · ${esc(x.rule)} · الدليل: ${esc(x.evidence)}</small><div class="review-controls">${reviewSelect(x.opp_id,'recommendation_accuracy')}${reviewSelect(x.opp_id,'recommendation_no_fabrication')}<input data-recommendation-note="${esc(x.opp_id)}" placeholder="ملاحظة التدقيق"></div></div>`).join('');
+ if(recommendations.length)html+='<div><strong>عينة التوصيات المرتبطة بمسودات Deal Brain</strong></div>'+recommendations.map(x=>{const links=(x.deal_brain_links||[]).map(v=>`مسودة ${v.draft_id} · ${(v.event_types||[v.event_type]).join('، ')} · ${String(v.occurred_at||'').slice(0,16)}`).join(' ؛ ');return `<div class="review-sample"><strong>${esc(x.opp_id)} · ${esc(x.title)}</strong><small>${esc(x.category)} · ${esc(x.rule)} · الدليل: ${esc(x.evidence)}</small><small>مصدر الربط: ${esc(links||'غير متاح')}</small><div class="review-controls">${reviewSelect(x.opp_id,'recommendation_accuracy')}${reviewSelect(x.opp_id,'recommendation_no_fabrication')}<input data-recommendation-note="${esc(x.opp_id)}" placeholder="ملاحظة التدقيق"></div></div>`}).join('');
+ else html+='<div class="message">لا توجد توصيات مرتبطة بمسودات Deal Brain مؤكدة داخل نافذة القياس؛ لن تدخل توصيات الفرص الأخرى في المراجعة.</div>';
  document.getElementById('reviewSamples').innerHTML=html;
  if(r.latest_review){document.getElementById('reviewMsg').textContent=`آخر قرار: ${r.latest_review.decision} · ${String(r.latest_review.created_at||'').slice(0,16)} · ما زال خاصًا.`}
 }

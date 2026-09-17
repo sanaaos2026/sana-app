@@ -30,6 +30,9 @@ LIBRARY_TYPES = [
     ("SOP", "مكتبة إجراءات التشغيل"),
     ("CASE", "مكتبة الحالات"),
     ("FRAMEWORK", "مكتبة الأطر"),
+    ("CONTENT_REFERENCE", "مراجع المحتوى العام"),
+    ("CONTENT_POLICY", "سياسة المحتوى"),
+    ("CONTENT_BACKLOG", "خطة المحتوى"),
 ]
 
 RESEARCH_SOURCE_KINDS = {
@@ -1998,7 +2001,7 @@ def create_research_source(db, payload, owner_account_id=None, company_id=None):
             author, publisher, publication_year, language, jurisdiction, summary,
             notes, tags, rights_status, rights_expires_at, review_status,
             is_private, owner_account_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)""",
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)""",
         (
             source_id, title, source_kind, origin, company_id,
             drive_file_id, source_url,

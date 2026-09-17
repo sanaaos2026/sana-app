@@ -179,26 +179,249 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         self.assertTrue(all(source.get("source_date") for source in review["client_evidence"]))
         self.assertTrue(review["reference_knowledge"]["does_not_affect_scan"])
 
-        html = sana_app.app.jinja_env.get_template(
-            "14-passport-report.html"
-        ).render(**report)
+        template = sana_app.app.jinja_env.get_template("14-passport-report.html")
+        main_html = template.render(**report)
+        plan_html = template.render(**{**report, "report_view": "plan"})
+        details_html = template.render(
+            **{**report, "report_view": "details", "scan_report_tier": "DIAGNOSTIC"}
+        )
+        html = "\n".join((main_html, plan_html, details_html))
         for required_text in (
             "تقرير Sana Scan التنفيذي",
-            "الاختناق المرشح",
-            "ما لا نفعله الآن",
-            "خطة التنفيذ — 90 يومًا",
-            "0–30 يومًا",
-            "31–60 يومًا",
-            "61–90 يومًا",
+            "ما الشيء الأهم الذي يحتاج انتباهك أولًا؟",
             "نسبة العروض المعتمدة دون تدخل المؤسس",
-            "ops-log:test",
-            "المعرفة المرجعية المرتبطة",
-            "لا تصبح Evidence للعميل",
         ):
-            self.assertIn(required_text, html)
+            self.assertIn(required_text, main_html)
+        for required_text in (
+            "خطة التنفيذ — 90 يومًا",
+            "إصلاح الاختناق الحرج",
+        ):
+            self.assertIn(required_text, plan_html)
+        for required_text in (
+            "جودة الصورة التشخيصية",
+            "التشخيص: دليل أم فرضية؟",
+            "الأدلة ومصادرها",
+            "المؤشر التشغيلي",
+            "معلومات عامة ذات صلة",
+        ):
+            self.assertIn(required_text, details_html)
+        for internal_asset_name in (
+            "Knowledge",
+            "Operations",
+            "Brand",
+            "Data",
+            "Independence",
+        ):
+            self.assertNotIn(internal_asset_name, html)
+        for private_text in (
+            "SELF_REPORTED",
+            "UNVERIFIED",
+            "ops-log:test",
+            "Evidence",
+            "Fact",
+        ):
+            self.assertNotIn(private_text, html)
         pdf = weasyprint.HTML(string=html, base_url="http://localhost/").write_pdf()
         self.assertTrue(pdf.startswith(b"%PDF"))
         self.assertGreater(len(pdf), 10000)
+        self.assertGreaterEqual(len(weasyprint.HTML(
+            string=html, base_url="http://localhost/"
+        ).render().pages), 1)
+
+    def test_asset_map_keeps_a_real_zero_score_while_translating_names(self):
+        report = sana_app._build_passport_context(self.company_id)
+        report["scan"]["asset_scores"] = [
+            sana_app._client_asset_view({
+                "asset_type": asset_type,
+                "asset_name": asset_type,
+                "score": score,
+                "status": "COMPLETE",
+            })
+            for asset_type, score in (
+                ("Knowledge", 0),
+                ("Operations", 42),
+                ("Brand", 100),
+            )
+        ]
+
+        html = sana_app.app.jinja_env.get_template(
+            "14-passport-report.html"
+        ).render(**report)
+
+        self.assertIn("المعرفة", html)
+        self.assertIn("التشغيل", html)
+        self.assertIn("البراند", html)
+        self.assertIn("0/100", html)
+        self.assertIn("42/100", html)
+        self.assertIn("100/100", html)
+        for internal_asset_name in ("Knowledge", "Operations", "Brand"):
+            self.assertNotIn(internal_asset_name, html)
+
+    def test_all_client_asset_outputs_translate_database_names_without_changing_scores(self):
+        scores = {
+            "Knowledge": 0,
+            "Operations": 42,
+            "Brand": 100,
+            "Data": 7,
+            "Independence": 88,
+        }
+        for asset_type, score in scores.items():
+            self.db.execute(
+                """UPDATE assets SET asset_name=?, current_score=?
+                   WHERE company_id=? AND asset_type=?""",
+                (asset_type, score, self.company_id, asset_type),
+            )
+        scan_result = {
+            "status": "COMPLETE",
+            "case_id": self.case_id,
+            "asset_scores": [
+                {
+                    "asset_type": asset_type,
+                    "asset_name": asset_type,
+                    "score": score,
+                    "status": "COMPLETE",
+                }
+                for asset_type, score in scores.items()
+            ],
+            "findings": [],
+            "missing_evidence": [],
+        }
+        self.db.execute(
+            """INSERT INTO scan_runs
+               (scan_id,case_id,company_id,status,result,methodology_version)
+               VALUES (?,?,?,?,?,?)""",
+            (
+                f"CLIENT{self.company_id.removeprefix('RPT')}",
+                self.case_id,
+                self.company_id,
+                "COMPLETE",
+                json.dumps(scan_result, ensure_ascii=False),
+                "client-output-test",
+            ),
+        )
+        self.db.commit()
+
+        expected_names = {
+            "Knowledge": "المعرفة",
+            "Operations": "التشغيل",
+            "Brand": "البراند",
+            "Data": "البيانات",
+            "Independence": "الاستقلال",
+        }
+        with sana_app.app.test_request_context():
+            summary = sana_app.company_summary(self.company_id).get_json()["data"]
+            with patch.object(
+                sana_app, "enforce_entity_company_scope", return_value=None
+            ):
+                passport = sana_app.passport_summary(
+                    self.company_id
+                ).get_json()["data"]
+                question = sana_app.sds_question(
+                    self.company_id
+                ).get_json()["data"]
+                text = sana_app.passport_report_text(
+                    self.company_id
+                ).get_json()["data"]["report_text"]
+
+        for output in (summary["assets"], passport["assets"]):
+            self.assertEqual(
+                expected_names,
+                {item["asset_type"]: item["client_asset_name"] for item in output},
+            )
+            self.assertEqual(
+                scores,
+                {item["asset_type"]: item["current_score"] for item in output},
+            )
+            self.assertEqual(
+                expected_names,
+                {item["asset_type"]: item["asset_name"] for item in output},
+            )
+
+        self.assertEqual(
+            scores,
+            {
+                item["asset_type"]: item["score"]
+                for item in passport["scan_asset_scores"]
+            },
+        )
+        self.assertEqual(
+            expected_names,
+            {
+                item["asset_type"]: item["client_asset_name"]
+                for item in passport["scan_asset_scores"]
+            },
+        )
+        self.assertIn(question["client_asset_name"], expected_names.values())
+        self.assertEqual(question["client_asset_name"], question["asset_name"])
+        self.assertEqual(0, summary["assets"][0]["current_score"])
+        self.assertEqual(0, passport["scan_asset_scores"][0]["score"])
+
+        for internal_asset_name in expected_names:
+            self.assertNotIn(internal_asset_name, text)
+
+        passport_template = sana_app.app.jinja_env.loader.get_source(
+            sana_app.app.jinja_env, "03-business-passport.html"
+        )[0]
+        new_case_template = sana_app.app.jinja_env.loader.get_source(
+            sana_app.app.jinja_env, "04-new-case-client.html"
+        )[0]
+        self.assertIn("${a.client_asset_name}", passport_template)
+        self.assertIn("${sds.client_asset_name}", passport_template)
+        self.assertNotIn("${a.asset_name}", passport_template)
+        self.assertIn("new Option(a.client_asset_name,a.asset_id)", new_case_template)
+        self.assertNotIn("new Option(a.asset_name,a.asset_id)", new_case_template)
+
+    def test_two_sourced_submissions_close_distinct_requests_and_unlock_conditional_review(self):
+        suffix = self.company_id.removeprefix("RPT")
+        self.db.execute(
+            "DELETE FROM evidence WHERE evidence_id=?",
+            (f"E2{suffix}",),
+        )
+        self.db.execute(
+            """INSERT INTO evidence
+               (evidence_id,company_id,case_id,asset_id,title,source_type,confidence,
+                evidence_type,source_ref,information_type,verification_status,
+                source_category)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                f"DISCOPS{suffix}", self.company_id, self.case_id,
+                self.asset_ids["Operations"], "التحدي المعلن: التشغيل",
+                "اكتشاف_ذاتي", 50, "Evidence", "SDS-001 Q2",
+                "Narrative", "UNVERIFIED", "SELF_REPORTED",
+            ),
+        )
+        first = run_scan(self.db, self.case_id)
+        open_requests = [
+            item for item in first["evidence_requests"] if item["status"] == "OPEN"
+        ]
+        self.assertGreaterEqual(len(open_requests), 2)
+
+        for index, request in enumerate(open_requests[:2], start=1):
+            self.db.execute(
+                """INSERT INTO evidence
+                   (evidence_id,company_id,case_id,asset_id,title,source_type,confidence,
+                    evidence_type,source_ref,information_type,verification_status,
+                    source_category)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    f"CLIENT{index}{suffix}", self.company_id, self.case_id,
+                    request["asset_id"], f"معلومة عميل للمحور {index}",
+                    "معلومة عميل بمصدر", 70, "Evidence", f"REPORT:{index}",
+                    "Narrative", "UNVERIFIED", "SELF_REPORTED",
+                ),
+            )
+        self.db.commit()
+
+        second = run_scan(self.db, self.case_id)
+        self.assertEqual(2, second["evidence_progress"]["completed"])
+        submitted = [
+            item for item in second["evidence_requests"]
+            if item["status"] == "SUBMITTED"
+        ]
+        self.assertEqual(2, len(submitted))
+        self.assertEqual("CONDITIONAL", second["decision_readiness"])
+        self.assertEqual("REVIEW_REQUIRED", second["status"])
+        self.assertFalse(second["proposed_decision"]["causal_claim"])
 
     def test_report_does_not_mix_newer_case_or_unrelated_decisions(self):
         run_scan(self.db, self.case_id)
@@ -250,7 +473,7 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         html = sana_app.app.jinja_env.get_template(
             "14-passport-report.html"
         ).render(**report)
-        executive_report = html.split("APPENDIX · BUSINESS PASSPORT", 1)[0]
+        executive_report = html.split("<!-- ملحق جواز الشركة", 1)[0]
         self.assertNotIn("قضية أحدث غير مفحوصة", executive_report)
         self.assertNotIn("مشكلة أحدث", executive_report)
         self.assertNotIn("قرار لا يخص Scan", executive_report)
@@ -328,9 +551,13 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
             self.assertEqual(action, report["scan_journey"]["action_label"])
             self.assertTrue(report["scan_journey"]["label"])
             self.assertTrue(report["scan_journey"]["message"])
-            self.assertIn("Sana Score", sana_app.app.jinja_env.get_template(
+            report_html = sana_app.app.jinja_env.get_template(
                 "14-passport-report.html"
-            ).render(**report))
+            ).render(**report)
+            self.assertIn("الأولوية الأولى", report_html)
+            self.assertIn("ما القرار الآمن الآن؟", report_html)
+            self.assertNotIn(">None<", report_html)
+            self.assertNotIn("0 مثبتة · 0 من الشركة", report_html)
             self.db.execute("DELETE FROM scan_runs WHERE scan_id=?", (scan_id,))
             self.db.commit()
 
@@ -441,10 +668,22 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
             response = sana_app.passport_report_text(self.company_id)
             payload = response.get_json()
         text = payload["data"]["report_text"]
-        self.assertIn(scan["scan_id"], text)
         self.assertIn(review["journey"]["action_label"], text)
-        self.assertIn("المعرفة المرجعية — ليست Evidence", text)
-        self.assertIn("N/A — Deferred", text)
+        self.assertIn("الثقة عبر مراحل القرار", text)
+        self.assertIn("قبل القرار: مشروط", text)
+        self.assertIn("قياس الأثر: غير جاهز", text)
+        for private_text in (
+            "SELF_REPORTED",
+            "UNVERIFIED",
+            scan["scan_id"],
+            self.company_id,
+            self.case_id,
+            "Evidence",
+            "Fact",
+            "SDS-001",
+            "ops-log:test",
+        ):
+            self.assertNotIn(private_text, text)
 
         with patch(
             "sana_knowledge.contextual_reference_knowledge",
@@ -489,6 +728,50 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         )
         self.assertEqual(second["scan_id"], latest["scan"]["scan_id"])
         self.assertNotEqual(first["scan_id"], second["scan_id"])
+
+    def test_self_reported_capacity_creates_low_risk_conditional_experiment(self):
+        suffix = self.company_id.removeprefix("RPT")
+        self.db.execute(
+            """UPDATE evidence SET title=?, confidence=?, information_type='Actual',
+                      verification_status='UNVERIFIED', source_category='SELF_REPORTED',
+                      period_start=?, period_end=?, normalized_value=?, unit=?,
+                      topic_key=?, source_ref=?
+               WHERE evidence_id=?""",
+            (
+                "عدد الطلاب الحالي 20", 70, "2026-08-01", "2026-08-31",
+                20, "student", "students", "founder:capacity", f"E1{suffix}",
+            ),
+        )
+        self.db.execute(
+            """UPDATE evidence SET title=?, confidence=?, information_type='Target',
+                      verification_status='UNVERIFIED', source_category='SELF_REPORTED',
+                      period_start=?, period_end=?, normalized_value=?, unit=?,
+                      topic_key=?, source_ref=?
+               WHERE evidence_id=?""",
+            (
+                "السعة المتاحة 100 طالب", 70, "2026-08-01", "2026-08-31",
+                100, "student", "capacity", "founder:capacity", f"E2{suffix}",
+            ),
+        )
+        self.db.commit()
+
+        scan = run_scan(self.db, self.case_id)
+
+        self.assertEqual("CONDITIONAL", scan["decision_readiness"])
+        self.assertEqual("REVIEW_REQUIRED", scan["status"])
+        self.assertEqual(70, scan["decision_confidence"]["score"])
+        self.assertEqual(1, scan["decision_confidence"]["source_family_count"])
+        self.assertEqual("SELF_REPORTED_ONLY", scan["diagnostic_quality"]["independence"])
+        self.assertEqual(20.0, scan["proposed_decision"]["kpi"]["baseline"])
+        self.assertFalse(scan["proposed_decision"]["causal_claim"])
+        self.assertIn("7–14", scan["proposed_decision"]["statement"])
+
+        with sana_app.app.test_request_context():
+            response, status_code = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, status_code)
+        decision = response.get_json()["data"]
+        self.assertEqual(70, decision["confidence_score"])
+        self.assertIn("تجربة قياس آمنة", decision["title"])
 
     def test_human_p0_review_transitions_snapshot_to_complete(self):
         scan = run_scan(self.db, self.case_id)
@@ -540,12 +823,6 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
         )
         self.assertEqual("COMPLETE", after_review["scan_status"])
         self.assertEqual(second_scan["scan_id"], after_review["scan"]["scan_id"])
-        self.assertTrue(initiatives[f"LINKED{suffix}"]["evidence"])
-        self.assertTrue(initiatives[f"LINKED{suffix}"]["completeness"])
-        self.assertEqual([], initiatives[f"UNLINKED{suffix}"]["evidence"])
-        self.assertFalse(initiatives[f"UNLINKED{suffix}"]["completeness"])
-        self.assertEqual([], initiatives[f"NONFACT{suffix}"]["evidence"])
-        self.assertFalse(initiatives[f"NONFACT{suffix}"]["completeness"])
 
     def test_snapshot_stays_immutable_when_case_changes_and_decisions_are_rescoped(self):
         first_scan = run_scan(self.db, self.case_id)
@@ -581,12 +858,269 @@ class SanaScanReportAcceptanceTests(unittest.TestCase):
             "FIRSTDEC",
             {item.get("decision_id") for item in second_context["scan_initiatives"]},
         )
-        self.assertTrue(initiatives[f"LINKED{suffix}"]["evidence"])
-        self.assertTrue(initiatives[f"LINKED{suffix}"]["completeness"])
-        self.assertEqual([], initiatives[f"UNLINKED{suffix}"]["evidence"])
-        self.assertFalse(initiatives[f"UNLINKED{suffix}"]["completeness"])
-        self.assertEqual([], initiatives[f"NONFACT{suffix}"]["evidence"])
-        self.assertFalse(initiatives[f"NONFACT{suffix}"]["completeness"])
+
+    def test_unknown_cycle_is_explicit_in_text_and_pdf_exports(self):
+        self.db.execute(
+            "DELETE FROM evidence WHERE company_id=? AND case_id=?",
+            (self.company_id, self.case_id),
+        )
+        self.db.commit()
+        initial = run_scan(self.db, self.case_id)
+        request = initial["evidence_requests"][0]
+
+        with patch.object(sana_app, "enforce_entity_company_scope", return_value=None):
+            with sana_app.app.test_request_context(
+                "/api/companies/evidence", method="POST", json={
+                    "case_id": self.case_id,
+                    "unknown": True,
+                    "request_fingerprint": request["fingerprint"],
+                }
+            ):
+                response, status_code = sana_app.add_evidence(self.company_id)
+        self.assertEqual(201, status_code)
+        self.assertEqual("UNKNOWN", response.get_json()["data"]["journey_outcome"])
+
+        report = sana_app._build_passport_context(self.company_id)
+        cycle = report["diagnostic_review"]["client_evidence_request_cycle"]
+        self.assertEqual("UNKNOWN", cycle["outcome"])
+        self.assertEqual(2, cycle["critical_request_count"])
+        self.assertEqual(1, cycle["closed_request_count"])
+        self.assertEqual(2, cycle["fingerprint_count"])
+
+        with sana_app.app.test_request_context():
+            text = sana_app.passport_report_text(self.company_id).get_json()
+            with patch.object(
+                sana_app, "enforce_entity_company_scope", return_value=None
+            ):
+                pdf_response = sana_app.passport_report_pdf(self.company_id)
+        text = text["data"]["report_text"]
+        for output in (text,):
+            self.assertIn("UNKNOWN", output)
+            self.assertIn("نهاية دورة الأدلة", output)
+            self.assertIn("الطلبات الحرجة: 2", output)
+            self.assertIn("الطلبات المغلقة: 1 من 2", output)
+            self.assertIn("الطلبات المتتبعة: 2", output)
+        for fingerprint in initial["evidence_request_cycle"]["requested_fingerprints"]:
+            self.assertNotIn(fingerprint, text)
+        pdf = pdf_response.get_data()
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertGreater(len(pdf), 10000)
+        extracted_pdf = subprocess.run(
+            ["pdftotext", "-", "-"],
+            input=pdf,
+            capture_output=True,
+            check=True,
+        ).stdout.decode("utf-8", errors="replace")
+        for output in (text,):
+            self.assertIn("UNKNOWN", output)
+            self.assertIn("نهاية دورة الأدلة", output)
+            self.assertIn("الطلبات الحرجة: 2", output)
+            self.assertIn("الطلبات المغلقة: 1 من 2", output)
+        for token in ("UNKNOWN", "نهاية", "الطلبات", "الحرجة", "المغلقة"):
+            self.assertIn(token, extracted_pdf)
+        for fingerprint in initial["evidence_request_cycle"]["requested_fingerprints"]:
+            self.assertNotIn(fingerprint, extracted_pdf)
+
+    def test_text_alias_and_case_api_use_the_same_snapshot_and_cta(self):
+        scan = run_scan(self.db, self.case_id)
+        context = sana_app._build_passport_context(self.company_id)
+        review = context["diagnostic_review"]
+        self.assertEqual(scan["scan_id"], review["snapshot"]["scan_id"])
+
+        with sana_app.app.test_request_context():
+            response = sana_app.passport_report_text(self.company_id)
+            payload = response.get_json()
+        text = payload["data"]["report_text"]
+        self.assertIn(review["journey"]["action_label"], text)
+        self.assertIn("الثقة عبر مراحل القرار", text)
+        self.assertIn("قبل القرار: مشروط", text)
+        self.assertIn("قياس الأثر: غير جاهز", text)
+        for private_text in (
+            "SELF_REPORTED",
+            "UNVERIFIED",
+            scan["scan_id"],
+            self.company_id,
+            self.case_id,
+            "Evidence",
+            "Fact",
+            "SDS-001",
+            "ops-log:test",
+        ):
+            self.assertNotIn(private_text, text)
+
+        with patch(
+            "sana_knowledge.contextual_reference_knowledge",
+            side_effect=RuntimeError("provider unavailable"),
+        ):
+            fallback = sana_app._build_scan_report_context(
+                self.company_id, case_id=self.case_id
+            )
+        self.assertFalse(
+            fallback["diagnostic_review"]["fallback"]["reference_knowledge_available"]
+        )
+        self.assertTrue(
+            fallback["diagnostic_review"]["fallback"]["deterministic"]
+        )
+        self.assertIn(
+            "تبقى نتيجة Scan قابلة للمراجعة",
+            fallback["reference_knowledge"]["knowledge_gap"],
+        )
+
+    def test_scan_excludes_other_open_cases_and_latest_rescan_is_stable(self):
+        suffix = self.company_id.removeprefix("RPT")
+        other_case_id = f"OPEN{suffix}"
+        self.db.execute(
+            """INSERT INTO cases
+               (case_id,company_id,case_title,case_status,declared_problem,real_question)
+               VALUES (?,?,?,?,?,?)""",
+            (
+                other_case_id, self.company_id, "قضية مفتوحة أخرى", "مفتوح",
+                "تعطل مختلف لا يخص القضية الحالية", "كيف نعالج التعطل الآخر؟",
+            ),
+        )
+        self.db.commit()
+
+        first = run_scan(self.db, self.case_id)
+        second = run_scan(self.db, self.case_id)
+        self.assertNotIn(
+            f"CASE:{other_case_id}:DECLARED_PROBLEM",
+            {item["source_id"] for item in second["classified_inputs"]},
+        )
+        latest = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual(second["scan_id"], latest["scan"]["scan_id"])
+        self.assertNotEqual(first["scan_id"], second["scan_id"])
+
+    def test_self_reported_capacity_creates_low_risk_conditional_experiment(self):
+        suffix = self.company_id.removeprefix("RPT")
+        self.db.execute(
+            """UPDATE evidence SET title=?, confidence=?, information_type='Actual',
+                      verification_status='UNVERIFIED', source_category='SELF_REPORTED',
+                      period_start=?, period_end=?, normalized_value=?, unit=?,
+                      topic_key=?, source_ref=?
+               WHERE evidence_id=?""",
+            (
+                "عدد الطلاب الحالي 20", 70, "2026-08-01", "2026-08-31",
+                20, "student", "students", "founder:capacity", f"E1{suffix}",
+            ),
+        )
+        self.db.execute(
+            """UPDATE evidence SET title=?, confidence=?, information_type='Target',
+                      verification_status='UNVERIFIED', source_category='SELF_REPORTED',
+                      period_start=?, period_end=?, normalized_value=?, unit=?,
+                      topic_key=?, source_ref=?
+               WHERE evidence_id=?""",
+            (
+                "السعة المتاحة 100 طالب", 70, "2026-08-01", "2026-08-31",
+                100, "student", "capacity", "founder:capacity", f"E2{suffix}",
+            ),
+        )
+        self.db.commit()
+
+        scan = run_scan(self.db, self.case_id)
+
+        self.assertEqual("CONDITIONAL", scan["decision_readiness"])
+        self.assertEqual("REVIEW_REQUIRED", scan["status"])
+        self.assertEqual(70, scan["decision_confidence"]["score"])
+        self.assertEqual(1, scan["decision_confidence"]["source_family_count"])
+        self.assertEqual("SELF_REPORTED_ONLY", scan["diagnostic_quality"]["independence"])
+        self.assertEqual(20.0, scan["proposed_decision"]["kpi"]["baseline"])
+        self.assertFalse(scan["proposed_decision"]["causal_claim"])
+        self.assertIn("7–14", scan["proposed_decision"]["statement"])
+
+        with sana_app.app.test_request_context():
+            response, status_code = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, status_code)
+        decision = response.get_json()["data"]
+        self.assertEqual(70, decision["confidence_score"])
+        self.assertIn("تجربة قياس آمنة", decision["title"])
+
+    def test_human_p0_review_transitions_snapshot_to_complete(self):
+        scan = run_scan(self.db, self.case_id)
+        self.assertEqual("REVIEW_REQUIRED", scan["status"])
+
+        with sana_app.app.test_request_context():
+            response, status_code = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, status_code)
+        decision = response.get_json()["data"]
+
+        completed = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        review = completed["diagnostic_review"]
+        self.assertEqual("COMPLETE", review["journey"]["status"])
+        self.assertEqual(scan["scan_id"], review["snapshot"]["scan_id"])
+        self.assertFalse(completed["scan"]["human_review_required"])
+        self.assertEqual(
+            decision["decision_id"],
+            completed["scan"]["human_review"]["decision_id"],
+        )
+        self.assertFalse(review["evidence_gate"]["final_score_allowed"])
+        self.assertEqual("N/A — Deferred", review["financial_value"]["label"])
+
+    def test_rescan_requires_and_completes_a_new_snapshot_review(self):
+        first_scan = run_scan(self.db, self.case_id)
+        with sana_app.app.test_request_context():
+            first_response, first_status = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, first_status)
+        first_decision = first_response.get_json()["data"]
+
+        second_scan = run_scan(self.db, self.case_id)
+        self.assertNotEqual(first_scan["scan_id"], second_scan["scan_id"])
+        before_review = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual("REVIEW_REQUIRED", before_review["scan_status"])
+
+        with sana_app.app.test_request_context():
+            second_response, second_status = sana_app.create_p0_case_decision(self.case_id)
+        self.assertEqual(201, second_status)
+        second_decision = second_response.get_json()["data"]
+        self.assertNotEqual(first_decision["decision_id"], second_decision["decision_id"])
+        self.assertEqual(first_scan["scan_id"], first_decision["scan_id"])
+        self.assertEqual(second_scan["scan_id"], second_decision["scan_id"])
+
+        after_review = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual("COMPLETE", after_review["scan_status"])
+        self.assertEqual(second_scan["scan_id"], after_review["scan"]["scan_id"])
+
+    def test_snapshot_stays_immutable_when_case_changes_and_decisions_are_rescoped(self):
+        first_scan = run_scan(self.db, self.case_id)
+        original_problem = first_scan["diagnostic_problem"]["statement"]
+        self.db.execute(
+            """INSERT INTO decisions
+               (decision_id,company_id,case_id,title,status,phase_label,scan_id)
+               VALUES (?,?,?,?,?,?,?)""",
+            ("FIRSTDEC", self.company_id, self.case_id, "قرار أول", "مقترح", "0-30", first_scan["scan_id"]),
+        )
+        self.db.execute(
+            "UPDATE cases SET declared_problem=?, real_question=? WHERE case_id=?",
+            ("مشكلة بعد الفحص", "سؤال بعد الفحص", self.case_id),
+        )
+        self.db.commit()
+        first_context = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual(original_problem, first_context["diagnostic_review"]["problem"]["statement"])
+        self.assertNotEqual("مشكلة بعد الفحص", first_context["diagnostic_review"]["problem"]["statement"])
+        self.assertIn(
+            "FIRSTDEC",
+            {item.get("decision_id") for item in first_context["scan_initiatives"]},
+        )
+
+        # A decision from the earlier snapshot must not enter the new snapshot's plan.
+        second_scan = run_scan(self.db, self.case_id)
+        second_context = sana_app._build_scan_report_context(
+            self.company_id, case_id=self.case_id
+        )
+        self.assertEqual(second_scan["scan_id"], second_context["scan"]["scan_id"])
+        self.assertNotIn(
+            "FIRSTDEC",
+            {item.get("decision_id") for item in second_context["scan_initiatives"]},
+        )
 
 @unittest.skipUnless(
     os.environ.get("RUN_SANA_SCAN_BROWSER_TESTS") == "1"
@@ -601,7 +1135,7 @@ class SanaScanJourneyBrowserTests(unittest.TestCase):
         ("NOT_RUN", "لم يُشغّل بعد", "ابدأ تقييم الأصول", "/assessment"),
         ("INCOMPLETE", "غير مكتمل — بوابة الأدلة مفتوحة", "أكمل الأدلة المطلوبة", "/case/"),
         ("REVIEW_REQUIRED", "جاهز للمراجعة البشرية", "راجع التقرير التنفيذي", "/company/"),
-        ("COMPLETE", "مكتمل — التقرير جاهز", "افتح التقرير التنفيذي", "/company/"),
+        ("COMPLETE", "اكتملت المراجعة — التقرير جاهز", "افتح التقرير التنفيذي", "/company/"),
     )
 
     @classmethod
@@ -829,8 +1363,12 @@ class SanaScanJourneyBrowserTests(unittest.TestCase):
                     else:
                         self.assertTrue(action_href.startswith("/assessment"))
                     live_summary = page.locator("[data-testid='live-passport-summary']")
-                    self.assertIn("الملخص الحي", live_summary.inner_text())
-                    self.assertIn("التقرير التنفيذي", live_summary.inner_text())
+                    live_summary_text = live_summary.inner_text()
+                    self.assertTrue(
+                        "الملخص الحي" in live_summary_text
+                        or "صورة الشركة" in live_summary_text
+                    )
+                    self.assertIn("التقرير", live_summary_text)
                     page.screenshot(
                         path=os.path.join(
                             screenshot_dir, f"{status.lower()}-passport.png"
@@ -857,7 +1395,8 @@ class SanaScanJourneyBrowserTests(unittest.TestCase):
                     )
                     self.assertIn(expected_label, journey.inner_text())
                     self.assertIn(expected_action, journey.inner_text())
-                    self.assertIn("EXECUTIVE REPORT", report.inner_text())
+                    self.assertIn("تقرير Sana Scan التنفيذي", report.inner_text())
+                    self.assertNotIn("الملخص الحي", report.inner_text())
                     self.assertNotIn("LIVE PASSPORT", report.inner_text())
                     page.screenshot(
                         path=os.path.join(
@@ -868,19 +1407,112 @@ class SanaScanJourneyBrowserTests(unittest.TestCase):
                     page.close()
                     browser.close()
 
+    def test_each_scan_state_is_clear_on_mobile(self):
+        from playwright.sync_api import sync_playwright
+
+        screenshot_dir = os.environ.get(
+            "SANA_SCAN_SCREENSHOT_DIR", "/tmp/sana-scan-browser"
+        )
+        os.makedirs(screenshot_dir, exist_ok=True)
+        mobile_viewport = {"width": 390, "height": 844}
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            for status, expected_label, expected_action, _ in self.STATES:
+                with self.subTest(status=status):
+                    page = browser.new_page(viewport=mobile_viewport)
+                    fixture = self.fixtures[status]
+                    company_id = fixture["company_id"]
+                    page.goto(
+                        self._preview_url("/passport", company_id),
+                        wait_until="domcontentloaded",
+                    )
+                    live = page.locator("[data-testid='live-scan-journey']")
+                    live.wait_for(state="visible", timeout=30_000)
+                    action_link = live.locator(".journey-action")
+                    action_link.wait_for(state="visible", timeout=10_000)
+
+                    self.assertEqual(status, live.get_attribute("data-scan-status"))
+                    self.assertIn(expected_label, live.inner_text())
+                    self.assertIn(expected_action, action_link.inner_text())
+                    live_box = live.bounding_box()
+                    action_box = action_link.bounding_box()
+                    self.assertIsNotNone(live_box)
+                    self.assertIsNotNone(action_box)
+                    self.assertGreaterEqual(live_box["x"], 0)
+                    self.assertLessEqual(live_box["x"] + live_box["width"], 390)
+                    self.assertGreaterEqual(action_box["height"], 44)
+                    self.assertLessEqual(action_box["x"] + action_box["width"], 390)
+                    self.assertLessEqual(
+                        page.evaluate("() => document.documentElement.scrollWidth"),
+                        390,
+                    )
+
+                    page.screenshot(
+                        path=os.path.join(
+                            screenshot_dir, f"{status.lower()}-passport-mobile.png"
+                        ),
+                        full_page=True,
+                    )
+
+                    page.goto(
+                        self._preview_url(
+                            f"/company/{company_id}/scan-report", company_id
+                        ),
+                        wait_until="domcontentloaded",
+                    )
+                    report = page.locator("[data-testid='executive-report']")
+                    report.wait_for(state="visible", timeout=30_000)
+                    report_kicker = report.locator(".report-kicker")
+                    report_title = report.locator("h1")
+                    journey = report.locator(
+                        "[data-testid='report-journey-state']"
+                    )
+                    report_kicker.wait_for(state="visible", timeout=10_000)
+                    report_title.wait_for(state="visible", timeout=10_000)
+                    journey.wait_for(state="visible", timeout=10_000)
+                    self.assertIn("تقرير Sana Scan التنفيذي", report_kicker.inner_text())
+                    self.assertTrue(report_title.inner_text().strip())
+                    self.assertIn(expected_label, journey.inner_text())
+                    self.assertIn(expected_action, journey.inner_text())
+                    title_box = report_title.bounding_box()
+                    journey_box = journey.bounding_box()
+                    self.assertIsNotNone(title_box)
+                    self.assertIsNotNone(journey_box)
+                    self.assertGreater(title_box["height"], 0)
+                    self.assertGreater(journey_box["height"], 0)
+                    self.assertLessEqual(
+                        page.evaluate("() => document.documentElement.scrollWidth"),
+                        390,
+                    )
+                    page.screenshot(
+                        path=os.path.join(
+                            screenshot_dir, f"{status.lower()}-report-mobile.png"
+                        ),
+                        full_page=True,
+                    )
+                    page.close()
+            browser.close()
+
     def test_assessment_returns_to_the_same_preview_passport_context(self):
         from playwright.sync_api import sync_playwright
 
         company_id = self.fixtures["NOT_RUN"]["company_id"]
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1440, "height": 1100})
+            page = browser.new_page(viewport={"width": 390, "height": 844})
             page.goto(
                 self._preview_url("/assessment", company_id),
                 wait_until="domcontentloaded",
             )
             return_link = page.locator("[data-testid='passport-after-assessment']")
             return_link.wait_for(state="visible", timeout=10_000)
+            return_box = return_link.bounding_box()
+            self.assertIsNotNone(return_box)
+            self.assertGreater(return_box["height"], 0)
+            self.assertLessEqual(
+                page.evaluate("() => document.documentElement.scrollWidth"),
+                390,
+            )
             href = return_link.get_attribute("href")
             self.assertTrue(href.startswith("/passport?"))
             self.assertIn(f"company_id={company_id}", href)

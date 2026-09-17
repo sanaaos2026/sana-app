@@ -1,7 +1,7 @@
 modules = ["nodejs-24", "python-3.11", "postgresql-16"]
 
 [deployment]
-run = ["bash", "-c", "cd sana_full && python3 app.py"]
+run = ["bash", "-c", "cd sana_full && export SANA_ENV=production && python3 production_init.py && export SANA_PRODUCTION_SCHEMA_READY=1 && exec gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 --threads 4 --timeout 120 wsgi:app"]
 router = "application"
 deploymentTarget = "autoscale"
 
@@ -47,7 +47,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd sana_full && python3 -m unittest test_b2b_service_os.py -v"
+args = "cd sana_full && python3 -m playwright install chromium && SANA_REQUIRE_BROWSER_TESTS=1 python3 -m unittest test_b2b_service_os.py test_csrf_browser_release.CsrfBrowserReleaseTest -v"
 
 [workflows.workflow.metadata]
 isValidation = true
@@ -58,7 +58,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd sana_full && RUN_SANA_BROWSER_TESTS=1 python3 -m unittest test_drive_index.DriveExcerptBrowserTest -v"
+args = "cd sana_full && SANA_BROWSER_DIAGNOSTICS_RETENTION=google_drive RUN_SANA_BROWSER_TESTS=1 python3 -m unittest test_drive_index.DriveExcerptBrowserTest -v"
 
 [workflows.workflow.metadata]
 isValidation = true

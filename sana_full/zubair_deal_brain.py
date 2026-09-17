@@ -1010,29 +1010,88 @@ def _review_match_summary(result):
     }
 
 
-def _review_sample(db, company_id, sample_limit=5):
+def _review_opportunity_links(db, company_id, window_start, window_end):
+    """Return confirmed Deal Brain provenance for opportunities in a window.
+
+    A matching opportunity name is not evidence that Deal Brain was used.
+    Only timeline events carrying both the tenant-scoped draft and opportunity
+    foreign keys establish that provenance.
+    """
+    rows = db.execute(
+        """SELECT z.opp_id, z.draft_id, z.event_type, z.source_ref,
+                  z.occurred_at, d.created_at AS draft_created_at
+           FROM zubair_timeline_events z
+           JOIN zubair_capture_drafts d
+             ON d.draft_id=z.draft_id AND d.company_id=z.company_id
+           WHERE z.company_id=? AND z.opp_id IS NOT NULL
+             AND d.created_at >= ?::date
+             AND d.created_at < (?::date + interval '1 day')
+           ORDER BY z.opp_id, d.created_at ASC, z.occurred_at ASC, z.event_id ASC""",
+        (company_id, window_start, window_end),
+    ).fetchall()
+    links = {}
+    for row in rows:
+        item = dict(row)
+        opportunity_links = links.setdefault(item["opp_id"], [])
+        link = next(
+            (
+                existing for existing in opportunity_links
+                if existing["draft_id"] == item["draft_id"]
+            ),
+            None,
+        )
+        if link is None:
+            link = {
+                "draft_id": item["draft_id"],
+                "event_type": item["event_type"],
+                "event_types": [],
+                "source_ref": item["source_ref"],
+                "occurred_at": item["occurred_at"],
+                "draft_created_at": item["draft_created_at"],
+            }
+            opportunity_links.append(link)
+        if item["event_type"] not in link["event_types"]:
+            link["event_types"].append(item["event_type"])
+    return links
+
+
+def _review_sample(db, company_id, sample_limit=5, window_start=None, window_end=None):
+    if window_start is None or window_end is None:
+        window_start, window_end = _review_window()
     rows = db.execute(
         """SELECT draft_id, input_type, raw_text, extracted_json, status,
                   processing_ms, created_at, confirmed_at
            FROM zubair_capture_drafts
-           WHERE company_id=? AND created_at >= now() - interval '30 days'
+           WHERE company_id=? AND created_at >= ?::date
+             AND created_at < (?::date + interval '1 day')
            ORDER BY created_at ASC, draft_id ASC LIMIT ?""",
-        (company_id, sample_limit),
+        (company_id, window_start, window_end, sample_limit),
     ).fetchall()
-    recommendations = attention_items(db, company_id)[:sample_limit]
+    links_by_opp = _review_opportunity_links(
+        db, company_id, window_start, window_end
+    )
+    recommendations = []
+    for item in attention_items(db, company_id):
+        links = links_by_opp.get(item.get("opp_id"))
+        if not links:
+            continue
+        recommendation = dict(item)
+        recommendation["deal_brain_links"] = links
+        recommendations.append(recommendation)
+        if len(recommendations) >= sample_limit:
+            break
     result = []
     for row in rows:
         draft = dict(row)
         fields = json.loads(draft.pop("extracted_json") or "{}")
         draft["fields"] = fields
         draft["match"] = _review_match_summary(_matching_rows(db, company_id, fields))
-        linked_opp_ids = {
-            item["opp_id"]
-            for item in draft["match"]["opportunity"]
-            if item.get("opp_id")
-        }
         draft["recommendations"] = [
-            item for item in recommendations if item.get("opp_id") in linked_opp_ids
+            item for item in recommendations
+            if any(
+                link.get("draft_id") == draft["draft_id"]
+                for link in item.get("deal_brain_links", [])
+            )
         ]
         result.append(draft)
     return {"drafts": result, "recommendations": recommendations}
@@ -1060,7 +1119,9 @@ def latest_review(db, company_id):
 def review_packet(db, company_id, sample_limit=5):
     """Return the evidence packet; it never promotes or changes access."""
     window_start, window_end = _review_window()
-    sample = _review_sample(db, company_id, sample_limit)
+    sample = _review_sample(
+        db, company_id, sample_limit, window_start=window_start, window_end=window_end
+    )
     return {
         "window_days": 30,
         "window_start": window_start.isoformat(),
@@ -1102,7 +1163,9 @@ def save_review(db, company_id, account_id, decision, rationale, audit,
     if (end - start).days != 30 or end > date.today() or start >= end:
         raise ValueError("INVALID_REVIEW_WINDOW")
 
-    samples = _review_sample(db, company_id, 5)
+    samples = _review_sample(
+        db, company_id, 5, window_start=start, window_end=end
+    )
     draft_ids = {item["draft_id"] for item in samples["drafts"]}
     submitted_drafts = audit.get("drafts") or []
     if draft_ids:
@@ -1115,14 +1178,16 @@ def save_review(db, company_id, account_id, decision, rationale, audit,
         item.get("opp_id") for item in samples["recommendations"] if item.get("opp_id")
     }
     submitted_recommendations = audit.get("recommendations") or []
-    if recommendation_ids:
-        submitted_ids = {
-            item.get("opp_id")
-            for item in submitted_recommendations
-            if isinstance(item, dict)
-        }
-        if submitted_ids != recommendation_ids:
-            raise ValueError("REVIEW_RECOMMENDATION_SAMPLE_INCOMPLETE")
+    submitted_ids = {
+        item.get("opp_id")
+        for item in submitted_recommendations
+        if isinstance(item, dict) and item.get("opp_id")
+    }
+    if (
+        submitted_ids != recommendation_ids
+        or len(submitted_ids) != len(submitted_recommendations)
+    ):
+        raise ValueError("REVIEW_RECOMMENDATION_SAMPLE_INCOMPLETE")
     for item in submitted_drafts:
         if not _valid_review_item(
             item, ("draft_accuracy", "match_accuracy", "no_fabrication")

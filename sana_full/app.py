@@ -19,14 +19,27 @@ import decimal
 import re
 import time
 import html
+import base64
+import subprocess
+import requests
 from urllib.parse import urlencode, urlparse
 from datetime import datetime, date, timedelta
 from flask import Flask, jsonify, request, render_template, g, session, redirect, url_for, Response, abort, send_file
 from flask.json.provider import DefaultJSONProvider
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFError, CSRFProtect
 import resend
-from database_config import acquire_schema_lock, resolve_database_url
+from acquisition_concentration import is_acquisition_channel_risk_impact
+from database_config import (
+    acquire_schema_lock,
+    BILLING_TEST_SCHEMA_PREFIX,
+    build_billing_test_schema_name,
+    has_required_columns,
+    has_required_tables,
+    parse_billing_test_schema_created_at,
+    resolve_database_url,
+    resolve_database_schema,
+)
 # weasyprint يُستورد داخل الدالة فقط لتفادي crash عند غياب libpango وقت التشغيل
 
 # ------------------------------------------------------------------
@@ -46,6 +59,97 @@ SECTORS = [
     {"key": "other",          "label": "أخرى",                "icon": "⚡"},
 ]
 SECTOR_KEYS = {s["key"] for s in SECTORS}
+
+SECTOR_BUSINESS_TYPES = {
+    "legal": [
+        {"key": "law_firm", "label": "مكتب أو شركة محاماة"},
+        {"key": "independent_lawyer", "label": "محامٍ أو مستشار قانوني مستقل"},
+        {"key": "legal_consulting", "label": "استشارات قانونية وامتثال"},
+        {"key": "legal_tech", "label": "منصة أو تقنية قانونية"},
+    ],
+    "food": [
+        {"key": "restaurant_cafe", "label": "مطعم أو مقهى"},
+        {"key": "cloud_kitchen", "label": "مطبخ سحابي"},
+        {"key": "catering", "label": "تموين وضيافة"},
+        {"key": "food_brand", "label": "علامة أو تصنيع غذائي"},
+        {"key": "hotel_hospitality", "label": "فندق أو منشأة ضيافة"},
+    ],
+    "manufacturing": [
+        {"key": "factory", "label": "مصنع"},
+        {"key": "workshop", "label": "ورشة إنتاج"},
+        {"key": "perfume_cosmetics", "label": "عطور أو مستحضرات تجميل"},
+        {"key": "private_label", "label": "تصنيع للغير / علامة خاصة"},
+        {"key": "industrial_supplier", "label": "مورد صناعي"},
+    ],
+    "retail": [
+        {"key": "physical_store", "label": "متجر فعلي"},
+        {"key": "ecommerce", "label": "متجر إلكتروني"},
+        {"key": "omnichannel", "label": "متجر فعلي وإلكتروني"},
+        {"key": "wholesale", "label": "توزيع أو جملة"},
+        {"key": "marketplace", "label": "منصة سوق متعددة البائعين"},
+    ],
+    "construction": [
+        {"key": "main_contractor", "label": "مقاول رئيسي"},
+        {"key": "subcontractor", "label": "مقاول متخصص أو باطن"},
+        {"key": "engineering_office", "label": "مكتب هندسي"},
+        {"key": "project_management", "label": "إدارة مشاريع"},
+        {"key": "building_supplier", "label": "مواد ومستلزمات بناء"},
+    ],
+    "tech": [
+        {"key": "saas", "label": "منتج SaaS"},
+        {"key": "software_company", "label": "شركة تطوير برمجيات"},
+        {"key": "tech_consulting", "label": "استشارات تقنية"},
+        {"key": "digital_platform", "label": "منصة أو سوق رقمي"},
+        {"key": "managed_it", "label": "خدمات تقنية أو أمن سيبراني مُدارة"},
+    ],
+    "consulting": [
+        {"key": "management_consulting", "label": "استشارات إدارية"},
+        {"key": "marketing_agency", "label": "وكالة تسويق أو إبداع"},
+        {"key": "finance_accounting", "label": "محاسبة أو استشارات مالية"},
+        {"key": "hr_recruitment", "label": "موارد بشرية أو توظيف"},
+        {"key": "training_advisory", "label": "تدريب أو استشارات متخصصة"},
+    ],
+    "realestate": [
+        {"key": "property_platform", "label": "منصة عقارية"},
+        {"key": "brokerage_office", "label": "مكتب وساطة عقارية"},
+        {"key": "developer", "label": "مطور عقاري"},
+        {"key": "property_management", "label": "إدارة أملاك"},
+        {"key": "valuation_consulting", "label": "تقييم أو استشارات عقارية"},
+        {"key": "facilities_management", "label": "إدارة مرافق"},
+    ],
+    "health": [
+        {"key": "clinic", "label": "عيادة"},
+        {"key": "medical_center", "label": "مجمع أو مركز طبي"},
+        {"key": "hospital", "label": "مستشفى"},
+        {"key": "pharmacy", "label": "صيدلية أو سلسلة صيدليات"},
+        {"key": "lab", "label": "مختبر أو مركز تشخيص"},
+        {"key": "digital_home_health", "label": "صحة رقمية أو رعاية منزلية"},
+    ],
+    "education": [
+        {"key": "school", "label": "مدرسة أو روضة"},
+        {"key": "training_center", "label": "مركز تدريب"},
+        {"key": "academy", "label": "أكاديمية متخصصة"},
+        {"key": "edtech", "label": "منصة تعليمية تقنية"},
+        {"key": "independent_trainer", "label": "مدرب أو معلم مستقل"},
+    ],
+    "other": [
+        {"key": "service_business", "label": "شركة خدمات"},
+        {"key": "office_agency", "label": "مكتب أو وكالة"},
+        {"key": "platform", "label": "منصة رقمية"},
+        {"key": "store", "label": "متجر"},
+        {"key": "manufacturer", "label": "مصنّع أو منتج"},
+        {"key": "independent", "label": "مهني مستقل"},
+    ],
+}
+
+RESPONDENT_ROLES = [
+    {"key": "owner_founder", "label": "مالك أو مؤسس"},
+    {"key": "ceo_general_manager", "label": "رئيس تنفيذي أو مدير عام"},
+    {"key": "department_manager", "label": "مدير إدارة"},
+    {"key": "operations", "label": "مسؤول تشغيل"},
+    {"key": "sales_marketing", "label": "مسؤول مبيعات أو تسويق"},
+    {"key": "advisor_other", "label": "مستشار أو صفة أخرى"},
+]
 
 
 """
@@ -305,6 +409,10 @@ def ask_sana_ai(system_prompt, user_prompt):
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE_URL = resolve_database_url()
+DATABASE_SCHEMA = resolve_database_schema()
+_BILLING_TEST_SCHEMA_PREVIOUS = None
+_BILLING_TEST_SCHEMA_PREVIOUS_ENV = None
+_BILLING_TEST_SCHEMA_STATE_SAVED = False
 # Keep scripts/tests that import this module aligned with the effective database.
 os.environ["DATABASE_URL"] = DATABASE_URL
 
@@ -382,7 +490,14 @@ if not _session_secret:
         flush=True,
     )
 app.secret_key = _session_secret or secrets.token_hex(32)
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
+app.config.update(
+    MAX_CONTENT_LENGTH=50 * 1024 * 1024,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=IS_PRODUCTION,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+    SESSION_REFRESH_EACH_REQUEST=True,
+)
 
 # CSRF Protection — تحمي كل POST/PUT/PATCH/DELETE تلقائياً
 app.config["WTF_CSRF_TIME_LIMIT"] = 3600   # ساعة واحدة
@@ -409,6 +524,9 @@ ADMIN_PREVIEW_KEY = os.environ.get("ADMIN_PREVIEW_KEY")
 # وليس فقط عبر صفحات HTML.
 PUBLIC_ENDPOINTS = {
     "entry", "login", "signup", "logout", "api_session",
+    "robots_txt", "sitemap_xml", "llms_txt",
+    "pricing_page", "billing_offer_api", "billing_quote_api",
+    "billing_success_page", "billing_stripe_webhook",
     "methodology_page", "methodology_detail",
     "system_health", "healthz", "static", "guide_page",
     "sectors_list",   # قائمة القطاعات — عامة بلا مصادقة
@@ -421,6 +539,112 @@ PUBLIC_ENDPOINTS = {
 }
 # ملاحظة: "companies_list" أُزيل عمداً من القائمة العامة (P0-1)
 # المسار /api/companies مقيَّد الآن بـ admin_key فقط
+
+PUBLIC_SITE_URL = "https://sanaclarity.com"
+
+
+def public_seo_context(path, title, description, schema=None, og_type="website"):
+    """Metadata for public, indexable pages only."""
+    canonical = f"{PUBLIC_SITE_URL}{path}"
+    return {
+        "seo_title": title,
+        "seo_description": description,
+        "seo_canonical": canonical,
+        "seo_og_type": og_type,
+        "seo_json_ld": schema,
+    }
+
+
+def public_home_schema():
+    faq = [
+        {
+            "@type": "Question",
+            "name": "ما هو سنع؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "سنع أداة تشخيص وترتيب أولويات تساعد الشركات الخدمية على فهم ما يعطل النمو واتخاذ خطوة عملية مبنية على المعلومات المتاحة.",
+            },
+        },
+        {
+            "@type": "Question",
+            "name": "لمن سنع؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "سنع مناسب لأصحاب الشركات الخدمية والخبراء والمكاتب المهنية والوكالات والفرق التي تريد وضوحًا أكبر في المبيعات والتشغيل والقرارات.",
+            },
+        },
+        {
+            "@type": "Question",
+            "name": "ماذا يفعل سنع؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "يرتب سنع واقع الشركة، يحدد الاختناق والأولوية، يوضح المعلومات الناقصة، ويحوّل التشخيص إلى قرار وخطوة يمكن متابعة أثرها.",
+            },
+        },
+        {
+            "@type": "Question",
+            "name": "هل سنع نظام CRM؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "لا. سنع ليس بديلًا عن CRM؛ بل يساعد على تشخيص مشكلات مثل متابعة العملاء وتسرب المبيعات وترتيب الأولويات قبل اختيار الإجراء المناسب.",
+            },
+        },
+        {
+            "@type": "Question",
+            "name": "ماذا أحصل عليه من سنع؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "تحصل على صورة منظمة عن وضع الشركة، وأولوية واضحة، وقرار مقترح، وخطوة تنفيذ، وطريقة لمتابعة النتيجة وقياس الأداء.",
+            },
+        },
+        {
+            "@type": "Question",
+            "name": "ما نوع الشركات الأنسب لسنع؟",
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "الشركات الخدمية العاملة التي لديها عملاء أو تشغيل فعلي وتريد تحسين المبيعات أو الربحية أو التسعير أو تجربة العميل أو تقليل الاعتماد على المؤسس.",
+            },
+        },
+    ]
+    return {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "Organization",
+                "@id": f"{PUBLIC_SITE_URL}/#organization",
+                "name": "سنع",
+                "alternateName": "Sana",
+                "url": f"{PUBLIC_SITE_URL}/",
+                "description": "سنع يساعد الشركات الخدمية على تشخيص الاختناقات وترتيب الأولويات وتحويل المعلومات إلى قرارات وخطوات قابلة للمتابعة.",
+            },
+            {
+                "@type": "WebSite",
+                "@id": f"{PUBLIC_SITE_URL}/#website",
+                "name": "سنع",
+                "alternateName": "Sana Clarity",
+                "url": f"{PUBLIC_SITE_URL}/",
+                "inLanguage": ["ar", "en"],
+                "publisher": {"@id": f"{PUBLIC_SITE_URL}/#organization"},
+            },
+            {
+                "@type": "SoftwareApplication",
+                "@id": f"{PUBLIC_SITE_URL}/#software",
+                "name": "سنع",
+                "url": f"{PUBLIC_SITE_URL}/",
+                "applicationCategory": "BusinessApplication",
+                "operatingSystem": "Web",
+                "inLanguage": "ar",
+                "description": "أداة ويب لتشخيص مشكلات الشركات الخدمية، ترتيب الأولويات، ودعم القرارات المبنية على البيانات.",
+                "provider": {"@id": f"{PUBLIC_SITE_URL}/#organization"},
+            },
+            {
+                "@type": "FAQPage",
+                "@id": f"{PUBLIC_SITE_URL}/#faq",
+                "mainEntity": faq,
+                "inLanguage": "ar",
+            },
+        ],
+    }
 
 
 def is_admin_preview():
@@ -441,11 +665,78 @@ def current_account():
     }
 
 
+SESSION_EXPIRED_MESSAGE = "انتهت الجلسة، سجّل دخولك للمتابعة"
+
+
+def _safe_next_path(value):
+    """Preserve only same-site paths when returning after login."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if (
+        not value
+        or not value.startswith("/")
+        or value.startswith("//")
+        or "\\" in value
+    ):
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme or parsed.netloc:
+        return None
+    target = parsed.path or "/"
+    if parsed.query:
+        target += f"?{parsed.query}"
+    return target
+
+
+def _session_return_path():
+    """Use the page that initiated an API request when available."""
+    if request.referrer:
+        referrer = urlparse(request.referrer)
+        if (
+            referrer.scheme in {"http", "https"}
+            and referrer.netloc == request.host
+        ):
+            target = referrer.path or "/"
+            if referrer.query:
+                target += f"?{referrer.query}"
+            safe_target = _safe_next_path(target)
+            if safe_target:
+                return safe_target
+    if not request.path.startswith("/api/"):
+        return _safe_next_path(request.full_path.rstrip("?"))
+    return url_for("ceo_home")
+
+
+def _authentication_required_response():
+    cookie_name = app.config.get("SESSION_COOKIE_NAME", "session")
+    expired = bool(request.cookies.get(cookie_name))
+    next_path = _session_return_path() or url_for("ceo_home")
+    login_args = {"next": next_path}
+    if expired:
+        login_args["reason"] = "session_expired"
+    login_url = url_for("login", **login_args)
+    if request.path.startswith("/api/"):
+        return jsonify({
+            "success": False,
+            "error": "SESSION_EXPIRED" if expired else "AUTHENTICATION_REQUIRED",
+            "message": (
+                SESSION_EXPIRED_MESSAGE
+                if expired else "سجّل دخولك للمتابعة"
+            ),
+            "redirect": login_url,
+        }), 401
+    return redirect(login_url)
+
+
 ADMIN_ROLES = {
     "USER", "COMPANY_OWNER", "COMPANY_MEMBER", "ADMIN", "SUPER_ADMIN"
 }
 SYSTEM_ADMIN_ROLES = {"ADMIN", "SUPER_ADMIN"}
 COMPANY_ROLES = {"COMPANY_OWNER", "COMPANY_MEMBER"}
+SANA_LEADERSHIP_EMAIL = "sanaaos2026@gmail.com"
+TEST_IDENTITY_MARKERS = ("test", "billing", "drive", "example.test")
+TEST_IDENTITY_ARABIC_MARKERS = ("اختبار", "تجربة")
 ADMIN_STATUSES = {"active", "invited", "disabled"}
 ADMIN_PERMISSION_OPTIONS = {
     "manage_companies": "إدارة الشركات",
@@ -454,11 +745,21 @@ ADMIN_PERMISSION_OPTIONS = {
     "edit_company": "إدخال وتعديل معلومات الشركات",
     "run_reports": "تشغيل وعرض التقارير",
     "export_reports": "تصدير التقارير",
-    "review_cases": "مراجعة الحالات",
+    "review_cases": "خبراء سنع / مراجعة الحالات",
 }
 COMPANY_CONTEXT_PERMISSIONS = {
     "manage_companies", "edit_company", "run_reports",
     "export_reports", "review_cases", "link_accounts",
+}
+_RUNTIME_HEALTH = {
+    "startup": "not_started",
+    "last_critical_error": None,
+    "workers": {
+        "execution_reminders": "not_started",
+        "knowledge_backup": "not_started",
+        "knowledge_research": "not_started",
+        "billing_notification_retry": "not_started",
+    },
 }
 
 
@@ -468,7 +769,7 @@ def _admin_role():
     if not account:
         return None
     row = get_db().execute(
-        """SELECT admin_role, is_admin, account_status
+        """SELECT email,company_id,admin_role,is_admin,account_status
            FROM user_accounts WHERE account_id=?""",
         (account["account_id"],),
     ).fetchone()
@@ -476,8 +777,302 @@ def _admin_role():
         return None
     role = str(row["admin_role"] or "USER").upper()
     if role == "USER" and row["is_admin"]:
-        return "SUPER_ADMIN"
+        role = "SUPER_ADMIN"
+    if (
+        role == "SUPER_ADMIN"
+        and not app.config.get("TESTING")
+        and (
+            str(row["email"] or "").strip().lower() != SANA_LEADERSHIP_EMAIL
+            or row["company_id"] is not None
+        )
+    ):
+        return None
     return role if role in SYSTEM_ADMIN_ROLES else None
+
+
+def _has_test_identity_marker(*values):
+    text = " ".join(str(value or "").strip().lower() for value in values)
+    return (
+        any(marker in text for marker in TEST_IDENTITY_MARKERS)
+        or any(marker in text for marker in TEST_IDENTITY_ARABIC_MARKERS)
+    )
+
+
+def _test_reset_allowed(account=None):
+    """Allow the destructive reset only to Pilot members or system admins."""
+    account = account or current_account()
+    if not account or not account.get("company_id"):
+        return False
+    if _admin_role() in SYSTEM_ADMIN_ROLES:
+        return True
+    row = get_db().execute(
+        """SELECT pilot_cohort_number,account_status
+           FROM user_accounts WHERE account_id=? AND company_id=?""",
+        (account["account_id"], account["company_id"]),
+    ).fetchone()
+    return bool(
+        row
+        and row["account_status"] == "active"
+        and row["pilot_cohort_number"]
+        and 1 <= int(row["pilot_cohort_number"]) <= PILOT_COHORT_LIMIT
+    )
+
+
+PILOT_COHORT_LIMIT = 20
+
+
+def _pilot_identity_is_eligible(row):
+    role = str(row["admin_role"] or "USER").upper()
+    return (
+        row["company_id"]
+        and role in COMPANY_ROLES | {"USER"}
+        and not row["is_admin"]
+        and not _has_test_identity_marker(
+            row["account_id"], row["email"], row["company_id"],
+        )
+    )
+
+
+def _assign_pilot_slot(db, account_id):
+    """Assign the next durable Pilot slot without using timestamps."""
+    db.execute("SELECT pg_advisory_xact_lock(hashtext('sana-pilot-cohort'))")
+    account = db.execute(
+        """SELECT account_id,email,company_id,is_admin,admin_role,
+                  pilot_cohort_number
+           FROM user_accounts WHERE account_id=?""",
+        (account_id,),
+    ).fetchone()
+    if not account or not _pilot_identity_is_eligible(account):
+        return None
+    if account["pilot_cohort_number"]:
+        return int(account["pilot_cohort_number"])
+    used = {
+        int(row["pilot_cohort_number"])
+        for row in db.execute(
+            """SELECT pilot_cohort_number FROM user_accounts
+               WHERE pilot_cohort_number IS NOT NULL
+               ORDER BY pilot_cohort_number"""
+        ).fetchall()
+        if 1 <= int(row["pilot_cohort_number"]) <= PILOT_COHORT_LIMIT
+    }
+    available = [
+        number for number in range(1, PILOT_COHORT_LIMIT + 1)
+        if number not in used
+    ]
+    if not available:
+        return None
+    db.execute(
+        "UPDATE user_accounts SET pilot_cohort_number=? WHERE account_id=?",
+        (available[0], account_id),
+    )
+    return available[0]
+
+
+def _seed_pilot_cohort(db):
+    """Give existing real company accounts stable slots, in count order only."""
+    db.execute("SELECT pg_advisory_xact_lock(hashtext('sana-pilot-cohort'))")
+    used = {
+        int(row["pilot_cohort_number"])
+        for row in db.execute(
+            """SELECT pilot_cohort_number FROM user_accounts
+               WHERE pilot_cohort_number IS NOT NULL"""
+        ).fetchall()
+        if 1 <= int(row["pilot_cohort_number"]) <= PILOT_COHORT_LIMIT
+    }
+    available = [
+        number for number in range(1, PILOT_COHORT_LIMIT + 1)
+        if number not in used
+    ]
+    if not available:
+        return
+    candidates = db.execute(
+        """SELECT account_id,email,company_id,is_admin,admin_role
+           FROM user_accounts
+           WHERE company_id IS NOT NULL
+             AND pilot_cohort_number IS NULL
+             AND COALESCE(admin_role,'USER') IN ('USER','COMPANY_OWNER','COMPANY_MEMBER')
+           ORDER BY account_id"""
+    ).fetchall()
+    for row, number in zip(
+        (row for row in candidates if _pilot_identity_is_eligible(row)),
+        available,
+    ):
+        db.execute(
+            "UPDATE user_accounts SET pilot_cohort_number=? WHERE account_id=?",
+            (number, row["account_id"]),
+        )
+
+
+def _reset_company_experience(db, company_id):
+    """Remove one company's journey data while preserving its login and company shell."""
+    schema_rows = db.execute(
+        """SELECT table_name,column_name
+           FROM information_schema.columns
+           WHERE table_schema=current_schema()"""
+    ).fetchall()
+    table_columns = {}
+    for row in schema_rows:
+        table_columns.setdefault(row["table_name"], set()).add(row["column_name"])
+
+    # Child rows without company_id must go before their company-owned parents.
+    nested_deletes = (
+        (
+            "diagnostic_findings",
+            "DELETE FROM diagnostic_findings WHERE run_id IN "
+            "(SELECT run_id FROM diagnostic_runs WHERE company_id=?)",
+        ),
+        (
+            "decision_asset_impacts",
+            "DELETE FROM decision_asset_impacts WHERE decision_id IN "
+            "(SELECT decision_id FROM decisions WHERE company_id=?)",
+        ),
+        (
+            "gos_experiment_process",
+            "DELETE FROM gos_experiment_process WHERE experiment_id IN "
+            "(SELECT experiment_id FROM gos_experiments WHERE company_id=?)",
+        ),
+        (
+            "drive_source_excerpts",
+            "DELETE FROM drive_source_excerpts WHERE case_id IN "
+            "(SELECT case_id FROM cases WHERE company_id=?)",
+        ),
+        (
+            "drive_private_citations",
+            "DELETE FROM drive_private_citations WHERE case_id IN "
+            "(SELECT case_id FROM cases WHERE company_id=?)",
+        ),
+    )
+
+    # Fixed, dependency-safe allowlist: journey/execution data only.
+    # Auth, subscriptions, invitations, billing events and audit history are preserved.
+    company_tables = (
+        "human_review_events", "case_human_reviews",
+        "p0_impact_reviews", "returning_checkins", "task_evidence",
+        "execution_reminder_attempts", "execution_task_audit",
+        "execution_backlog_audit", "execution_sop_applications",
+        "execution_sop_versions", "execution_reminders", "execution_risks",
+        "execution_backlog", "execution_owner_bindings", "execution_sops",
+        "rc_invoices", "rc_deal_learning", "rc_opportunity_economics",
+        "rc_stage_history", "rc_projects", "sales_activities",
+        "zubair_attachments", "zubair_experiment_reviews",
+        "zubair_timeline_events", "zubair_capture_drafts", "zubair_contacts",
+        "zubair_prospect_companies",
+        "gos_learning_links", "gos_experiment_decisions", "gos_experiments",
+        "gos_bottlenecks", "gos_bottleneck_cycles", "gos_canonical_merges",
+        "gos_canonical_entities", "gos_truth_records", "gos_baselines",
+        "gos_company_profiles",
+        "tasks", "decisions", "scan_findings", "scan_runs",
+        "diagnostic_runs", "evidence_relations", "case_frameworks",
+        "diagnostic_baselines", "evidence",
+        "company_memory_items",
+        "sana_memory_entries", "cases", "assets", "users",
+        "opportunities", "leads",
+    )
+
+    delete_statements = [
+        (table_name, statement)
+        for table_name, statement in nested_deletes
+        if table_name in table_columns
+    ]
+    delete_statements.extend(
+        (
+            table_name,
+            f"DELETE FROM {table_name} WHERE company_id=?",
+        )
+        for table_name in company_tables
+        if "company_id" in table_columns.get(table_name, set())
+    )
+    deleted = {}
+    if delete_statements:
+        ctes = []
+        params = []
+        count_columns = []
+        for index, (table_name, statement) in enumerate(delete_statements):
+            cte_name = f"reset_{index}"
+            ctes.append(f"{cte_name} AS ({statement} RETURNING 1)")
+            params.append(company_id)
+            count_columns.append(
+                f"(SELECT COUNT(*) FROM {cte_name}) AS count_{index}"
+            )
+        counts = db.execute(
+            "WITH " + ", ".join(ctes) + " SELECT " + ", ".join(count_columns),
+            tuple(params),
+        ).fetchone()
+        deleted = {
+            table_name: int(counts[f"count_{index}"])
+            for index, (table_name, _) in enumerate(delete_statements)
+        }
+
+    reset_values = {
+        "name": "شركة جديدة",
+        "sector": None,
+        "sector_other": None,
+        "business_type": None,
+        "respondent_role": None,
+        "city": None,
+        "stage": None,
+        "employee_count": None,
+        "annual_revenue": None,
+        "vision": None,
+        "main_goal": None,
+        "sds_done": 0,
+        "success_criteria": None,
+        "website_url": None,
+        "social_media_url": None,
+        "business_reference_url": None,
+        "source_prompt_last_shown_at": None,
+        "source_prompt_dismissed_at": None,
+        "source_last_confirmed_at": None,
+        "business_description": None,
+        "goal_90_days": None,
+        "primary_challenge": None,
+        "lifecycle_status": "Active",
+    }
+    company_columns = table_columns.get("companies", set())
+    reset_values = {
+        column: value
+        for column, value in reset_values.items()
+        if column in company_columns
+    }
+    assignments = ", ".join(f"{column}=?" for column in reset_values)
+    db.execute(
+        f"UPDATE companies SET {assignments} WHERE company_id=?",
+        (*reset_values.values(), company_id),
+    )
+    return deleted
+
+
+def _admin_account_classification(account):
+    """Separate production identities from explicit fixtures without deleting them."""
+    email = str(account.get("email") or "").strip().lower()
+    role = str(account.get("admin_role") or "USER").upper()
+    if role == "USER" and account.get("is_admin"):
+        role = "SUPER_ADMIN"
+    if role == "SUPER_ADMIN" and email == SANA_LEADERSHIP_EMAIL:
+        return "production"
+    if _has_test_identity_marker(
+        account.get("account_id"),
+        email,
+        account.get("company_id"),
+        account.get("company_name"),
+    ):
+        return "test"
+    if role == "SUPER_ADMIN":
+        return "unclassified"
+    return "production"
+
+
+def _admin_company_classification(company):
+    """Classify a company once so related admin metrics share one scope."""
+    if _has_test_identity_marker(
+        company.get("company_id"),
+        company.get("company_code"),
+        company.get("signup_code"),
+        company.get("name"),
+        company.get("contact_email"),
+    ):
+        return "test"
+    return "production"
 
 
 def _admin_permissions():
@@ -593,6 +1188,11 @@ def default_company_id():
         return request.args["company_id"]
     return "C001"
 
+def endpoint_path(endpoint, **values):
+    """Build an internal path from Flask's route map, even outside a request."""
+    return app.url_map.bind("").build(endpoint, values, force_external=False)
+
+
 def p0_template_context():
     """سياق موحّد للقوالب دون تسريب معرّفات الشركة في روابط العميل.
 
@@ -601,11 +1201,37 @@ def p0_template_context():
     الذي تتحقق منه الحراسة قبل الوصول.
     """
     account = current_account()
+    def journey_urls(company_id):
+        return {
+            "discovery": url_for("discovery"),
+            "onboarding": url_for("onboarding"),
+            "home": url_for("ceo_home"),
+            "passport": url_for("business_passport"),
+            "logout": url_for("logout"),
+            "case_result_template": url_for("case_result", case_id="__CASE_ID__"),
+            "case_next_template": url_for("case_next_step", case_id="__CASE_ID__"),
+            "company_report": url_for("scan_report_html", company_id=company_id),
+            "company_plan": url_for("execution_plan_html", company_id=company_id),
+            "discovery_save": url_for("discovery_save"),
+            "discovery_draft": url_for("discovery_draft"),
+            "fit_gate": url_for("fit_gate_check"),
+            "reset_experience": url_for("reset_experience"),
+            "case_api_template": url_for("case_detail", case_id="__CASE_ID__"),
+            "case_scan_template": url_for("run_case_scan", case_id="__CASE_ID__"),
+            "case_baseline_template": url_for("case_diagnostic_baseline", case_id="__CASE_ID__"),
+            "case_decision_template": url_for("create_p0_case_decision", case_id="__CASE_ID__"),
+            "company_passport_api": url_for("passport_summary", company_id=company_id),
+            "company_question_api": url_for("sds_question", company_id=company_id),
+            "company_evidence_api": url_for("add_evidence", company_id=company_id),
+            "company_report_pdf": url_for("passport_report_pdf", company_id=company_id),
+        }
     if account:
         return {
             "company_id": account["company_id"],
             "context_query": "",
             "is_admin_preview": False,
+            "can_reset_experience": _test_reset_allowed(account),
+            "journey_urls": journey_urls(account["company_id"]),
         }
     if is_admin_preview():
         params = {"admin_key": request.args["admin_key"]}
@@ -617,11 +1243,15 @@ def p0_template_context():
             "company_id": default_company_id(),
             "context_query": "?" + urlencode(params),
             "is_admin_preview": True,
+            "can_reset_experience": False,
+            "journey_urls": journey_urls(default_company_id()),
         }
     return {
         "company_id": "C001",
         "context_query": "",
         "is_admin_preview": False,
+        "can_reset_experience": False,
+        "journey_urls": journey_urls("C001"),
     }
 
 
@@ -651,6 +1281,34 @@ def _client_only_alias(target):
     if current_account() and not is_admin_preview():
         return redirect(target)
     return None
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(error):
+    if request.endpoint not in PUBLIC_ENDPOINTS and not current_account():
+        return _authentication_required_response()
+    return jsonify({
+        "success": False,
+        "error": "CSRF_FAILED",
+        "message": "تعذر إكمال الطلب. حدّث الصفحة وحاول مرة أخرى.",
+    }), 400
+
+
+@app.errorhandler(404)
+def handle_not_found(error):
+    """Render Sana's 404 page and retain only safe navigation context."""
+    referrer = request.referrer
+    if referrer:
+        parsed_referrer = urlparse(referrer)
+        referrer = parsed_referrer.path or "/"
+    app.logger.warning(
+        "[404] path=%s referrer=%s account_id=%s company_id=%s",
+        request.path[:500],
+        (referrer or "-")[:500],
+        str(session.get("account_id") or "-")[:100],
+        str(session.get("company_id") or "-")[:100],
+    )
+    return render_template("404.html"), 404
 
 
 @app.before_request
@@ -688,12 +1346,7 @@ def enforce_company_auth():
     #    أو مفتاح العرض الداخلي للمشرف. بدون أحدهما لا وصول إطلاقًا،
     #    سواء عبر المتصفح أو عبر استدعاء API مباشر.
     if not account and not is_admin_preview():
-        if request.path.startswith("/api/"):
-            return jsonify({
-                "success": False, "error": "UNAUTHORIZED",
-                "message": "يلزم تسجيل الدخول للوصول لهذه البيانات."
-            }), 401
-        return redirect(url_for("login", next=request.full_path))
+        return _authentication_required_response()
 
     # 2) أي مسار API يحمل company_id في الرابط نفسه — لا يمكن لحساب مسجَّل
     #    الوصول إلا لشركته هو، حتى لو عدّل الرابط يدويًا
@@ -757,19 +1410,32 @@ class _PGConn:
 
     def commit(self):
         self._conn.commit()
-        self._schema_lock_acquired = False
 
     def rollback(self):
         self._conn.rollback()
-        self._schema_lock_acquired = False
 
     def close(self):
         self._conn.close()
 
-
-def _connect_pg():
-    conn = psycopg2.connect(DATABASE_URL)
+def _quote_schema_identifier(schema):
+    """Quote a validated schema identifier for PostgreSQL DDL/session setup."""
+    schema = str(schema or "").strip().lower()
+    if not re.fullmatch(r"^[a-z_][a-z0-9_]{0,62}$", schema):
+        raise ValueError("DATABASE_SCHEMA_INVALID")
+    return '"' + schema.replace('"', '""') + '"'
+def _connect_pg(database_url=None, schema=None):
+    conn = psycopg2.connect(database_url or DATABASE_URL)
     conn.autocommit = False
+    effective_schema = DATABASE_SCHEMA if schema is None else schema
+    if effective_schema:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"SET search_path TO {_quote_schema_identifier(effective_schema)}"
+            )
+            cursor.execute(
+                "SELECT set_config('application_name', %s, false)",
+                (f"sana-billing-test:{effective_schema}",),
+            )
     return _PGConn(conn)
 
 
@@ -788,7 +1454,8 @@ def close_db(exception=None):
 
 def _table_exists(conn, table_name):
     row = conn.execute(
-        "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=?",
+        "SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema=current_schema() AND table_name=?",
         (table_name,)
     ).fetchone()
     return row is not None
@@ -796,7 +1463,8 @@ def _table_exists(conn, table_name):
 
 def _columns_of(conn, table_name):
     rows = conn.execute(
-        "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?",
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema=current_schema() AND table_name=?",
         (table_name,)
     ).fetchall()
     return {row[0] for row in rows}
@@ -810,7 +1478,11 @@ def init_db(force=False):
         # business transaction from holding the web process indefinitely.
         acquire_schema_lock(conn)
         if force and _table_exists(conn, "companies"):
-            conn.executescript("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+            schema_identifier = _quote_schema_identifier(DATABASE_SCHEMA or "public")
+            conn.executescript(
+                f"DROP SCHEMA {schema_identifier} CASCADE; "
+                f"CREATE SCHEMA {schema_identifier};"
+            )
             conn.commit()
             acquire_schema_lock(conn)
         fresh = not _table_exists(conn, "companies")
@@ -830,6 +1502,28 @@ def init_db(force=False):
             FOREIGN KEY (decision_id) REFERENCES decisions(decision_id),
             FOREIGN KEY (asset_id) REFERENCES assets(asset_id)
             )""")
+        # مسودة SDS-001 المؤقتة — إضافة غير هدّامة لقواعد البيانات القائمة.
+        conn.execute("""CREATE TABLE IF NOT EXISTS sana_discovery_drafts (
+            draft_id TEXT PRIMARY KEY,
+            company_id TEXT NOT NULL REFERENCES companies(company_id) ON DELETE CASCADE,
+            account_id TEXT NOT NULL REFERENCES user_accounts(account_id) ON DELETE CASCADE,
+            payload_json TEXT NOT NULL,
+            current_step SMALLINT NOT NULL DEFAULT 0 CHECK (current_step BETWEEN 0 AND 8),
+            status TEXT NOT NULL DEFAULT 'ACTIVE'
+                CHECK (status IN ('ACTIVE', 'COMPLETED', 'EXPIRED')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_at TIMESTAMPTZ NOT NULL,
+            UNIQUE(company_id, account_id)
+        )""")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sana_discovery_drafts_expiry "
+            "ON sana_discovery_drafts(expires_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sana_discovery_drafts_owner "
+            "ON sana_discovery_drafts(company_id, account_id, status, updated_at DESC)"
+        )
         # إضافة أعمدة اختيارية لجدول tasks لدعم تجميع المهام تحت مراحل فرعية
         # مع بيان القيمة المتحققة من كل إنجاز — دون كسر أي بيانات موجودة.
         existing_cols = _columns_of(conn, "tasks")
@@ -929,12 +1623,28 @@ def init_db(force=False):
             conn.execute("ALTER TABLE companies ADD COLUMN success_criteria TEXT")
         if "sector_other" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN sector_other TEXT")
+        if "business_type" not in companies_cols:
+            conn.execute("ALTER TABLE companies ADD COLUMN business_type TEXT")
+        if "respondent_role" not in companies_cols:
+            conn.execute("ALTER TABLE companies ADD COLUMN respondent_role TEXT")
         if "website_url" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN website_url TEXT")
         if "social_media_url" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN social_media_url TEXT")
         if "business_reference_url" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN business_reference_url TEXT")
+        if "source_prompt_last_shown_at" not in companies_cols:
+            conn.execute(
+                "ALTER TABLE companies ADD COLUMN source_prompt_last_shown_at TIMESTAMPTZ"
+            )
+        if "source_prompt_dismissed_at" not in companies_cols:
+            conn.execute(
+                "ALTER TABLE companies ADD COLUMN source_prompt_dismissed_at TIMESTAMPTZ"
+            )
+        if "source_last_confirmed_at" not in companies_cols:
+            conn.execute(
+                "ALTER TABLE companies ADD COLUMN source_last_confirmed_at TIMESTAMPTZ"
+            )
         if "business_description" not in companies_cols:
             conn.execute("ALTER TABLE companies ADD COLUMN business_description TEXT")
         if "goal_90_days" not in companies_cols:
@@ -1062,6 +1772,10 @@ def init_db(force=False):
         )""")
         conn.execute("""CREATE INDEX IF NOT EXISTS idx_p0_impact_reviews_case
                         ON p0_impact_reviews(company_id,case_id,reviewed_at DESC)""")
+        from sana_human_review import ensure_schema as ensure_human_review_schema
+        ensure_human_review_schema(conn)
+        from sana_returning_checkin import ensure_schema as ensure_returning_checkin_schema
+        ensure_returning_checkin_schema(conn)
 
         # ── سنع الخبير: نظام اكتشاف وتأهيل الخبراء (مستقل تمامًا عن جداول الشركات) ──
         conn.execute("""CREATE TABLE IF NOT EXISTS experts (
@@ -1140,9 +1854,26 @@ def init_db(force=False):
             conn.execute("ALTER TABLE user_accounts ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active'")
         if "last_login_at" not in accts_cols:
             conn.execute("ALTER TABLE user_accounts ADD COLUMN last_login_at TIMESTAMPTZ")
+        if "pilot_cohort_number" not in accts_cols:
+            conn.execute(
+                "ALTER TABLE user_accounts ADD COLUMN pilot_cohort_number INTEGER"
+            )
+        conn.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS uq_user_accounts_pilot_cohort_number
+               ON user_accounts(pilot_cohort_number)
+               WHERE pilot_cohort_number IS NOT NULL"""
+        )
         # حساب SUPER_ADMIN العام ليس عضوًا في أي شركة. يبقى NULL ممنوعًا على
         # USER/ADMIN بواسطة القيد التالي، وتظل بيانات الشركات خلف tenant guards.
-        conn.execute("ALTER TABLE user_accounts ALTER COLUMN company_id DROP NOT NULL")
+        company_id_nullable = conn.execute(
+            """SELECT is_nullable FROM information_schema.columns
+               WHERE table_schema=current_schema()
+                 AND table_name='user_accounts' AND column_name='company_id'"""
+        ).fetchone()
+        if company_id_nullable and company_id_nullable["is_nullable"] == "NO":
+            conn.execute(
+                "ALTER TABLE user_accounts ALTER COLUMN company_id DROP NOT NULL"
+            )
         conn.execute(
             """ALTER TABLE user_accounts
                DROP CONSTRAINT IF EXISTS user_accounts_company_or_global_super_admin"""
@@ -1164,6 +1895,7 @@ def init_db(force=False):
             "UPDATE user_accounts SET admin_role='SUPER_ADMIN' "
             "WHERE is_admin=1 AND COALESCE(admin_role,'USER')='USER'"
         )
+        _seed_pilot_cohort(conn)
         company_cols_for_admin = _columns_of(conn, "companies")
         if "lifecycle_status" not in company_cols_for_admin:
             conn.execute(
@@ -1221,11 +1953,40 @@ def init_db(force=False):
             created_by TEXT NOT NULL REFERENCES user_accounts(account_id),
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             sent_at TIMESTAMPTZ,
-            error_code TEXT
+            error_code TEXT,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            last_attempt_at TIMESTAMPTZ,
+            next_attempt_at TIMESTAMPTZ,
+            delivery_lock_token TEXT,
+            delivery_locked_at TIMESTAMPTZ
         )""")
+        conn.execute(
+            "ALTER TABLE admin_notification_outbox "
+            "ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.execute(
+            "ALTER TABLE admin_notification_outbox "
+            "ADD COLUMN IF NOT EXISTS last_attempt_at TIMESTAMPTZ"
+        )
+        conn.execute(
+            "ALTER TABLE admin_notification_outbox "
+            "ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ"
+        )
+        conn.execute(
+            "ALTER TABLE admin_notification_outbox "
+            "ADD COLUMN IF NOT EXISTS delivery_lock_token TEXT"
+        )
+        conn.execute(
+            "ALTER TABLE admin_notification_outbox "
+            "ADD COLUMN IF NOT EXISTS delivery_locked_at TIMESTAMPTZ"
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_admin_notification_outbox_status "
             "ON admin_notification_outbox(status,created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_admin_notification_outbox_retry "
+            "ON admin_notification_outbox(notification_type,status,next_attempt_at,created_at)"
         )
 
         conn.commit()
@@ -1237,6 +1998,8 @@ def init_db(force=False):
         from sana_growth_os import ensure_schema as ensure_growth_schema, seed_growth_os
         ensure_growth_schema(conn)
         seed_growth_os(conn)
+        from sana_company_memory import ensure_schema as ensure_company_memory_schema
+        ensure_company_memory_schema(conn)
         from sana_growth_engine import ensure_schema as ensure_growth_engine_schema, seed_growth_engine
         seed_growth_engine(conn)
         ensure_growth_engine_schema(conn)
@@ -1248,6 +2011,8 @@ def init_db(force=False):
         ensure_zubair_schema(conn)
         from drive_index import ensure_schema as ensure_drive_index_schema
         ensure_drive_index_schema(conn)
+        from sana_billing import ensure_schema as ensure_billing_schema
+        ensure_billing_schema(conn)
         conn.commit()
 
         # لكل شركة بلا رمز دعوة (سواء قاعدة بيانات جديدة أو قديمة) — ولّد رمزًا فريدًا
@@ -1261,6 +2026,174 @@ def init_db(force=False):
         raise
     finally:
         conn.close()
+
+def create_billing_test_schema():
+    """Create and select a disposable schema for one billing test run."""
+    global DATABASE_SCHEMA
+    global _BILLING_TEST_SCHEMA_PREVIOUS
+    global _BILLING_TEST_SCHEMA_PREVIOUS_ENV
+    global _BILLING_TEST_SCHEMA_STATE_SAVED
+    if not _BILLING_TEST_SCHEMA_STATE_SAVED:
+        _BILLING_TEST_SCHEMA_PREVIOUS = DATABASE_SCHEMA
+        _BILLING_TEST_SCHEMA_PREVIOUS_ENV = os.environ.get("SANA_DATABASE_SCHEMA")
+        _BILLING_TEST_SCHEMA_STATE_SAVED = True
+    cleanup_stale_billing_test_schemas()
+    schema = build_billing_test_schema_name()
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(f"CREATE SCHEMA {_quote_schema_identifier(schema)}")
+    finally:
+        conn.close()
+    DATABASE_SCHEMA = schema
+    os.environ["SANA_DATABASE_SCHEMA"] = schema
+    return schema
+
+
+def _billing_schema_cleanup_is_allowed():
+    """Only allow orphan cleanup from a non-production process."""
+    environment = os.environ.get("SANA_ENV", "").strip().lower()
+    if environment in {"production", "prod"}:
+        return False
+    if os.environ.get("REPLIT_DEPLOYMENT", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        return False
+    return True
+
+
+def cleanup_stale_billing_test_schemas(max_age_hours=24, now=None):
+    """Drop only old, timestamped, inactive billing-test schemas.
+
+    PostgreSQL does not store a schema creation timestamp.  Therefore only
+    names created by ``build_billing_test_schema_name`` are eligible: legacy
+    prefix-only names are intentionally left untouched because their age
+    cannot be proved safely.
+    """
+    if not _billing_schema_cleanup_is_allowed():
+        return {
+            "status": "skipped_production",
+            "deleted": [],
+            "skipped": [],
+        }
+    try:
+        max_age_seconds = float(max_age_hours) * 60 * 60
+    except (TypeError, ValueError):
+        raise ValueError("BILLING_TEST_SCHEMA_MAX_AGE_INVALID")
+    if max_age_seconds <= 0:
+        raise ValueError("BILLING_TEST_SCHEMA_MAX_AGE_INVALID")
+
+    if now is None:
+        now_epoch = time.time()
+    elif isinstance(now, datetime):
+        now_epoch = now.timestamp()
+    else:
+        now_epoch = float(now)
+
+    deleted = []
+    skipped = []
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT n.nspname,
+                       EXISTS (
+                           SELECT 1
+                           FROM pg_stat_activity a
+                           WHERE a.pid <> pg_backend_pid()
+                             AND a.application_name =
+                                 'sana-billing-test:' || n.nspname
+                       ) AS is_active
+                FROM pg_namespace n
+                WHERE n.nspname LIKE %s
+                ORDER BY n.nspname
+                """,
+                (f"{BILLING_TEST_SCHEMA_PREFIX}%",),
+            )
+            candidates = cursor.fetchall()
+            for schema, is_active in candidates:
+                schema = str(schema)
+                created_at = parse_billing_test_schema_created_at(schema)
+                age_seconds = (
+                    None if created_at is None else now_epoch - created_at
+                )
+                reason = None
+                if schema == DATABASE_SCHEMA:
+                    reason = "active_schema"
+                elif is_active:
+                    reason = "active_connection"
+                elif created_at is None:
+                    reason = "untracked_age"
+                elif age_seconds < 0:
+                    reason = "future_timestamp"
+                elif age_seconds < max_age_seconds:
+                    reason = "too_new"
+                if reason is not None:
+                    skipped.append({"schema": schema, "reason": reason})
+                    continue
+                cursor.execute(
+                    f"DROP SCHEMA IF EXISTS {_quote_schema_identifier(schema)} CASCADE"
+                )
+                deleted.append(schema)
+    finally:
+        conn.close()
+    return {
+        "status": "completed",
+        "deleted": deleted,
+        "skipped": skipped,
+    }
+
+
+def init_billing_test_db():
+    """Prepare billing tables in the currently selected test schema."""
+    conn = _connect_pg()
+    try:
+        core_schema_ready = has_required_tables(
+            conn,
+            (
+                "companies",
+                "user_accounts",
+                "admin_audit_log",
+                "admin_notification_outbox",
+            ),
+        )
+        billing_schema_ready = (
+            core_schema_ready
+            and has_required_tables(
+                conn,
+                (
+                    "sana_billing_settings",
+                    "sana_billing_coupons",
+                    "sana_company_subscriptions",
+                    "sana_billing_events",
+                    "sana_billing_cleanup_runs",
+                    "sana_billing_cleanup_skips",
+                ),
+            )
+            and has_required_columns(
+                conn,
+                {
+                    "sana_company_subscriptions": (
+                        "stripe_checkout_session_created_at",
+                    ),
+                },
+            )
+        )
+        if billing_schema_ready:
+            return False
+        if core_schema_ready:
+            from sana_billing import ensure_schema as ensure_billing_schema
+
+            ensure_billing_schema(conn)
+            return False
+    finally:
+        conn.close()
+
+    init_db()
+    return True
 
 
 def seed_db():
@@ -1345,10 +2278,12 @@ def seed_decision_impacts():
 
 
 def seed_knowledge_db():
-    """يضيف بذور مكتبة سنع المنظمة بشكل idempotent دون لمس بيانات الشركات."""
+    """يضيف معرفة سنع والمقالات العامة بشكل idempotent دون لمس بيانات الشركات."""
     from sana_knowledge import seed_knowledge
+    from sana_articles import seed_articles_and_knowledge
     conn = _connect_pg()
     seed_knowledge(conn)
+    seed_articles_and_knowledge(conn)
     conn.commit()
     conn.close()
 
@@ -1362,7 +2297,111 @@ def entry():
     account = current_account()
     if account:
         return redirect(_company_start_redirect(account))
-    return render_template("00-landing.html")
+    from sana_articles import FEATURED_ARTICLE_SLUGS
+    placeholders = ",".join("?" for _ in FEATURED_ARTICLE_SLUGS)
+    rows = get_db().execute(
+        f"""SELECT slug,title,subtitle FROM methodology_docs
+            WHERE doc_type='article' AND slug IN ({placeholders})""",
+        FEATURED_ARTICLE_SLUGS,
+    ).fetchall()
+    by_slug = {row["slug"]: dict(row) for row in rows}
+    featured_articles = [
+        by_slug[slug] for slug in FEATURED_ARTICLE_SLUGS if slug in by_slug
+    ]
+    return render_template(
+        "00-landing.html",
+        featured_articles=featured_articles,
+        **public_seo_context(
+            "/",
+            "سنع للشركات الخدمية — تشخيص وترتيب أولويات",
+            "سنع يساعد الشركات الخدمية والخبراء والمكاتب والوكالات على تشخيص اختناقات المبيعات والتشغيل، ترتيب الأولويات، واتخاذ قرارات مبنية على البيانات.",
+            schema=public_home_schema(),
+        ),
+    )
+
+
+@app.route("/robots.txt")
+def robots_txt():
+    content = """User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /signup
+Disallow: /logout
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /accept-invitation
+Disallow: /admin
+Disallow: /api/
+Disallow: /home
+Disallow: /onboarding
+Disallow: /discovery
+Disallow: /case/
+Disallow: /passport
+Disallow: /assessment
+Disallow: /services
+Disallow: /growth-os
+Disallow: /sop-builder
+Disallow: /sector-select
+Disallow: /check-in
+Disallow: /sales
+Disallow: /zubair/
+Disallow: /e/
+Disallow: /billing/
+Disallow: /fit-gate/
+
+Sitemap: https://sanaclarity.com/sitemap.xml
+"""
+    return Response(content, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    paths = ["/", "/pricing", "/guide", "/articles"]
+    articles = get_db().execute(
+        "SELECT slug FROM methodology_docs WHERE doc_type='article' ORDER BY slug"
+    ).fetchall()
+    paths.extend(url_for("article_page", slug=row["slug"]) for row in articles)
+    urls = "".join(
+        f"<url><loc>{html.escape(PUBLIC_SITE_URL + path)}</loc></url>"
+        for path in paths
+    )
+    content = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"{urls}</urlset>"
+    )
+    return Response(content, mimetype="application/xml")
+
+
+@app.route("/llms.txt")
+def llms_txt():
+    articles = get_db().execute(
+        "SELECT slug,title FROM methodology_docs WHERE doc_type='article' ORDER BY doc_id"
+    ).fetchall()
+    article_lines = "\n".join(
+        f"- {row['title']}: {PUBLIC_SITE_URL}/articles/{row['slug']}"
+        for row in articles
+    )
+    content = f"""# سنع | Sana Clarity
+
+سنع أداة عربية تساعد الشركات الخدمية والخبراء والمكاتب المهنية والوكالات على تشخيص اختناقات المبيعات والتشغيل، ترتيب الأولويات، واتخاذ قرارات مبنية على البيانات. سنع ليس نظام CRM ولا يعد بنتائج رقمية؛ بل ينظم المعلومات المتاحة ويحوّلها إلى أولوية وقرار وخطوة قابلة للمتابعة.
+
+Sana Clarity is an Arabic business clarity tool for service companies, experts, professional firms, and agencies. It helps diagnose sales and operations bottlenecks, prioritize work, and turn available evidence into decisions and trackable next steps. Sana is not a CRM and does not promise numeric outcomes.
+
+## Public pages
+- Home: {PUBLIC_SITE_URL}/
+- Pricing: {PUBLIC_SITE_URL}/pricing
+- Guide: {PUBLIC_SITE_URL}/guide
+- Articles: {PUBLIC_SITE_URL}/articles
+
+## Public articles
+{article_lines}
+
+Public articles are Sana-owned educational references for service-business growth topics. They may be used to explain concepts and suggest public content, but they are not client evidence, causal proof, or numeric benchmarks.
+
+Private account, diagnostic, company, admin, and API routes are intentionally excluded.
+"""
+    return Response(content, mimetype="text/plain")
 
 
 @app.route("/home")
@@ -1412,9 +2451,7 @@ def case_next_step(case_id):
         abort(404)
     if account and case["company_id"] != account["company_id"]:
         abort(403)
-    if account and not is_admin_preview():
-        return redirect(url_for("case_workspace", case_id=case_id))
-    return render_template("02b-next-step.html", case_id=case_id)
+    return redirect(url_for("case_workspace", case_id=case_id))
 
 
 @app.route("/api/cases/<case_id>/next-step")
@@ -1573,24 +2610,36 @@ def case_next_step_data(case_id):
 
 @app.route("/case/<case_id>")
 def case_workspace(case_id):
-    # 1. يجب أن يكون المستخدم مسجّلاً (أو وضع العرض الداخلي)
+    """مسار legacy: لا يعرض ملفًا؛ يوجّه إلى نتيجة التشخيص الحالية."""
     account = current_account()
     if not account and not is_admin_preview():
         return redirect(url_for("login", next=request.full_path))
-
-    # 2. التحقق من أن القضية موجودة وتخص الشركة الصحيحة.
-    # القضايا الجديدة الناتجة من Discovery مسموحة؛ لا تقييد بمعرّف Demo ثابت.
     db = get_db()
     case = db.execute("SELECT company_id FROM cases WHERE case_id=?", (case_id,)).fetchone()
     if not case:
         abort(404)
     if account and case["company_id"] != account["company_id"]:
         abort(403)
+    return redirect(url_for("case_result", case_id=case_id))
 
+
+@app.route("/case/<case_id>/result")
+def case_result(case_id):
+    """نتيجة التشخيص الحالية؛ القرار الغائب حالة طبيعية داخل هذه الصفحة."""
+    account = current_account()
+    if not account and not is_admin_preview():
+        return redirect(url_for("login", next=request.full_path))
+    db = get_db()
+    case = db.execute("SELECT company_id FROM cases WHERE case_id=?", (case_id,)).fetchone()
+    if not case:
+        abort(404)
+    if account and case["company_id"] != account["company_id"]:
+        abort(403)
     if account and not is_admin_preview():
         return render_template(
             "02-case-workspace-client.html",
             case_id=case_id,
+            auto_scan_retry=request.args.get("scan") in {"failed", "required"},
             **p0_template_context(),
         )
     return render_template(
@@ -1623,6 +2672,9 @@ def business_passport():
         start = _company_start_redirect(account)
         if start != url_for("business_passport") and start != url_for("ceo_home"):
             return redirect(start)
+        scan_redirect = _client_scan_result_redirect(account["company_id"])
+        if scan_redirect:
+            return scan_redirect
     return render_template("03-business-passport.html", **p0_template_context())
 
 
@@ -1702,12 +2754,14 @@ def signup():
             referral_source, "COMPANY_OWNER",
         ),
     )
+    _assign_pilot_slot(db, account_id)
     db.commit()
 
     session.clear()
     session["account_id"] = account_id
     session["company_id"] = company_id
     session["email"] = email
+    session.permanent = True
 
     return jsonify({"success": True, "data": {"redirect": "/onboarding", "company_id": company_id}}), 201
 
@@ -1719,25 +2773,33 @@ def onboarding():
     if not account:
         return redirect(url_for("login"))
     company = get_db().execute(
-        """SELECT name, sector, sector_other, employee_count, business_description,
+        """SELECT name, sector, sector_other, business_type, respondent_role,
+                  employee_count, business_description,
                   goal_90_days, primary_challenge, sds_done
            FROM companies WHERE company_id=?""",
         (account["company_id"],),
     ).fetchone()
-    if company and company["sector"] and company["name"] != "شركة جديدة":
-        return redirect(
-            url_for("ceo_home") if company["sds_done"] else url_for("discovery")
-        )
-
     if request.method == "GET":
-        return render_template("11-onboarding.html", company=company or {})
+        return render_template(
+            "11-onboarding.html",
+            company=company or {},
+            sectors=SECTORS,
+            sector_business_types=SECTOR_BUSINESS_TYPES,
+            respondent_roles=RESPONDENT_ROLES,
+            onboarding_submit_url=url_for("onboarding"),
+            discovery_url=url_for("discovery"),
+        )
 
     body = request.get_json(silent=True) or request.form
     name = (body.get("name") or "").strip()
     sector_key = (body.get("sector") or "").strip() or None
     sector_other = (body.get("sector_other") or "").strip() or None
+    business_type = (body.get("business_type") or "").strip() or None
+    respondent_role = (body.get("respondent_role") or "").strip() or None
     employee_count = body.get("employee_count")
-    business_description = (body.get("business_description") or "").strip()
+    legacy_business_description = (
+        body.get("business_description") or ""
+    ).strip()
     goal_90_days = (body.get("goal_90_days") or "").strip()
     primary_challenge = (body.get("primary_challenge") or "").strip()
     try:
@@ -1749,25 +2811,67 @@ def onboarding():
         return jsonify({"success": False, "error": "MISSING_NAME", "message": "اسم الشركة مطلوب."}), 400
     if not sector_key:
         return jsonify({"success": False, "error": "MISSING_SECTOR", "message": "تحديد القطاع إلزامي قبل المتابعة."}), 400
+    if sector_key not in SECTOR_KEYS:
+        return jsonify({"success": False, "error": "INVALID_SECTOR", "message": "اختر قطاعًا من القائمة."}), 400
     if sector_key == "other" and not sector_other:
         return jsonify({"success": False, "error": "MISSING_SECTOR_OTHER", "message": "يرجى كتابة وصف قطاعك عند اختيار 'أخرى'."}), 400
-    if not business_description or not goal_90_days or not primary_challenge:
+    if not goal_90_days or not primary_challenge:
         return jsonify({
             "success": False,
             "error": "INCOMPLETE_COMPANY_SETUP",
-            "message": "أكمل وصف النشاط والهدف والتحدي قبل المتابعة.",
+            "message": "أكمل النتيجة المطلوبة والتحدي قبل المتابعة.",
         }), 400
+    role_labels = {item["key"]: item["label"] for item in RESPONDENT_ROLES}
+    structured_profile = bool(business_type or respondent_role)
+    if structured_profile:
+        allowed_business_types = {
+            item["key"] for item in SECTOR_BUSINESS_TYPES.get(sector_key, [])
+        }
+        if business_type not in allowed_business_types:
+            return jsonify({
+                "success": False,
+                "error": "INVALID_BUSINESS_TYPE",
+                "message": "اختر نوع النشاط المناسب للقطاع.",
+            }), 400
+        if respondent_role not in role_labels:
+            return jsonify({
+                "success": False,
+                "error": "INVALID_RESPONDENT_ROLE",
+                "message": "اختر صفتك في العمل.",
+            }), 400
+    elif not legacy_business_description:
+        return jsonify({
+            "success": False,
+            "error": "MISSING_BUSINESS_PROFILE",
+            "message": "اختر نوع النشاط وصفتك في العمل.",
+        }), 400
+    if structured_profile:
+        business_type_labels = {
+            item["key"]: item["label"]
+            for item in SECTOR_BUSINESS_TYPES[sector_key]
+        }
+        sector_labels = {item["key"]: item["label"] for item in SECTORS}
+        business_description = (
+            f"{sector_other} — {business_type_labels[business_type]}"
+            if sector_key == "other"
+            else f"{sector_labels[sector_key]} — {business_type_labels[business_type]}"
+        )
+    else:
+        business_description = legacy_business_description
 
     db = get_db()
     db.execute(
         """UPDATE companies
-           SET name=?, sector=?, sector_other=?, employee_count=?,
-               business_description=?, goal_90_days=?, primary_challenge=?
+           SET name=?, sector=?, sector_other=?, business_type=?,
+               respondent_role=?, employee_count=?, business_description=?,
+               goal_90_days=?, primary_challenge=?
            WHERE company_id=?""",
         (
             name,
             sector_key,
             sector_other if sector_key == "other" else None,
+            business_type,
+            respondent_role,
             employee_count,
             business_description,
             goal_90_days,
@@ -1777,7 +2881,195 @@ def onboarding():
     )
     db.commit()
 
-    return jsonify({"success": True, "data": {"redirect": "/discovery"}})
+    return jsonify({
+        "success": True,
+        "data": {"redirect": url_for("discovery")},
+    })
+
+
+@app.route("/api/testing/reset-experience", methods=["POST"])
+def reset_experience():
+    """Destructive test-only reset for the currently authenticated company."""
+    account = current_account()
+    if not _test_reset_allowed(account):
+        return jsonify({
+            "success": False,
+            "error": "TEST_RESET_NOT_ALLOWED",
+            "message": "إعادة ضبط التجربة غير متاحة لهذا الحساب أو في هذه البيئة.",
+        }), 403
+
+    company_id = account["company_id"]
+    db = get_db()
+    try:
+        deleted = _reset_company_experience(db, company_id)
+        _admin_audit(
+            db,
+            account["account_id"],
+            "TEST_EXPERIENCE_RESET",
+            "company",
+            company_id,
+            company_id,
+            reason="إعادة حساب اختبار إلى بداية رحلة سنع",
+            metadata={
+                "deleted_rows": sum(deleted.values()),
+                "affected_tables": [
+                    table for table, count in deleted.items() if count
+                ],
+            },
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        app.logger.exception(
+            "Test experience reset failed for company %s", company_id,
+        )
+        return jsonify({
+            "success": False,
+            "error": "TEST_RESET_FAILED",
+            "message": "تعذر إعادة ضبط التجربة. لم تُحفظ أي تغييرات.",
+        }), 500
+
+    session.modified = True
+    return jsonify({
+        "success": True,
+        "data": {"redirect": url_for("onboarding")},
+    })
+
+
+@app.route("/pricing")
+def pricing_page():
+    return render_template(
+        "13-pricing.html",
+        **public_seo_context(
+            "/pricing",
+            "باقة سنع للشركات الخدمية — الأسعار والمزايا",
+            "تعرّف على باقة سنع للشركات الخدمية وما تتضمنه من تشخيص للأولويات، دعم للقرار، وخطوات تنفيذ قابلة للمتابعة دون وعود نتائج غير مثبتة.",
+        ),
+    )
+
+
+@app.route("/api/billing/offer")
+def billing_offer_api():
+    from sana_billing import public_offer
+    account = current_account()
+    company_id = account.get("company_id") if account else None
+    return jsonify({
+        "success": True,
+        "data": public_offer(get_db(), company_id),
+        "authenticated": bool(account and company_id),
+    })
+
+
+@app.route("/api/billing/quote", methods=["POST"])
+def billing_quote_api():
+    from sana_billing import quote
+    body = request.get_json(silent=True) or {}
+    try:
+        result = quote(get_db(), body.get("code"))
+    except ValueError:
+        return jsonify({
+            "success": False,
+            "error": "COUPON_INVALID",
+            "message": "الكود غير صالح أو انتهى استخدامه.",
+        }), 400
+    return jsonify({"success": True, "data": result})
+
+
+@app.route("/api/billing/checkout", methods=["POST"])
+def billing_checkout_api():
+    from sana_billing import activate_free, create_checkout, quote
+    account = current_account()
+    if not account or not account.get("company_id"):
+        return jsonify({
+            "success": False,
+            "error": "LOGIN_REQUIRED",
+            "redirect": "/signup",
+        }), 401
+    body = request.get_json(silent=True) or {}
+    try:
+        checkout_quote = quote(get_db(), body.get("code"))
+    except ValueError:
+        return jsonify({
+            "success": False,
+            "error": "COUPON_INVALID",
+            "message": "الكود غير صالح أو انتهى استخدامه.",
+        }), 400
+    db = get_db()
+    if checkout_quote["amount_now_minor"] == 0:
+        subscription = activate_free(
+            db,
+            account["company_id"],
+            coupon_code=checkout_quote["coupon_code"],
+        )
+        _admin_audit(
+            db, account["account_id"], "billing_free_activation",
+            "company_subscription", subscription["subscription_id"],
+            account["company_id"], "تفعيل مجاني بكود خصم صالح",
+            {"coupon_code": checkout_quote["coupon_code"]},
+        )
+        db.commit()
+        return jsonify({
+            "success": True,
+            "data": {"free": True, "redirect": "/home"},
+        })
+    try:
+        base_url = request.url_root.rstrip("/")
+        checkout = create_checkout(
+            db,
+            company_id=account["company_id"],
+            email=account["email"],
+            amount_minor=checkout_quote["amount_now_minor"],
+            coupon_code=checkout_quote["coupon_code"],
+            base_url=base_url,
+        )
+    except Exception as exc:
+        app.logger.warning("Stripe checkout creation failed: %s", type(exc).__name__)
+        return jsonify({
+            "success": False,
+            "error": "PAYMENT_PROVIDER_UNAVAILABLE",
+            "message": "تعذر فتح الدفع الآن. حاول مرة أخرى بعد قليل.",
+        }), 503
+    return jsonify({"success": True, "data": checkout})
+
+
+@app.route("/billing/success")
+def billing_success_page():
+    from sana_billing import complete_checkout, retrieve_checkout
+    session_id = (request.args.get("session_id") or "").strip()
+    if not session_id:
+        return redirect(url_for("pricing_page"))
+    try:
+        checkout = retrieve_checkout(session_id)
+        complete_checkout(get_db(), checkout)
+    except Exception as exc:
+        app.logger.warning("Stripe checkout verification failed: %s", type(exc).__name__)
+        return redirect(url_for("pricing_page", payment="pending"))
+    return redirect(url_for("ceo_home", payment="success"))
+
+
+@app.route("/api/billing/stripe-webhook", methods=["POST"])
+@csrf.exempt
+def billing_stripe_webhook():
+    from sana_billing import complete_checkout, process_stripe_event, verify_webhook
+    try:
+        event = verify_webhook(
+            request.get_data(cache=False),
+            request.headers.get("Stripe-Signature"),
+        )
+        if event.get("type") == "checkout.session.completed":
+            complete_checkout(get_db(), (event.get("data") or {}).get("object") or {})
+        else:
+            result = process_stripe_event(get_db(), event)
+            notification = result.get("notification")
+            if notification:
+                _send_billing_lifecycle_notification(
+                    get_db(), notification, result["company_id"]
+                )
+                get_db().commit()
+    except Exception as exc:
+        app.logger.warning("Stripe webhook rejected: %s", type(exc).__name__)
+        return jsonify({"success": False}), 400
+    return jsonify({"success": True})
 
 
 @app.route("/api/admin/attach-account", methods=["POST"])
@@ -1829,6 +3121,7 @@ def login():
     body = request.get_json(silent=True) or request.form
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
+    next_path = _safe_next_path(body.get("next"))
 
     if not email or not password:
         return jsonify({"success": False, "error": "MISSING_FIELDS", "message": "البريد الإلكتروني وكلمة المرور مطلوبان."}), 400
@@ -1853,6 +3146,7 @@ def login():
         "SUPER_ADMIN" if account.get("is_admin") else "USER"
     )
     session["account_status"] = account.get("account_status") or "active"
+    session.permanent = True
     db.execute(
         "UPDATE user_accounts SET last_login_at=now() WHERE account_id=?",
         (account["account_id"],),
@@ -1866,14 +3160,19 @@ def login():
         )
     db.commit()
 
+    if session["admin_role"] in {"ADMIN", "SUPER_ADMIN"}:
+        redirect_path = next_path or "/admin"
+    else:
+        start_path = _company_start_redirect(account)
+        redirect_path = (
+            start_path
+            if start_path != url_for("ceo_home")
+            else (next_path or start_path)
+        )
     return jsonify({
         "success": True,
         "data": {
-            "redirect": (
-                "/admin"
-                if session["admin_role"] in {"ADMIN", "SUPER_ADMIN"}
-                else _company_start_redirect(account)
-            )
+            "redirect": redirect_path
         },
     })
 
@@ -2104,15 +3403,405 @@ def discovery():
     ).fetchone()
     if not company:
         abort(404)
+    from sana_company_memory import retrieve_memory
+    memory_context = retrieve_memory(
+        db, context["company_id"], memory_keys=[
+            "goal:primary", "problem:declared", "acquisition:source",
+            "founder:dependency", "decision:style",
+        ],
+    )
+    full_reassessment = request.args.get("full") == "1"
     if context["admin_preview"]:
-        return render_template("06-sana-discovery.html")
+        return render_template(
+            "06-sana-discovery.html", full_reassessment=full_reassessment,
+            company_memory=memory_context, discovery_draft=None,
+            discovery_drafts_enabled=False,
+            **p0_template_context(),
+        )
     account = current_account()
     start = _company_start_redirect(account)
     if start == url_for("onboarding"):
         return redirect(start)
-    if start == url_for("ceo_home"):
+    if start == url_for("ceo_home") and not full_reassessment:
         return redirect(start)
-    return render_template("06-sana-discovery.html")
+    draft_scope = _discovery_draft_scope(db)
+    removed = _cleanup_expired_discovery_drafts(db)
+    if removed:
+        db.commit()
+    discovery_draft_data = (
+        _load_discovery_draft(db, draft_scope) if draft_scope else None
+    )
+    return render_template(
+        "06-sana-discovery.html", full_reassessment=full_reassessment,
+        company_memory=memory_context, discovery_draft=discovery_draft_data,
+        discovery_drafts_enabled=bool(draft_scope),
+        **p0_template_context(),
+    )
+
+
+FIT_GATE_REQUIRED_FIELDS = (
+    "operating_duration",
+    "paying_customers",
+    "delivery_mode",
+)
+
+
+def _evaluate_fit_gate(payload):
+    """بوابة صغيرة تفصل الشركات العاملة عن مرحلة الفكرة دون استخدام حجم الفريق وحده."""
+    fit = payload.get("fit_gate") if isinstance(payload, dict) else None
+    fit = fit if isinstance(fit, dict) else {}
+    missing = [key for key in FIT_GATE_REQUIRED_FIELDS if not str(fit.get(key) or "").strip()]
+    if missing:
+        return {
+            "complete": False,
+            "qualified": False,
+            "missing": missing,
+            "reason": "أكمل أسئلة الملاءمة الثلاثة قبل بدء التشخيص.",
+        }
+    duration = str(fit["operating_duration"]).strip()
+    paying_customers = str(fit["paying_customers"]).strip()
+    delivery_mode = str(fit["delivery_mode"]).strip()
+    qualified = (
+        duration != "IDEA"
+        and paying_customers == "YES"
+        and delivery_mode in {"OWNER_DELIVERY", "TEAM_DELIVERY"}
+    )
+    return {
+        "complete": True,
+        "qualified": qualified,
+        "missing": [],
+        "reason": (
+            "الشركة لديها عملاء وتشغيل فعلي، ويمكن أن تستفيد من Sana Scan."
+            if qualified
+            else "الحالة ما زالت في مرحلة بناء العرض أو الوصول لأول إيراد وتشغيل فعلي."
+        ),
+    }
+
+
+@app.route("/api/fit-gate/check", methods=["POST"])
+def fit_gate_check():
+    context = request_company_context()
+    if not context:
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+    result = _evaluate_fit_gate(request.get_json(silent=True) or {})
+    if not result["complete"]:
+        return jsonify({
+            "success": False,
+            "error": "FIT_GATE_INCOMPLETE",
+            "message": result["reason"],
+        }), 400
+    return jsonify({
+        "success": True,
+        "data": {
+            **result,
+            "redirect": None if result["qualified"] else "/fit-gate/build-launch",
+        },
+    })
+
+
+@app.route("/fit-gate/build-launch")
+def fit_gate_build_launch():
+    context = request_company_context()
+    if not context:
+        return redirect(url_for("login"))
+    account = current_account()
+    company = get_db().execute(
+        "SELECT name FROM companies WHERE company_id=?",
+        (context["company_id"],),
+    ).fetchone()
+    return render_template(
+        "26-fit-gate-build-launch.html",
+        company_name=company["name"] if company else "مشروعك",
+        account_email=(account or {}).get("email"),
+    )
+
+
+@app.route("/api/fit-gate/interest", methods=["POST"])
+def fit_gate_interest():
+    context = request_company_context()
+    account = current_account()
+    if not context or not account:
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+    body = request.get_json(silent=True) or {}
+    phone = str(body.get("phone") or "").strip() or None
+    if phone and (len(phone) > 30 or not re.fullmatch(r"[0-9+()\-\s]{6,30}", phone)):
+        return jsonify({
+            "success": False,
+            "error": "INVALID_PHONE",
+            "message": "اكتب رقم جوال صحيحًا، أو اترك الحقل فارغًا.",
+        }), 400
+    db = get_db()
+    company = db.execute(
+        "SELECT name FROM companies WHERE company_id=?",
+        (context["company_id"],),
+    ).fetchone()
+    saved = db.execute(
+        """SELECT lead_id FROM leads
+           WHERE company_id=? AND source='FIT_GATE'
+             AND service_interest='Build & Launch'
+           ORDER BY created_at DESC LIMIT 1""",
+        (context["company_id"],),
+    ).fetchone()
+    if saved:
+        if phone:
+            db.execute(
+                "UPDATE leads SET phone=? WHERE lead_id=? AND company_id=?",
+                (phone, saved["lead_id"], context["company_id"]),
+            )
+            db.commit()
+        lead_id = saved["lead_id"]
+        duplicate = True
+    else:
+        lead_id = "L-" + uuid.uuid4().hex[:10].upper()
+        company_name = company["name"] if company else "مشروع جديد"
+        db.execute(
+            """INSERT INTO leads
+               (lead_id,company_id,name,company_name,email,phone,source,
+                service_interest,status,notes)
+               VALUES (?,?,?,?,?,?,?,'Build & Launch','اهتمام',?)""",
+            (
+                lead_id, context["company_id"], company_name, company_name,
+                account["email"], phone, "FIT_GATE",
+                "مسار مستقل لتحويل الفكرة أو الخبرة إلى خدمة قابلة للبيع والتشغيل.",
+            ),
+        )
+        db.commit()
+        duplicate = False
+    return jsonify({
+        "success": True,
+        "data": {"lead_id": lead_id, "duplicate": duplicate},
+        "message": (
+            "تم تسجيل اهتمامك — شكرًا لك، ونتطلع أن يكون سنع جزءًا من نجاح مشروعك القادم."
+        ),
+    }), 200 if duplicate else 201
+
+
+DISCOVERY_DRAFT_TTL_DAYS = 30
+DISCOVERY_DRAFT_MAX_BYTES = 24 * 1024
+DISCOVERY_DRAFT_STEP_MIN = 0
+DISCOVERY_DRAFT_STEP_MAX = 8
+DISCOVERY_DRAFT_TEXT_FIELDS = (
+    "q1", "q2", "q3", "q4", "q4_fu", "q5", "q5_text", "q6",
+)
+DISCOVERY_DRAFT_FIT_FIELDS = (
+    "operating_duration", "paying_customers", "delivery_mode",
+)
+DISCOVERY_DRAFT_BASELINE_FIELDS = (
+    "baseline_start", "baseline_end", "comparison_start",
+    "comparison_end", "seasonality_context",
+)
+DISCOVERY_DRAFT_CALIBRATION_FIELDS = (
+    "baseline_start", "baseline_end", "period_choice",
+)
+
+
+def _discovery_draft_scope(db):
+    """Resolve a real, active customer account; admin previews never use drafts."""
+    account = current_account()
+    if not account or not account.get("account_id") or not account.get("company_id"):
+        return None
+    member = db.execute(
+        """SELECT account_id, company_id FROM user_accounts
+           WHERE account_id=? AND company_id=?""",
+        (account["account_id"], account["company_id"]),
+    ).fetchone()
+    if not member:
+        return None
+    return {
+        "account_id": member["account_id"],
+        "company_id": member["company_id"],
+    }
+
+
+def _cleanup_expired_discovery_drafts(db):
+    """Delete only expired transient drafts; evidence and completed data are untouched."""
+    result = db.execute(
+        "DELETE FROM sana_discovery_drafts WHERE expires_at <= now()"
+    )
+    return result.rowcount or 0
+
+
+def _draft_text(value, field, max_length=2000):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} يجب أن يكون نصًا.")
+    value = value.strip()
+    if len(value) > max_length:
+        raise ValueError(f"{field} يتجاوز الحد المسموح.")
+    return value
+
+
+def _normalize_discovery_draft_payload(payload):
+    """Keep draft storage bounded and limited to known SDS-001 answer fields."""
+    if not isinstance(payload, dict):
+        raise ValueError("بيانات المسودة غير صالحة.")
+
+    normalized = {}
+    fit_gate = payload.get("fit_gate")
+    if fit_gate is not None:
+        if not isinstance(fit_gate, dict):
+            raise ValueError("بيانات الملاءمة غير صالحة.")
+        normalized["fit_gate"] = {
+            key: _draft_text(fit_gate.get(key), f"fit_gate.{key}", 100)
+            for key in DISCOVERY_DRAFT_FIT_FIELDS
+            if fit_gate.get(key) is not None
+        }
+
+    for field in DISCOVERY_DRAFT_TEXT_FIELDS:
+        if field in payload and payload[field] is not None:
+            normalized[field] = _draft_text(payload[field], field)
+
+    if "q7" in payload and payload["q7"] is not None:
+        q7 = payload["q7"]
+        if not isinstance(q7, list) or len(q7) > 3:
+            raise ValueError("q7 يجب أن يحتوي على ثلاث اختيارات كحد أقصى.")
+        normalized["q7"] = [_draft_text(value, "q7", 500) for value in q7]
+
+    baseline = payload.get("diagnostic_baseline")
+    if baseline is not None:
+        if not isinstance(baseline, dict):
+            raise ValueError("فترة الأساس غير صالحة.")
+        normalized["diagnostic_baseline"] = {
+            key: _draft_text(baseline.get(key), f"diagnostic_baseline.{key}", 500)
+            for key in DISCOVERY_DRAFT_BASELINE_FIELDS
+            if baseline.get(key) is not None
+        }
+
+    calibration = payload.get("calibration_draft")
+    if calibration is not None:
+        if not isinstance(calibration, dict):
+            raise ValueError("مسودة فترة الأساس غير صالحة.")
+        normalized["calibration_draft"] = {
+            key: _draft_text(
+                calibration.get(key), f"calibration_draft.{key}", 100
+            )
+            for key in DISCOVERY_DRAFT_CALIBRATION_FIELDS
+            if calibration.get(key) is not None
+        }
+
+    encoded = json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > DISCOVERY_DRAFT_MAX_BYTES:
+        raise ValueError("المسودة أكبر من الحد المسموح.")
+    return normalized
+
+
+def _draft_timestamp(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value) if value is not None else None
+
+
+def _load_discovery_draft(db, scope):
+    row = db.execute(
+        """SELECT draft_id, payload_json, current_step, updated_at, expires_at
+           FROM sana_discovery_drafts
+           WHERE company_id=? AND account_id=? AND status='ACTIVE'
+             AND expires_at > now()
+           ORDER BY updated_at DESC
+           LIMIT 1""",
+        (scope["company_id"], scope["account_id"]),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        payload = json.loads(row["payload_json"])
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return {
+        "draft_id": row["draft_id"],
+        "payload": payload,
+        "current_step": int(row["current_step"]),
+        "updated_at": _draft_timestamp(row["updated_at"]),
+        "expires_at": _draft_timestamp(row["expires_at"]),
+    }
+
+
+def _clear_discovery_draft(db, company_id, account_id):
+    if not company_id or not account_id:
+        return 0
+    result = db.execute(
+        """DELETE FROM sana_discovery_drafts
+           WHERE company_id=? AND account_id=?""",
+        (company_id, account_id),
+    )
+    return result.rowcount or 0
+
+
+@app.route("/api/discovery/draft", methods=["GET", "PUT", "POST", "DELETE"])
+def discovery_draft():
+    """مسودة مؤقتة لإجابات SDS-001، منفصلة تمامًا عن Evidence Gate."""
+    db = get_db()
+    if not current_account():
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+    scope = _discovery_draft_scope(db)
+    if not scope:
+        return jsonify({
+            "success": False,
+            "error": "DISCOVERY_DRAFT_UNAVAILABLE",
+            "message": "المسودات متاحة لحسابات العملاء المرتبطة بشركة فقط.",
+        }), 403
+
+    if request.method == "GET":
+        removed = _cleanup_expired_discovery_drafts(db)
+        if removed:
+            db.commit()
+        draft = _load_discovery_draft(db, scope)
+        return jsonify({"success": True, "data": draft})
+
+    if request.method == "DELETE":
+        _clear_discovery_draft(db, scope["company_id"], scope["account_id"])
+        db.commit()
+        return jsonify({"success": True, "data": {"cleared": True}})
+
+    body = request.get_json(silent=True) or {}
+    payload = body.get("payload", body.get("answers"))
+    try:
+        current_step = body.get("current_step", 0)
+        if isinstance(current_step, bool):
+            raise ValueError("السؤال الحالي غير صالح.")
+        current_step = int(current_step)
+        if not DISCOVERY_DRAFT_STEP_MIN <= current_step <= DISCOVERY_DRAFT_STEP_MAX:
+            raise ValueError("السؤال الحالي غير صالح.")
+        payload = _normalize_discovery_draft_payload(payload)
+    except (TypeError, ValueError) as exc:
+        return jsonify({
+            "success": False,
+            "error": "INVALID_DISCOVERY_DRAFT",
+            "message": str(exc),
+        }), 400
+
+    _cleanup_expired_discovery_drafts(db)
+    expires_at = datetime.utcnow() + timedelta(days=DISCOVERY_DRAFT_TTL_DAYS)
+    draft_id = "SDSD-" + uuid.uuid4().hex[:12].upper()
+    payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    db.execute(
+        """INSERT INTO sana_discovery_drafts
+           (draft_id, company_id, account_id, payload_json, current_step,
+            status, expires_at)
+           VALUES (?,?,?,?,?,'ACTIVE',?)
+           ON CONFLICT (company_id, account_id) DO UPDATE SET
+             payload_json=EXCLUDED.payload_json,
+             current_step=EXCLUDED.current_step,
+             status='ACTIVE',
+             updated_at=now(),
+             expires_at=EXCLUDED.expires_at""",
+        (
+            draft_id, scope["company_id"], scope["account_id"],
+            payload_json, current_step, expires_at,
+        ),
+    )
+    db.commit()
+    saved = _load_discovery_draft(db, scope)
+    return jsonify({
+        "success": True,
+        "data": {
+            "draft_id": saved["draft_id"],
+            "current_step": saved["current_step"],
+            "updated_at": saved["updated_at"],
+            "expires_at": saved["expires_at"],
+        },
+    })
 
 
 @app.route("/api/discovery/save", methods=["POST"])
@@ -2124,23 +3813,50 @@ def discovery_save():
 
     company_id = context["company_id"]
     db = get_db()
+    body = request.get_json(silent=True) or {}
+    full_reassessment = body.get("full_reassessment") is True
 
     # ضمان عدم التكرار — فقط إذا اكتملت الجلسة وحُفظت البيانات فعليًا (main_goal غير فارغ)
     # إذا كان sds_done=1 لكن main_goal فارغ: نسمح بإعادة الحفظ لأن البيانات ضاعت
     company = db.execute(
         "SELECT sds_done, main_goal FROM companies WHERE company_id=?", (company_id,)
     ).fetchone()
-    if company and company["sds_done"] and company["main_goal"]:
+    if company and company["sds_done"] and company["main_goal"] and not full_reassessment:
+        account = current_account()
+        if account:
+            _clear_discovery_draft(db, company_id, account.get("account_id"))
+            db.commit()
         case = db.execute(
             "SELECT case_id FROM cases WHERE company_id=? ORDER BY opened_at ASC LIMIT 1",
             (company_id,)
         ).fetchone()
+        scan_state = (
+            _run_initial_case_scan(db, company_id, case["case_id"])
+            if case else {"has_run": False, "status": "NOT_RUN"}
+        )
         return jsonify({"success": True, "data": {
             "case_id": case["case_id"] if case else None,
-            "already_done": True
+            "already_done": True,
+            "scan_has_run": scan_state["has_run"],
+            "scan_status": scan_state["status"],
         }})
 
-    body = request.get_json(silent=True) or {}
+    fit_gate = _evaluate_fit_gate(body)
+    if not full_reassessment and not fit_gate["complete"]:
+        return jsonify({
+            "success": False,
+            "error": "FIT_GATE_REQUIRED",
+            "message": fit_gate["reason"],
+        }), 400
+    if not full_reassessment and not fit_gate["qualified"]:
+        return jsonify({"success": True, "data": {
+            "qualified": False,
+            "fit_gate": fit_gate,
+            "redirect": "/fit-gate/build-launch",
+            "scan_has_run": False,
+            "scan_status": "NOT_RUN",
+        }})
+
     q1    = (body.get("q1")      or "").strip()
     q2    = (body.get("q2")      or "").strip()
     q3    = (body.get("q3")      or "").strip()
@@ -2216,6 +3932,15 @@ def discovery_save():
         (case_id, company_id, case_title, "تشخيص", "مفتوح",
          q2 or None, real_question, datetime.utcnow().isoformat())
     )
+    from sana_company_memory import capture_discovery
+    capture_discovery(
+        db, company_id, case_id=case_id,
+        answers={**body, "q7": q7}, owner_id=(current_account() or {}).get("account_id"),
+    )
+
+    # الشركات القديمة قد تسبق إنشاء الأصول الافتراضية. أكمل الأنواع الناقصة
+    # قبل ربط إجابات Discovery وتشغيل أول Scan.
+    _create_company_default_assets(db, company_id)
 
     # خريطة الأصول حسب النوع (5 أصول معتمدة فقط)
     assets_by_type = {
@@ -2270,7 +3995,9 @@ def discovery_save():
         "📉 المبيعات": "Brand",
         "📣 التسويق": "Brand",
         "⚙️ التشغيل": "Operations",
-        "👥 الفريق": "Independence",
+        # «الفريق» وصف واسع؛ لا يُنسب لأصل قبل أن توضّح إجابة غياب المؤسس
+        # القدرة، الدور وملكية القرار.
+        "👥 الفريق": None,
         "💵 الأرباح والسيولة": "Data",
         "🚀 التوسع": "Operations",
     }
@@ -2283,8 +4010,7 @@ def discovery_save():
         add_ev(f"مصدر اكتساب العملاء: {q4}", "Brand", "SDS-001 Q4")
     if q4_fu:
         add_ev(f"هشاشة مصدر العملاء: {q4_fu}", "Brand", "SDS-001 Q4 follow-up")
-        HIGH_RISK = ("😰 نعم، بشكل كبير", "🙂 نعم، بدرجة متوسطة")
-        if q4_fu in HIGH_RISK:
+        if is_acquisition_channel_risk_impact(q4_fu):
             cf_id = "CF" + uuid.uuid4().hex[:8].upper()
             db.execute(
                 """INSERT INTO case_frameworks
@@ -2336,14 +4062,15 @@ def discovery_save():
             raise ValueError("فترة الأساس مطلوبة.")
         comparison_start = baseline_payload.get("comparison_start") or None
         comparison_end = baseline_payload.get("comparison_end") or None
-        if not comparison_start or not comparison_end:
-            raise ValueError("فترة المقارنة مطلوبة حتى لا تُقرأ الأرقام خارج سياقها.")
-        comparison = validate_context({
-            "information_type": "Narrative",
-            "period_start": comparison_start,
-            "period_end": comparison_end,
-        })
-        comparison_start, comparison_end = comparison["period_start"], comparison["period_end"]
+        if bool(comparison_start) != bool(comparison_end):
+            raise ValueError("حدد بداية الفترة السابقة ونهايتها، أو اتركهما فارغتين.")
+        if comparison_start and comparison_end:
+            comparison = validate_context({
+                "information_type": "Narrative",
+                "period_start": comparison_start,
+                "period_end": comparison_end,
+            })
+            comparison_start, comparison_end = comparison["period_start"], comparison["period_end"]
     except ValueError as exc:
         db.rollback()
         return jsonify({
@@ -2372,7 +4099,12 @@ def discovery_save():
 
     # تحديث علامة اكتمال الجلسة
     db.execute("UPDATE companies SET sds_done=1 WHERE company_id=?", (company_id,))
+    account = current_account()
+    if account and account.get("company_id") == company_id:
+        # لا تصبح المسودة دليلًا؛ تُحذف فقط ضمن معاملة الإتمام الناجحة.
+        _clear_discovery_draft(db, company_id, account.get("account_id"))
     db.commit()
+    scan_state = _run_initial_case_scan(db, company_id, case_id)
 
     # إرجاع بيانات الشركة لشاشة الجواز (Company Passport) بعد الجلسة
     company_row = db.execute(
@@ -2387,7 +4119,77 @@ def discovery_save():
         "main_goal":      q1 or None,
         "top_asset":      q3 or None,
         "declared_problem": q2 or None,
+        "scan_has_run":   scan_state["has_run"],
+        "scan_status":    scan_state["status"],
     }})
+
+
+@app.route("/check-in")
+def returning_checkin_page():
+    context = request_company_context()
+    if not context:
+        return redirect(url_for("login"))
+    company = get_db().execute(
+        "SELECT sds_done,main_goal FROM companies WHERE company_id=?",
+        (context["company_id"],),
+    ).fetchone()
+    if not company or not company["sds_done"] or not company["main_goal"]:
+        return redirect(url_for("discovery"))
+    return render_template("24-returning-checkin.html")
+
+
+@app.route("/api/returning-checkin", methods=["POST"])
+def returning_checkin_start():
+    context = request_company_context()
+    if not context:
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+    from sana_returning_checkin import start_checkin
+    db = get_db()
+    try:
+        result = start_checkin(
+            db, context["company_id"], (current_account() or {}).get("account_id")
+        )
+        db.commit()
+        return jsonify({"success": True, "data": result}), 201
+    except (ValueError, LookupError) as exc:
+        db.rollback()
+        return jsonify({
+            "success": False, "error": str(exc),
+            "message": "أكمل جلسة الاكتشاف الأولى قبل المراجعة السريعة.",
+        }), 409
+
+
+@app.route("/api/returning-checkin/<checkin_id>", methods=["POST"])
+def returning_checkin_complete(checkin_id):
+    context = request_company_context()
+    if not context:
+        return jsonify({"success": False, "error": "UNAUTHORIZED"}), 401
+    from sana_returning_checkin import complete_checkin
+    db = get_db()
+    row = db.execute(
+        """SELECT * FROM returning_checkins
+           WHERE checkin_id=? AND company_id=? FOR UPDATE""",
+        (checkin_id, context["company_id"]),
+    ).fetchone()
+    if not row:
+        return jsonify({"success": False, "error": "CHECKIN_NOT_FOUND"}), 404
+    if row["status"] == "COMPLETED":
+        return jsonify({
+            "success": True, "data": json.loads(row["summary_json"] or "{}")
+        })
+    answers = (request.get_json(silent=True) or {}).get("answers") or []
+    if not isinstance(answers, list):
+        return jsonify({"success": False, "error": "INVALID_ANSWERS"}), 400
+    try:
+        summary = complete_checkin(db, row, answers)
+        db.commit()
+        return jsonify({"success": True, "data": summary})
+    except (ValueError, RuntimeError) as exc:
+        db.rollback()
+        return jsonify({
+            "success": False, "error": str(exc),
+            "message": "تأكد من اكتمال الإجابات وفترة القياس.",
+        }), 400
 
 
 @app.route("/logout", methods=["GET", "POST"])
@@ -2425,7 +4227,6 @@ def api_session():
 ADMIN_COMPANY_STATUSES = {
     "Registered", "Internal Managed", "Active", "Trial", "Suspended", "Archived"
 }
-SANA_LEADERSHIP_EMAIL = "sanaaos2026@gmail.com"
 
 
 def _valid_email(value):
@@ -2451,14 +4252,31 @@ def _new_company_identity(db, name):
     raise RuntimeError("COMPANY_CODE_GENERATION_FAILED")
 
 
+_DEFAULT_COMPANY_ASSETS = (
+    ("Knowledge", "أصل المعرفة"),
+    ("Operations", "أصل التشغيل"),
+    ("Brand", "أصل البراند"),
+    ("Data", "أصل البيانات"),
+    ("Independence", "أصل الاستقلال"),
+)
+
+
 def _create_company_default_assets(db, company_id):
-    for asset_type, asset_name in (
-        ("Knowledge", "أصل المعرفة"),
-        ("Operations", "أصل التشغيل"),
-        ("Brand", "أصل البراند"),
-        ("Data", "أصل البيانات"),
-        ("Independence", "أصل الاستقلال"),
-    ):
+    """أكمل أنواع الأصول الافتراضية الناقصة دون إنشاء صفوف مكررة."""
+    db.execute(
+        "SELECT pg_advisory_xact_lock(hashtext(?))",
+        (f"default-company-assets:{company_id}",),
+    )
+    existing_types = {
+        row["asset_type"]
+        for row in db.execute(
+            "SELECT asset_type FROM assets WHERE company_id=?",
+            (company_id,),
+        ).fetchall()
+    }
+    for asset_type, asset_name in _DEFAULT_COMPANY_ASSETS:
+        if asset_type in existing_types:
+            continue
         db.execute(
             """INSERT INTO assets
                (asset_id,company_id,asset_type,asset_name,current_score,
@@ -2471,17 +4289,65 @@ def _create_company_default_assets(db, company_id):
         )
 
 
+def _run_initial_case_scan(db, company_id, case_id):
+    """شغّل أول Scan فقط؛ فشل الفحص لا يلغي بيانات Discovery المحفوظة."""
+    try:
+        _create_company_default_assets(db, company_id)
+        db.commit()
+        existing = db.execute(
+            """SELECT status FROM scan_runs
+               WHERE company_id=? AND case_id=?
+               ORDER BY created_at DESC, scan_id DESC LIMIT 1""",
+            (company_id, case_id),
+        ).fetchone()
+        if existing:
+            return {"has_run": True, "status": existing["status"]}
+
+        from sana_scan import run_scan
+        result = run_scan(db, case_id)
+        return {
+            "has_run": bool(result.get("scan_id")),
+            "status": result.get("status") or "INCOMPLETE",
+        }
+    except Exception:
+        db.rollback()
+        app.logger.exception(
+            "Initial Sana Scan failed after Discovery for case %s", case_id,
+        )
+        return {"has_run": False, "status": "NOT_RUN"}
+
+
+_BILLING_NOTIFICATION_TYPES = {
+    "billing_subscription_past_due",
+    "billing_subscription_canceled",
+}
+_BILLING_NOTIFICATION_MAX_ATTEMPTS = 5
+_BILLING_NOTIFICATION_RETRY_BASE_SECONDS = 60
+_BILLING_NOTIFICATION_RETRY_MAX_SECONDS = 3600
+_BILLING_NOTIFICATION_LOCK_SECONDS = 600
+
+
+def _billing_retry_delay_seconds(attempt_count):
+    """Return a bounded exponential delay after an unsuccessful attempt."""
+    exponent = max(0, int(attempt_count) - 1)
+    return min(
+        _BILLING_NOTIFICATION_RETRY_BASE_SECONDS * (2 ** exponent),
+        _BILLING_NOTIFICATION_RETRY_MAX_SECONDS,
+    )
 def _admin_send_email(db, *, notification_type, recipient_email, subject,
                       html_body, actor_id, company_id=None, payload=None):
     notification_id = "NTF-" + secrets.token_hex(8).upper()
+    initial_attempt_count = 1 if RESEND_API_KEY else 0
     db.execute(
         """INSERT INTO admin_notification_outbox
            (notification_id,notification_type,recipient_email,company_id,status,
-            payload_json,created_by)
-           VALUES (?,?,?,?,?,?,?)""",
+            payload_json,created_by,attempt_count,last_attempt_at)
+           VALUES (?,?,?,?,?,?,?,?,CASE WHEN ? > 0 THEN now() ELSE NULL END)""",
         (
             notification_id, notification_type, recipient_email, company_id,
             "queued", json.dumps(payload or {}, ensure_ascii=False), actor_id,
+            initial_attempt_count,
+            initial_attempt_count,
         ),
     )
     if not RESEND_API_KEY:
@@ -2495,17 +4361,159 @@ def _admin_send_email(db, *, notification_type, recipient_email, subject,
         })
         db.execute(
             """UPDATE admin_notification_outbox
-               SET status='sent',sent_at=now() WHERE notification_id=?""",
+               SET status='sent',sent_at=now(),error_code=NULL,
+                   next_attempt_at=NULL,delivery_lock_token=NULL,
+                   delivery_locked_at=NULL
+               WHERE notification_id=?""",
             (notification_id,),
         )
         return {"notification_id": notification_id, "status": "sent"}
     except Exception as exc:
+        attempt_count = initial_attempt_count
         db.execute(
             """UPDATE admin_notification_outbox
-               SET status='failed',error_code=? WHERE notification_id=?""",
-            (type(exc).__name__[:80], notification_id),
+               SET status='failed',error_code=?,
+                   next_attempt_at=CASE
+                     WHEN ? < ? THEN now() + (? * INTERVAL '1 second')
+                     ELSE NULL
+                   END
+               WHERE notification_id=?""",
+            (
+                type(exc).__name__[:80],
+                attempt_count,
+                _BILLING_NOTIFICATION_MAX_ATTEMPTS,
+                _billing_retry_delay_seconds(attempt_count),
+                notification_id,
+            ),
         )
         return {"notification_id": notification_id, "status": "failed"}
+
+def _claim_billing_notification_for_retry(db, notification_id=None):
+    """Claim one due billing message, committing before the network call."""
+    notification_filter = ""
+    params = [
+        "billing_subscription_past_due",
+        "billing_subscription_canceled",
+        _BILLING_NOTIFICATION_MAX_ATTEMPTS,
+        _BILLING_NOTIFICATION_LOCK_SECONDS,
+    ]
+    if notification_id:
+        notification_filter = " AND notification_id=?"
+        params.append(notification_id)
+    row = db.execute(
+        f"""SELECT *
+           FROM admin_notification_outbox
+           WHERE notification_type IN (?,?)
+             AND status IN ('queued','failed')
+             AND attempt_count < ?
+             AND COALESCE(next_attempt_at,now()) <= now()
+             AND (
+               delivery_locked_at IS NULL
+               OR delivery_locked_at < now() - (? * INTERVAL '1 second')
+             )
+             {notification_filter}
+           ORDER BY created_at,notification_id
+           FOR UPDATE SKIP LOCKED
+           LIMIT 1""",
+        tuple(params),
+    ).fetchone()
+    if not row:
+        db.commit()
+        return None
+    lock_token = uuid.uuid4().hex
+    claimed = db.execute(
+        """UPDATE admin_notification_outbox
+           SET delivery_lock_token=?,delivery_locked_at=now(),
+               attempt_count=attempt_count+1,last_attempt_at=now()
+           WHERE notification_id=?
+           RETURNING *""",
+        (lock_token, row["notification_id"]),
+    ).fetchone()
+    db.commit()
+    if not claimed:
+        return None
+    result = dict(claimed)
+    result["delivery_lock_token"] = lock_token
+    return result
+def _send_billing_lifecycle_notification(db, notification, company_id):
+    """Notify the company's owner after a Stripe state transition.
+
+    The Stripe event ledger decides whether a transition is new. This helper
+    only delivers the resulting notification and records its delivery outcome
+    in the shared admin notification outbox. The recovery URL deliberately
+    contains no Stripe identifiers or payment details.
+    """
+    status = notification.get("status")
+    if status not in {"past_due", "canceled"}:
+        return {"status": "ignored"}
+
+    owners = db.execute(
+        """SELECT account_id,email
+           FROM user_accounts
+           WHERE company_id=? AND account_status='active'
+             AND admin_role='COMPANY_OWNER'
+           ORDER BY created_at, account_id""",
+        (company_id,),
+    ).fetchall()
+    owners = [owner for owner in owners if _valid_email(owner["email"])]
+    if not owners:
+        app.logger.error(
+            "Billing notification owner unavailable for company %s", company_id
+        )
+        return {"status": "failed", "error": "BILLING_OWNER_EMAIL_UNAVAILABLE"}
+
+    if status == "past_due":
+        action = "update_payment"
+        subject = "تعثر دفع اشتراك سنع — مطلوب تحديث وسيلة الدفع"
+        heading = "تعثر دفع اشتراك سنع"
+        explanation = (
+            "تعذر تحصيل دفعة الاشتراك الأخيرة. حدّث وسيلة الدفع أو راجع "
+            "الاشتراك حتى تعود الخدمة للعمل."
+        )
+        link_label = "تحديث وسيلة الدفع أو مراجعة الاشتراك"
+    else:
+        action = "restart_subscription"
+        subject = "تم إلغاء اشتراك سنع — ابدأ اشتراكًا جديدًا"
+        heading = "تم إلغاء اشتراك سنع"
+        explanation = (
+            "تم إلغاء الاشتراك، ولذلك توقفت الخدمة. يمكنك بدء اشتراك جديد "
+            "من صفحة الأسعار."
+        )
+        link_label = "بدء اشتراك جديد"
+
+    recovery_url = (
+        f"{APP_BASE_URL}/pricing?"
+        f"{urlencode({'billing_action': action})}"
+    )
+    deliveries = []
+    for owner in owners:
+        deliveries.append(_admin_send_email(
+            db,
+            notification_type=f"billing_subscription_{status}",
+            recipient_email=owner["email"],
+            subject=subject,
+            html_body=(
+                "<div dir='rtl'>"
+                f"<h2>{html.escape(heading)}</h2>"
+                f"<p>{html.escape(explanation)}</p>"
+                f"<p><a href='{html.escape(recovery_url)}'>"
+                f"{html.escape(link_label)}</a></p>"
+                "</div>"
+            ),
+            actor_id=owner["account_id"],
+            company_id=company_id,
+            payload={
+                "event_id": notification.get("event_id"),
+                "status": status,
+                "recovery_action": action,
+                "recovery_url": recovery_url,
+            },
+        ))
+    return {
+        "status": "delivered",
+        "recipient_count": len(deliveries),
+        "deliveries": deliveries,
+    }
 
 
 def _issue_admin_password_reset(db, account, actor_id, reason):
@@ -2675,6 +4683,27 @@ def _admin_company_snapshot(db, company):
     evidence_count = db.execute(
         "SELECT COUNT(*) AS c FROM evidence WHERE company_id=?", (company_id,)
     ).fetchone()["c"]
+    verified_evidence_count = db.execute(
+        """SELECT COUNT(*) AS c FROM evidence
+           WHERE company_id=? AND verification_status='VERIFIED'""",
+        (company_id,),
+    ).fetchone()["c"]
+    pending_review_count = db.execute(
+        """SELECT COUNT(*) AS c FROM scan_findings
+           WHERE company_id=? AND review_status='Pending Review'""",
+        (company_id,),
+    ).fetchone()["c"]
+    contradiction_count = db.execute(
+        """SELECT COUNT(*) AS c
+           FROM evidence_relations r
+           JOIN evidence e ON e.evidence_id=r.from_evidence_id
+           WHERE e.company_id=? AND r.status='OPEN'""",
+        (company_id,),
+    ).fetchone()["c"]
+    subscription = db.execute(
+        "SELECT status FROM sana_company_subscriptions WHERE company_id=?",
+        (company_id,),
+    ).fetchone()
     missing_evidence = (
         not latest_scan
         or latest_scan["status"] == "INCOMPLETE"
@@ -2723,99 +4752,104 @@ def _admin_company_snapshot(db, company):
         } if latest_scan else None,
         "top_bottleneck": bottleneck.get("statement"),
         "latest_decision": dict(p0_decision) if p0_decision else None,
+        "latest_task": dict(p0_task) if p0_task else None,
         "open_tasks": open_tasks,
         "overdue_tasks": overdue_tasks,
         "latest_impact_review": dict(last_review) if last_review else None,
+        "classification": _admin_company_classification(company),
+        "progress": {
+            "discovery": bool(company.get("sds_done")),
+            "evidence_ready": not missing_evidence,
+            "scan_complete": bool(
+                latest_scan and latest_scan["status"] == "COMPLETE"
+            ),
+            "decision": bool(p0_decision),
+            "task": bool(p0_task),
+            "result": bool(p0_task and p0_task["status"] == "منجزة"),
+            "impact": bool(last_review),
+        },
         "evidence_readiness": {
             "status": "NOT_READY" if missing_evidence else "READY",
             "evidence_count": evidence_count,
+            "verified_count": verified_evidence_count,
+            "pending_review_count": pending_review_count,
+            "contradiction_count": contradiction_count,
             "scan_status": latest_scan["status"] if latest_scan else "NOT_RUN",
         },
+        "subscription_status": subscription["status"] if subscription else None,
     }
 
 
-def _admin_companies(db):
+def _admin_companies(db, mode="production"):
+    mode = mode if mode in {"production", "qa"} else "production"
+    expected = "test" if mode == "qa" else "production"
     return [
         _admin_company_snapshot(db, row)
         for row in db.execute(
             "SELECT * FROM companies ORDER BY created_at DESC, company_id"
         ).fetchall()
+        if _admin_company_classification(row) == expected
     ]
 
 
-def _admin_ops_queue(db):
+def _admin_ops_queue(db, mode="production"):
+    from sana_billing import billing_cleanup_health
+
     items = []
-    today = date.today()
-    companies = db.execute("SELECT company_id,name FROM companies").fetchall()
-    for company in companies:
+    cleanup_health = billing_cleanup_health(db)
+    if cleanup_health["is_stale"]:
+        items.append({
+            "priority": "CRITICAL",
+            "type": "billing_cleanup",
+            "company_id": None,
+            "entity_id": "billing_cleanup_schedule",
+            "title": "تنظيف الدفع لم يسجل تشغيلًا موثوقًا حديثًا",
+            "reason": (
+                "تحقق من خدمة الجدولة قبل أن تتراكم جلسات الدفع المعلقة."
+            ),
+        })
+    for company in _admin_companies(db, mode):
         cid = company["company_id"]
-        latest_scan = db.execute(
-            """SELECT scan_id,status,result FROM scan_runs
-               WHERE company_id=? ORDER BY created_at DESC LIMIT 1""", (cid,)
-        ).fetchone()
-        scan_payload = _admin_scan_payload(latest_scan)
-        latest_case = db.execute(
-            """SELECT case_id,case_title FROM cases
-               WHERE company_id=? AND case_status NOT IN ('Closed','Completed','مكتملة')
-               ORDER BY opened_at DESC LIMIT 1""", (cid,)
-        ).fetchone()
-        if latest_case and (
-            not latest_scan
-            or latest_scan["status"] == "INCOMPLETE"
-            or scan_payload.get("missing_evidence")
-        ):
+        progress = company["progress"]
+        if company["evidence_readiness"]["status"] == "NOT_READY":
             items.append({
                 "priority": "HIGH",
                 "type": "evidence",
                 "company_id": cid,
-                "entity_id": latest_case["case_id"],
-                "title": f"{company['name']} · Evidence Gate",
+                "entity_id": (
+                    (company.get("latest_case") or {}).get("case_id") or cid
+                ),
+                "title": f"{company['name']} · Evidence ناقص",
                 "reason": "الأدلة غير كافية أو لم يكتمل Sana Scan.",
             })
-
-        for decision in db.execute(
-            """SELECT decision_id,title,case_id FROM decisions
-               WHERE company_id=? AND status IN ('مقترح','قيد المراجعة')
-               ORDER BY created_at DESC LIMIT 5""", (cid,)
-        ).fetchall():
+        if progress["decision"] and not progress["task"]:
+            decision = company["latest_decision"]
             items.append({
-                "priority": "HIGH" if decision["case_id"] else "NORMAL",
+                "priority": "HIGH",
                 "type": "decision",
                 "company_id": cid,
                 "entity_id": decision["decision_id"],
-                "title": f"{company['name']} · قرار غير معتمد",
+                "title": f"{company['name']} · قرار بلا مهمة",
                 "reason": decision["title"],
             })
-
-        for task in db.execute(
-            """SELECT task_id,title,due_date,decision_id FROM tasks
-               WHERE company_id=? AND status!='منجزة'""", (cid,)
-        ).fetchall():
-            due = _admin_date(task["due_date"])
-            if due and due < today:
-                items.append({
-                    "priority": "CRITICAL",
-                    "type": "task",
-                    "company_id": cid,
-                    "entity_id": task["task_id"],
-                    "title": f"{company['name']} · مهمة متأخرة",
-                    "reason": f"{task['title']} · الموعد {task['due_date']}",
-                })
-
-        for task in db.execute(
-            """SELECT t.task_id,t.title,d.case_id FROM tasks t
-               JOIN decisions d ON d.decision_id=t.decision_id
-               WHERE t.company_id=? AND d.phase_label='P0' AND t.status='منجزة'
-                 AND NOT EXISTS (
-                   SELECT 1 FROM p0_impact_reviews r WHERE r.task_id=t.task_id
-                 )""", (cid,)
-        ).fetchall():
+        if progress["task"] and not progress["result"]:
+            task = company["latest_task"]
+            items.append({
+                "priority": "HIGH",
+                "type": "task",
+                "company_id": cid,
+                "entity_id": task["task_id"],
+                "title": f"{company['name']} · مهمة بلا نتيجة",
+                "reason": task["title"],
+            })
+        if progress["result"] and not progress["impact"]:
+            task = company["latest_task"]
             items.append({
                 "priority": "HIGH",
                 "type": "impact",
                 "company_id": cid,
                 "entity_id": task["task_id"],
-                "title": f"{company['name']} · Impact Review ناقص",
+                "title": f"{company['name']} · نتيجة بلا Impact",
                 "reason": task["title"],
             })
     order = {"CRITICAL": 0, "HIGH": 1, "NORMAL": 2}
@@ -2824,10 +4858,282 @@ def _admin_ops_queue(db):
 
 @app.route("/admin")
 def admin_dashboard_page():
-    _role, failure = _admin_guard(json_response=False)
+    role, failure = _admin_guard(json_response=False)
     if failure:
         return failure
-    return render_template("admin-dashboard.html")
+    return render_template(
+        "admin-dashboard.html",
+        admin_bootstrap={
+            "role": role,
+            "permissions": sorted(_admin_permissions()),
+            "permission_options": ADMIN_PERMISSION_OPTIONS,
+        },
+    )
+
+
+@app.route("/api/admin/billing", methods=["GET", "PATCH"])
+def admin_billing():
+    from sana_billing import (
+        billing_cleanup_health,
+        latest_billing_cleanup_run,
+        latest_billing_cleanup_skip,
+        public_offer,
+    )
+    _role, failure = _admin_guard(permission="manage_companies")
+    if failure:
+        return failure
+    db = get_db()
+    if request.method == "PATCH":
+        body = request.get_json(silent=True) or {}
+        reason = (body.get("reason") or "").strip()
+        if not reason:
+            return jsonify({"success": False, "error": "AUDIT_REASON_REQUIRED"}), 400
+        try:
+            base_price = int(body.get("base_price_minor"))
+            sale_price = int(body.get("sale_price_minor"))
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "PRICE_INVALID"}), 400
+        if base_price < 0 or sale_price < 0 or sale_price > base_price:
+            return jsonify({"success": False, "error": "PRICE_INVALID"}), 400
+        plan_name = (body.get("plan_name") or "سنع").strip()
+        sale_label = (body.get("sale_label") or "عرض الإطلاق").strip()
+        if not plan_name or not sale_label:
+            return jsonify({"success": False, "error": "BILLING_COPY_INVALID"}), 400
+        db.execute(
+            """UPDATE sana_billing_settings
+               SET plan_name=?,base_price_minor=?,sale_price_minor=?,
+                   sale_label=?,updated_by=?,updated_at=now()
+               WHERE plan_id='SANA-P0'""",
+            (
+                plan_name, base_price, sale_price, sale_label,
+                current_account()["account_id"],
+            ),
+        )
+        _admin_audit(
+            db, current_account()["account_id"], "billing_offer_updated",
+            "billing_offer", "SANA-P0", None, reason,
+            {"base_price_minor": base_price, "sale_price_minor": sale_price},
+        )
+        db.commit()
+
+    coupons = [
+        dict(row) for row in db.execute(
+            """SELECT * FROM sana_billing_coupons
+               ORDER BY created_at DESC LIMIT 100"""
+        ).fetchall()
+    ]
+    subscriptions = [
+        dict(row) for row in db.execute(
+            """SELECT c.company_id,c.name AS company_name,
+                      (s.subscription_id IS NOT NULL) AS has_subscription,
+                      s.status,s.amount_minor,s.coupon_code,
+                      s.current_period_end,s.updated_at
+               FROM companies c
+               LEFT JOIN sana_company_subscriptions s ON s.company_id=c.company_id
+               ORDER BY c.created_at DESC LIMIT 300"""
+        ).fetchall()
+    ]
+    return jsonify({"success": True, "data": {
+        "offer": public_offer(db),
+        "coupons": coupons,
+        "subscriptions": subscriptions,
+        "cleanup_run": latest_billing_cleanup_run(db),
+        "cleanup_skip": latest_billing_cleanup_skip(db),
+        "cleanup_health": billing_cleanup_health(db),
+    }})
+
+
+@app.route("/api/admin/billing/checkout-sessions/cleanup", methods=["POST"])
+def admin_billing_checkout_cleanup():
+    from sana_billing import (
+        STALE_CHECKOUT_MIN_AGE_HOURS,
+        expire_stale_checkouts,
+    )
+    _role, failure = _admin_guard(permission="manage_companies")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        return jsonify({"success": False, "error": "AUDIT_REASON_REQUIRED"}), 400
+    try:
+        min_age_hours = int(
+            body.get("min_age_hours", STALE_CHECKOUT_MIN_AGE_HOURS)
+        )
+        limit = int(body.get("limit", 50))
+        if min_age_hours < STALE_CHECKOUT_MIN_AGE_HOURS or limit < 1 or limit > 100:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({
+            "success": False,
+            "error": "CHECKOUT_CLEANUP_ARGUMENTS_INVALID",
+        }), 400
+
+    db = get_db()
+    result = expire_stale_checkouts(
+        db, min_age_hours=min_age_hours, limit=limit
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "billing_checkout_cleanup",
+        "billing_checkout_cleanup", None, None, reason,
+        {"min_age_hours": min_age_hours, "limit": limit, **result},
+    )
+    db.commit()
+    app.logger.info(
+        "Stripe checkout cleanup completed: scanned=%d expired=%d "
+        "already_completed=%d already_expired=%d failed=%d",
+        result["scanned"], result["expired"], result["already_completed"],
+        result["already_expired"], result["failed"],
+    )
+    return jsonify({"success": True, "data": result})
+
+
+@app.route("/api/admin/billing/coupons", methods=["POST"])
+def admin_billing_coupon_create():
+    from sana_billing import normalize_coupon_code
+    _role, failure = _admin_guard(permission="manage_companies")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "").strip()
+    code = normalize_coupon_code(body.get("code"))
+    discount_type = (body.get("discount_type") or "").strip()
+    try:
+        discount_value = int(body.get("discount_value"))
+        max_redemptions = (
+            int(body["max_redemptions"])
+            if body.get("max_redemptions") not in (None, "") else None
+        )
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "COUPON_INVALID"}), 400
+    expires_at = (body.get("expires_at") or "").strip() or None
+    if (
+        not re.fullmatch(r"[A-Z0-9_-]{3,32}", code)
+        or discount_type not in {"percent", "amount"}
+        or discount_value <= 0
+        or (discount_type == "percent" and discount_value > 100)
+        or (max_redemptions is not None and max_redemptions <= 0)
+        or not reason
+    ):
+        return jsonify({"success": False, "error": "COUPON_INVALID"}), 400
+    if expires_at:
+        try:
+            date.fromisoformat(expires_at)
+        except ValueError:
+            return jsonify({"success": False, "error": "COUPON_EXPIRY_INVALID"}), 400
+    db = get_db()
+    coupon_id = "CPN-" + secrets.token_hex(8).upper()
+    try:
+        db.execute(
+            """INSERT INTO sana_billing_coupons
+               (coupon_id,code,discount_type,discount_value,max_redemptions,
+                expires_at,created_by)
+               VALUES (?,?,?,?,?,?,?)""",
+            (
+                coupon_id, code, discount_type, discount_value,
+                max_redemptions, expires_at, current_account()["account_id"],
+            ),
+        )
+    except psycopg2.errors.UniqueViolation:
+        db.rollback()
+        return jsonify({"success": False, "error": "COUPON_EXISTS"}), 409
+    _admin_audit(
+        db, current_account()["account_id"], "billing_coupon_created",
+        "billing_coupon", coupon_id, None, reason,
+        {
+            "code": code,
+            "discount_type": discount_type,
+            "max_redemptions": max_redemptions,
+            "expires_at": expires_at,
+        },
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"coupon_id": coupon_id, "code": code}}), 201
+
+
+@app.route("/api/admin/billing/subscriptions/<company_id>/free", methods=["POST"])
+def admin_billing_grant_free(company_id):
+    from sana_billing import activate_free
+    _role, failure = _admin_guard(permission="manage_companies")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "").strip()
+    try:
+        period_days = int(body.get("period_days") or 30)
+    except (TypeError, ValueError):
+        period_days = 0
+    if not reason or period_days < 1 or period_days > 730:
+        return jsonify({"success": False, "error": "FREE_GRANT_INVALID"}), 400
+    db = get_db()
+    company = db.execute(
+        "SELECT company_id FROM companies WHERE company_id=?", (company_id,)
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    subscription = activate_free(db, company_id, period_days=period_days)
+    _admin_audit(
+        db, current_account()["account_id"], "billing_free_granted",
+        "company_subscription", subscription["subscription_id"], company_id,
+        reason, {"period_days": period_days},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": subscription})
+
+
+@app.route("/api/admin/billing/subscriptions/<company_id>", methods=["PATCH"])
+def admin_billing_subscription_update(company_id):
+    _role, failure = _admin_guard(permission="manage_companies")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "").strip()
+    reason = (body.get("reason") or "").strip()
+    if action not in {"extend", "pause", "resume", "cancel"} or not reason:
+        return jsonify({"success": False, "error": "SUBSCRIPTION_ACTION_INVALID"}), 400
+    db = get_db()
+    subscription = db.execute(
+        "SELECT * FROM sana_company_subscriptions WHERE company_id=?",
+        (company_id,),
+    ).fetchone()
+    if not subscription:
+        return jsonify({"success": False, "error": "SUBSCRIPTION_NOT_FOUND"}), 404
+    metadata = {"action": action}
+    if action == "extend":
+        try:
+            days = int(body.get("days") or 30)
+        except (TypeError, ValueError):
+            days = 0
+        if days < 1 or days > 730:
+            return jsonify({"success": False, "error": "EXTENSION_INVALID"}), 400
+        db.execute(
+            """UPDATE sana_company_subscriptions
+               SET current_period_end=GREATEST(
+                    COALESCE(current_period_end,now()),now()
+                   ) + (? * INTERVAL '1 day'),
+                   updated_at=now()
+               WHERE company_id=?""",
+            (days, company_id),
+        )
+        metadata["days"] = days
+    else:
+        status = {"pause": "paused", "resume": "active", "cancel": "canceled"}[action]
+        db.execute(
+            """UPDATE sana_company_subscriptions
+               SET status=?,updated_at=now() WHERE company_id=?""",
+            (status, company_id),
+        )
+    _admin_audit(
+        db, current_account()["account_id"], f"billing_subscription_{action}",
+        "company_subscription", subscription["subscription_id"], company_id,
+        reason, metadata,
+    )
+    db.commit()
+    updated = db.execute(
+        "SELECT * FROM sana_company_subscriptions WHERE company_id=?",
+        (company_id,),
+    ).fetchone()
+    return jsonify({"success": True, "data": dict(updated)})
 
 
 @app.route("/api/admin/overview")
@@ -2836,66 +5142,159 @@ def admin_overview():
     if failure:
         return failure
     db = get_db()
-    companies = _admin_companies(db)
-    active_users = db.execute(
-        "SELECT COUNT(*) AS c FROM user_accounts WHERE account_status='active'"
-    ).fetchone()["c"]
-    open_cases = db.execute(
-        "SELECT COUNT(*) AS c FROM cases WHERE case_status NOT IN ('Closed','Completed','مكتملة')"
-    ).fetchone()["c"]
-    completed_cases = db.execute(
-        "SELECT COUNT(*) AS c FROM cases WHERE case_status IN ('Closed','Completed','مكتملة')"
-    ).fetchone()["c"]
-    scans = db.execute("SELECT COUNT(*) AS c FROM scan_runs").fetchone()["c"]
-    diagnostic_reviews = db.execute(
-        "SELECT COUNT(*) AS c FROM scan_runs WHERE status IN ('REVIEW_REQUIRED','COMPLETE')"
-    ).fetchone()["c"]
-    open_decisions = db.execute(
-        "SELECT COUNT(*) AS c FROM decisions WHERE status IN ('مقترح','قيد المراجعة')"
-    ).fetchone()["c"]
-    open_tasks = db.execute(
-        "SELECT COUNT(*) AS c FROM tasks WHERE status!='منجزة'"
-    ).fetchone()["c"]
-    impact_reviews = db.execute(
-        "SELECT COUNT(*) AS c FROM p0_impact_reviews"
-    ).fetchone()["c"]
-    evidence_gaps = sum(
-        1 for company in companies
-        if company["evidence_readiness"]["status"] == "NOT_READY"
+    mode = request.args.get("mode", "production").strip().lower()
+    if mode not in {"production", "qa"}:
+        return jsonify({
+            "success": False,
+            "error": "ADMIN_MODE_INVALID",
+        }), 400
+    companies = _admin_companies(db, mode)
+    account_rows = db.execute(
+        """SELECT a.account_id,a.email,a.company_id,a.is_admin,a.admin_role,
+                  a.account_status,c.name AS company_name
+           FROM user_accounts a
+           LEFT JOIN companies c ON c.company_id=a.company_id"""
+    ).fetchall()
+    classified_accounts = [
+        (row, _admin_account_classification(row))
+        for row in account_rows
+    ]
+    active_users = sum(
+        1 for row, classification in classified_accounts
+        if row["account_status"] == "active" and classification == "production"
     )
-    queue = _admin_ops_queue(db)
+    test_users = sum(
+        1 for _row, classification in classified_accounts
+        if classification == "test"
+    )
+    production_super_admins = sum(
+        1 for row, classification in classified_accounts
+        if classification == "production"
+        and row["account_status"] == "active"
+        and str(row["admin_role"] or "").upper() == "SUPER_ADMIN"
+    )
+    test_super_admins = sum(
+        1 for row, classification in classified_accounts
+        if classification == "test"
+        and str(row["admin_role"] or "").upper() == "SUPER_ADMIN"
+    )
+    unclassified_super_admins = sum(
+        1 for row, classification in classified_accounts
+        if classification == "unclassified"
+        and str(row["admin_role"] or "").upper() == "SUPER_ADMIN"
+    )
+    phase_order = (
+        "Not started", "Discovery", "Evidence Gate", "Diagnostic Review",
+        "Decision", "Task", "Result", "Impact Review",
+    )
+    company_phases = {phase: 0 for phase in phase_order}
+    funnel = {
+        "discovery": 0,
+        "evidence_ready": 0,
+        "scan_complete": 0,
+        "decision": 0,
+        "task": 0,
+        "result": 0,
+        "impact": 0,
+    }
+    evidence_total = 0
+    evidence_verified = 0
+    contradictions = 0
+    pending_review = 0
+    subscriptions = {
+        "active": 0, "free": 0, "pending": 0,
+        "paused": 0, "past_due": 0, "canceled": 0,
+        "none": 0,
+    }
+    for company in companies:
+        company_phases[company["p0_phase"]] = (
+            company_phases.get(company["p0_phase"], 0) + 1
+        )
+        for step in funnel:
+            funnel[step] += int(bool(company["progress"][step]))
+        readiness = company["evidence_readiness"]
+        evidence_total += readiness["evidence_count"]
+        evidence_verified += readiness["verified_count"]
+        contradictions += readiness["contradiction_count"]
+        pending_review += readiness["pending_review_count"]
+        subscription_status = company.get("subscription_status") or "none"
+        subscriptions[subscription_status] = (
+            subscriptions.get(subscription_status, 0) + 1
+        )
+    queue = _admin_ops_queue(db, mode)
+    attention = {
+        "decision_without_task": sum(
+            1 for item in queue if item["type"] == "decision"
+        ),
+        "task_without_result": sum(
+            1 for item in queue if item["type"] == "task"
+        ),
+        "result_without_impact": sum(
+            1 for item in queue if item["type"] == "impact"
+        ),
+        "evidence_missing": sum(
+            1 for item in queue if item["type"] == "evidence"
+        ),
+    }
+    try:
+        db.execute("SELECT 1").fetchone()
+        database_health = "ok"
+    except Exception as exc:
+        database_health = "unavailable"
+        _RUNTIME_HEALTH["last_critical_error"] = type(exc).__name__
+    from sana_billing import billing_cleanup_health
+    cleanup_health = billing_cleanup_health(db)
+    deployment_commit = (
+        os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+        or os.environ.get("REPLIT_DEPLOYMENT_SHA")
+        or os.environ.get("REPLIT_GIT_SHA")
+        or "unknown"
+    )
     return jsonify({
         "success": True,
         "data": {
             "role": role,
             "permissions": sorted(_admin_permissions()),
             "permission_options": ADMIN_PERMISSION_OPTIONS,
+            "mode": mode,
+            "company_phases": company_phases,
+            "funnel": funnel,
+            "evidence_quality": {
+                "verified_percent": (
+                    round((evidence_verified / evidence_total) * 100, 1)
+                    if evidence_total else 0
+                ),
+                "not_ready": sum(
+                    1 for company in companies
+                    if company["evidence_readiness"]["status"] == "NOT_READY"
+                ),
+                "contradictions": contradictions,
+                "pending_review": pending_review,
+            },
+            "attention": attention,
             "metrics": {
                 "companies": len(companies),
                 "active_users": active_users,
-                "open_cases": open_cases,
-                "completed_cases": completed_cases,
-                "scans": scans,
-                "diagnostic_reviews": diagnostic_reviews,
-                "open_decisions": open_decisions,
-                "open_tasks": open_tasks,
-                "impact_reviews": impact_reviews,
-                "evidence_gaps": evidence_gaps,
+                "test_users": test_users,
+                "production_super_admins": production_super_admins,
+                "test_super_admins": test_super_admins,
+                "unclassified_super_admins": unclassified_super_admins,
                 "needs_attention": len(queue),
             },
             "queue_preview": queue[:8],
             "system": {
                 "app": "ok",
-                "database": "ok",
+                "database": database_health,
                 "supabase": "configured_database",
-                "railway": "available" if IS_RAILWAY else "not_detected",
-                "last_deployment": "not_available_in_app",
-                "last_critical_error": "not_persisted",
-                "schedulers": {
-                    "execution_reminders": os.environ.get("SANA_REMINDER_SCHEDULER_ENABLED", "0"),
-                    "knowledge_backup": os.environ.get("SANA_KNOWLEDGE_BACKUP_SCHEDULER_ENABLED", "0"),
-                    "research": os.environ.get("SANA_RESEARCH_SCHEDULER_ENABLED", "0"),
-                },
+                "deployment": "railway" if IS_RAILWAY else "replit",
+                "deployment_commit": deployment_commit,
+                "last_critical_error": (
+                    _RUNTIME_HEALTH["last_critical_error"] or "none"
+                ),
+                "startup": _RUNTIME_HEALTH["startup"],
+                "workers": dict(_RUNTIME_HEALTH["workers"]),
+                "billing_cleanup": cleanup_health["status"],
+                "subscriptions": subscriptions,
             },
         },
     })
@@ -2968,7 +5367,16 @@ def admin_companies():
     _role, failure = _admin_guard(any_permissions=COMPANY_CONTEXT_PERMISSIONS)
     if failure:
         return failure
-    return jsonify({"success": True, "data": _admin_companies(get_db())})
+    mode = request.args.get("mode", "production").strip().lower()
+    if mode not in {"production", "qa"}:
+        return jsonify({
+            "success": False,
+            "error": "ADMIN_MODE_INVALID",
+        }), 400
+    return jsonify({
+        "success": True,
+        "data": _admin_companies(get_db(), mode),
+    })
 
 
 @app.route("/api/admin/companies/<company_id>")
@@ -3048,6 +5456,7 @@ def admin_users():
                 "SUPER_ADMIN" if row["is_admin"] and row["admin_role"] == "USER"
                 else row["admin_role"]
             ),
+            "account_classification": _admin_account_classification(row),
         }
         for row in rows
     ]})
@@ -3061,6 +5470,8 @@ def admin_create_admin():
     body = request.get_json(silent=True) or {}
     email = _valid_email(body.get("email"))
     requested = {str(item) for item in (body.get("permissions") or [])}
+    if requested:
+        requested.add("review_cases")
     if not email:
         return jsonify({"success": False, "error": "EMAIL_INVALID"}), 400
     if not requested or not requested.issubset(ADMIN_PERMISSION_OPTIONS):
@@ -3228,6 +5639,7 @@ def admin_issue_company_invitation(company_id):
             "SELECT * FROM user_accounts WHERE account_id=?",
             (account["account_id"],),
         ).fetchone()
+    _assign_pilot_slot(db, account["account_id"])
     invitation = _issue_company_invitation(
         db, company, account, company_role,
         current_account()["account_id"], reason,
@@ -3365,7 +5777,480 @@ def admin_ops_queue():
     _role, failure = _admin_guard(permission="review_cases")
     if failure:
         return failure
-    return jsonify({"success": True, "data": _admin_ops_queue(get_db())})
+    mode = request.args.get("mode", "production").strip().lower()
+    if mode not in {"production", "qa"}:
+        return jsonify({
+            "success": False,
+            "error": "ADMIN_MODE_INVALID",
+        }), 400
+    return jsonify({
+        "success": True,
+        "data": _admin_ops_queue(get_db(), mode),
+    })
+
+
+@app.route("/api/admin/human-reviews")
+def admin_human_reviews():
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    db = get_db()
+    from sana_human_review import ensure_schema as ensure_human_review_schema
+    ensure_human_review_schema(db)
+    rows = db.execute(
+        """SELECT r.review_id,r.company_id,r.case_id,r.decision_id,r.reason_label,
+                  r.status,r.scheduled_at,r.requested_at,r.decision_changed,
+                  c.name AS company_name,ca.case_title,d.title AS decision_title,
+                  d.confidence_score,d.success_metric,
+                  r.before_snapshot_json,r.final_decision,r.approved_kpi,
+                   r.next_action,r.client_note,r.reviewer_note,r.expert_inputs_json,
+                   r.expert_summary_status,r.notes_updated_at,r.formatted_at,
+                   r.approved_at,u.email AS reviewer_email
+           FROM case_human_reviews r
+           JOIN companies c ON c.company_id=r.company_id
+           JOIN cases ca ON ca.case_id=r.case_id
+           LEFT JOIN decisions d ON d.decision_id=r.decision_id
+            LEFT JOIN user_accounts u ON u.account_id=r.reviewer_account_id
+           ORDER BY CASE r.status WHEN 'SCHEDULED' THEN 0 WHEN 'REQUESTED' THEN 1 ELSE 2 END,
+                    r.scheduled_at,r.requested_at DESC LIMIT 200"""
+    ).fetchall()
+    totals = db.execute(
+        """SELECT COUNT(*) AS requested,
+                  COUNT(*) FILTER (WHERE status='COMPLETED') AS completed,
+                  COUNT(*) FILTER (WHERE decision_changed=true) AS changed
+           FROM case_human_reviews"""
+    ).fetchone()
+    reviews = []
+    for row in rows:
+        item = dict(row)
+        query = (
+            f"?view=expert-summary&case_id={item['case_id']}"
+            f"&review_id={item['review_id']}"
+        )
+        item["summary_url"] = (
+            f"/company/{item['company_id']}/scan-report{query}"
+        )
+        item["summary_pdf_url"] = (
+            f"/api/companies/{item['company_id']}/passport/report-pdf{query}"
+        )
+        reviews.append(item)
+    return jsonify({"success": True, "data": {
+        "reviews": reviews,
+        "metrics": dict(totals),
+    }})
+
+
+@app.route("/api/admin/human-review-slots", methods=["POST"])
+def admin_create_human_review_slot():
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    starts_at = (body.get("starts_at") or "").strip()
+    duration = int(body.get("duration_minutes") or 30)
+    if not starts_at or duration < 10 or duration > 180:
+        return jsonify({"success": False, "message": "حدد موعدًا ومدة بين 10 و180 دقيقة."}), 400
+    db = get_db()
+    slot_id = "HRS-" + uuid.uuid4().hex[:12].upper()
+    db.execute(
+        """INSERT INTO human_review_slots
+           (slot_id,starts_at,duration_minutes,reviewer_account_id)
+           VALUES (?,?,?,?)""",
+        (slot_id, starts_at, duration, current_account()["account_id"]),
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "human_review_slot_created",
+        "human_review_slot", slot_id, reason="إتاحة موعد لمراجعة قرار",
+        metadata={"starts_at": starts_at, "duration_minutes": duration},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"slot_id": slot_id}}), 201
+
+
+@app.route("/api/admin/human-review-settings", methods=["PATCH"])
+def admin_update_human_review_settings():
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    from sana_human_review import OFFER_MODES
+    body = request.get_json(silent=True) or {}
+    mode = str(body.get("offer_mode") or "").upper()
+    if mode not in OFFER_MODES:
+        return jsonify({"success": False, "message": "اختر INCLUDED أو FREE أو PAID."}), 400
+    duration = int(body.get("duration_minutes") or 30)
+    price_minor = body.get("price_minor")
+    paid_enabled = bool(body.get("paid_enabled", False))
+    if mode == "PAID" and paid_enabled:
+        return jsonify({
+            "success": False,
+            "message": "المراجعة المدفوعة غير مفعّلة قبل وجود مسار دفع جاهز.",
+        }), 409
+    db = get_db()
+    db.execute(
+        """UPDATE human_review_settings SET offer_mode=?,offer_name=?,price_minor=?,
+                  duration_minutes=?,free_first_case=?,client_copy=?,paid_enabled=false,
+                  updated_at=now() WHERE singleton_key='default'""",
+        (
+            mode, (body.get("offer_name") or "مراجعة القرار مع خبير سنع").strip(),
+            int(price_minor) if price_minor not in (None, "") else None,
+            duration, bool(body.get("free_first_case", True)),
+            (body.get("client_copy") or "جلسة قصيرة لمراجعة النتيجة قبل التنفيذ").strip(),
+        ),
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "human_review_settings_updated",
+        "human_review_settings", "default", reason="تحديث عرض مراجعة القرار",
+        metadata={"offer_mode": mode, "duration_minutes": duration},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {"offer_mode": mode}})
+
+
+@app.route("/api/admin/human-reviews/<review_id>/complete", methods=["POST"])
+def admin_complete_human_review(review_id):
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    from sana_human_review import add_event
+    body = request.get_json(silent=True) or {}
+    required = ("decision_changed", "final_decision", "approved_kpi", "next_action")
+    if any(key not in body or body.get(key) in (None, "") for key in required):
+        return jsonify({"success": False, "message": "أكمل القرار النهائي ومقياسه والخطوة التالية."}), 400
+    changed = bool(body["decision_changed"])
+    change_reason = (body.get("change_reason") or "").strip()
+    if changed and not change_reason:
+        return jsonify({"success": False, "message": "اذكر سبب تعديل القرار."}), 400
+    db = get_db()
+    review = db.execute(
+        "SELECT * FROM case_human_reviews WHERE review_id=? FOR UPDATE", (review_id,)
+    ).fetchone()
+    if not review:
+        return jsonify({"success": False, "error": "REVIEW_NOT_FOUND"}), 404
+    if review["status"] not in {"REQUESTED", "SCHEDULED"}:
+        return jsonify({"success": False, "message": "هذه المراجعة مغلقة بالفعل."}), 409
+    after = {
+        "decision_changed": changed,
+        "final_decision": body["final_decision"].strip(),
+        "change_reason": change_reason or None,
+        "approved_kpi": body["approved_kpi"].strip(),
+        "next_action": body["next_action"].strip(),
+        "reviewer_note": (body.get("reviewer_note") or "").strip() or None,
+    }
+    db.execute(
+        """UPDATE case_human_reviews SET status='COMPLETED',decision_changed=?,
+                  final_decision=?,change_reason=?,approved_kpi=?,next_action=?,
+                  reviewer_note=?,after_snapshot_json=?,reviewer_account_id=?,
+                  completed_at=now(),started_at=COALESCE(started_at,now())
+           WHERE review_id=?""",
+        (
+            changed, after["final_decision"], after["change_reason"],
+            after["approved_kpi"], after["next_action"], after["reviewer_note"],
+            json.dumps(after, ensure_ascii=False), current_account()["account_id"], review_id,
+        ),
+    )
+    add_event(
+        db, review_id, review["company_id"], review["status"], "COMPLETED",
+        current_account()["account_id"], {"decision_changed": changed},
+    )
+    _admin_audit(
+        db, current_account()["account_id"], "human_review_completed",
+        "case_human_review", review_id, review["company_id"],
+        reason="تسجيل نتيجة مراجعة قرار",
+        metadata={"case_id": review["case_id"], "decision_changed": changed},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": after})
+
+
+@app.route("/api/admin/human-reviews/<review_id>/notes", methods=["PATCH"])
+def admin_save_expert_review_notes(review_id):
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    notes = str(body.get("notes") or "").strip()
+    if not notes:
+        return jsonify({
+            "success": False,
+            "message": "اكتب ملاحظات الخبير أولًا.",
+        }), 400
+    if len(notes) > 6000:
+        return jsonify({
+            "success": False,
+            "message": "اختصر الملاحظات إلى 6000 حرف أو أقل.",
+        }), 400
+    db = get_db()
+    review = db.execute(
+        "SELECT * FROM case_human_reviews WHERE review_id=? FOR UPDATE",
+        (review_id,),
+    ).fetchone()
+    if not review:
+        return jsonify({"success": False, "error": "REVIEW_NOT_FOUND"}), 404
+    if review["expert_summary_status"] == "APPROVED":
+        return jsonify({
+            "success": False,
+            "message": "الملخص معتمد. أنشئ طلب مراجعة جديدًا إذا لزم تعديل جديد.",
+        }), 409
+    action = (
+        "expert_review_notes_updated"
+        if str(review["reviewer_note"] or "").strip()
+        else "expert_review_notes_saved"
+    )
+    actor_id = current_account()["account_id"]
+    db.execute(
+        """UPDATE case_human_reviews
+           SET reviewer_note=?,reviewer_account_id=?,notes_updated_at=now(),
+               expert_summary_json=NULL,expert_summary_status='DRAFT',
+               formatted_at=NULL,approved_at=NULL,approved_by=NULL
+           WHERE review_id=?""",
+        (notes, actor_id, review_id),
+    )
+    _admin_audit(
+        db, actor_id, action, "case_human_review", review_id,
+        review["company_id"], reason="حفظ ملاحظات الخبير",
+        metadata={"case_id": review["case_id"], "character_count": len(notes)},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "review_id": review_id,
+        "expert_summary_status": "DRAFT",
+    }})
+
+
+@app.route(
+    "/api/admin/human-reviews/<review_id>/expert-inputs",
+    methods=["PATCH"],
+)
+def admin_save_expert_review_inputs(review_id):
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    body = request.get_json(silent=True) or {}
+    text_fields = {
+        "current_situation": 2500,
+        "client_observation": 3000,
+        "priority": 1500,
+        "recommendation": 3000,
+        "plan": 5000,
+        "next_action": 1500,
+    }
+    cleaned = {}
+    for key, limit in text_fields.items():
+        value = str(body.get(key) or "").strip()
+        if len(value) > limit:
+            return jsonify({
+                "success": False,
+                "message": f"اختصر {key} إلى {limit} حرف أو أقل.",
+            }), 400
+        cleaned[key] = value
+
+    refs = body.get("references") or []
+    if not isinstance(refs, list) or len(refs) > 5:
+        return jsonify({
+            "success": False,
+            "message": "يمكن إضافة خمسة مراجع أو ملفات كرابط كحد أقصى.",
+        }), 400
+    clean_refs = []
+    for item in refs:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "مرجع").strip()[:120]
+        url = str(item.get("url") or "").strip()
+        parsed = urlparse(url) if url else None
+        if url and (parsed.scheme not in {"http", "https"} or not parsed.netloc):
+            return jsonify({
+                "success": False,
+                "message": "رابط المرجع يجب أن يبدأ بـ http أو https.",
+            }), 400
+        if url:
+            clean_refs.append({"label": label or "مرجع", "url": url[:1000]})
+    cleaned["references"] = clean_refs
+
+    candidate = body.get("knowledge_candidate") or {}
+    if not isinstance(candidate, dict):
+        candidate = {}
+    candidate_text = str(candidate.get("text") or "").strip()
+    if len(candidate_text) > 4000:
+        return jsonify({
+            "success": False,
+            "message": "اختصر المادة المرشحة للمعرفة إلى 4000 حرف أو أقل.",
+        }), 400
+    candidate_scope = str(candidate.get("scope") or "sector").strip().lower()
+    if candidate_scope not in {"sector", "general"}:
+        candidate_scope = "sector"
+    candidate_sector = str(candidate.get("sector") or "").strip()[:120]
+    cleaned["knowledge_candidate"] = {
+        "text": candidate_text,
+        "scope": candidate_scope,
+        "sector": candidate_sector,
+    }
+
+    db = get_db()
+    review = db.execute(
+        "SELECT * FROM case_human_reviews WHERE review_id=? FOR UPDATE",
+        (review_id,),
+    ).fetchone()
+    if not review:
+        return jsonify({"success": False, "error": "REVIEW_NOT_FOUND"}), 404
+    if review["expert_summary_status"] == "APPROVED":
+        return jsonify({
+            "success": False,
+            "message": "الملخص معتمد. أنشئ مراجعة جديدة لأي تعديل لاحق.",
+        }), 409
+    try:
+        previous = json.loads(review["expert_inputs_json"] or "{}")
+        if not isinstance(previous, dict):
+            previous = {}
+    except (TypeError, json.JSONDecodeError):
+        previous = {}
+    previous_candidate = previous.get("knowledge_candidate") or {}
+    if previous_candidate.get("research_source_id"):
+        cleaned["knowledge_candidate"]["research_source_id"] = previous_candidate["research_source_id"]
+        cleaned["knowledge_candidate"]["review_status"] = previous_candidate.get("review_status", "inbox")
+
+    actor_id = current_account()["account_id"]
+    db.execute(
+        """UPDATE case_human_reviews
+           SET expert_inputs_json=?,reviewer_account_id=?,notes_updated_at=now(),
+               expert_summary_json=NULL,expert_summary_status='DRAFT',
+               formatted_at=NULL,approved_at=NULL,approved_by=NULL
+           WHERE review_id=?""",
+        (json.dumps(cleaned, ensure_ascii=False), actor_id, review_id),
+    )
+    _admin_audit(
+        db, actor_id, "expert_review_inputs_saved",
+        "case_human_review", review_id, review["company_id"],
+        reason="حفظ إضافات خبير سنع النصية دون تغيير بيانات المصدر",
+        metadata={
+            "case_id": review["case_id"],
+            "client_fields": [k for k in text_fields if cleaned.get(k)],
+            "reference_count": len(clean_refs),
+            "knowledge_candidate": bool(candidate_text),
+        },
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "review_id": review_id,
+        "expert_summary_status": "DRAFT",
+        "expert_inputs": cleaned,
+    }})
+
+
+@app.route(
+    "/api/admin/human-reviews/<review_id>/format-summary",
+    methods=["POST"],
+)
+def admin_format_expert_review_summary(review_id):
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    from sana_human_review import format_expert_summary
+    db = get_db()
+    review = db.execute(
+        "SELECT * FROM case_human_reviews WHERE review_id=? FOR UPDATE",
+        (review_id,),
+    ).fetchone()
+    if not review:
+        return jsonify({"success": False, "error": "REVIEW_NOT_FOUND"}), 404
+    if review["expert_summary_status"] == "APPROVED":
+        return jsonify({
+            "success": False,
+            "message": "الملخص معتمد بالفعل.",
+        }), 409
+    try:
+        summary = format_expert_summary(db, review_id)
+    except ValueError:
+        return jsonify({
+            "success": False,
+            "message": "تعذر العثور على طلب المراجعة.",
+        }), 400
+    actor_id = current_account()["account_id"]
+    db.execute(
+        """UPDATE case_human_reviews
+           SET expert_summary_json=?,expert_summary_status='FORMATTED',
+               formatted_at=now(),approved_at=NULL,approved_by=NULL
+           WHERE review_id=?""",
+        (json.dumps(summary, ensure_ascii=False, default=str), review_id),
+    )
+    _admin_audit(
+        db, actor_id, "expert_review_summary_formatted",
+        "case_human_review", review_id, review["company_id"],
+        reason="تنسيق ملخص الخبير من بيانات الحالة والملاحظات فقط",
+        metadata={"case_id": review["case_id"]},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "review_id": review_id,
+        "expert_summary_status": "FORMATTED",
+        "summary": summary,
+    }})
+
+
+@app.route(
+    "/api/admin/human-reviews/<review_id>/approve-summary",
+    methods=["POST"],
+)
+def admin_approve_expert_review_summary(review_id):
+    _role, failure = _admin_guard(permission="review_cases")
+    if failure:
+        return failure
+    from sana_human_review import add_event, create_knowledge_candidate_from_review
+    db = get_db()
+    review = db.execute(
+        "SELECT * FROM case_human_reviews WHERE review_id=? FOR UPDATE",
+        (review_id,),
+    ).fetchone()
+    if not review:
+        return jsonify({"success": False, "error": "REVIEW_NOT_FOUND"}), 404
+    if (
+        review["expert_summary_status"] != "FORMATTED"
+        or not review["expert_summary_json"]
+    ):
+        return jsonify({
+            "success": False,
+            "message": "نسّق ملخص الخبير قبل اعتماده.",
+        }), 409
+    actor_id = current_account()["account_id"]
+    try:
+        knowledge_candidate_id = create_knowledge_candidate_from_review(
+            db, review_id, actor_id
+        )
+    except Exception:
+        db.rollback()
+        app.logger.exception("Expert knowledge candidate creation failed")
+        return jsonify({
+            "success": False,
+            "message": "تعذر حفظ المادة المرشحة لمعرفة سنع. راجع النص ثم أعد المحاولة.",
+        }), 500
+    previous_status = review["status"]
+    db.execute(
+        """UPDATE case_human_reviews
+           SET expert_summary_status='APPROVED',approved_at=now(),
+               approved_by=?,status='COMPLETED',completed_at=COALESCE(completed_at,now()),
+               started_at=COALESCE(started_at,notes_updated_at,now())
+           WHERE review_id=?""",
+        (actor_id, review_id),
+    )
+    if previous_status != "COMPLETED":
+        add_event(
+            db, review_id, review["company_id"], previous_status, "COMPLETED",
+            actor_id, {"expert_summary_approved": True},
+        )
+    _admin_audit(
+        db, actor_id, "expert_review_summary_approved",
+        "case_human_review", review_id, review["company_id"],
+        reason="اعتماد ملخص مراجعة الخبير للعميل",
+        metadata={
+            "case_id": review["case_id"],
+            "knowledge_candidate_id": knowledge_candidate_id,
+        },
+    )
+    db.commit()
+    return jsonify({"success": True, "data": {
+        "review_id": review_id,
+        "expert_summary_status": "APPROVED",
+        "knowledge_candidate_id": knowledge_candidate_id,
+    }})
 
 
 @app.route("/api/admin/system-health")
@@ -3530,6 +6415,13 @@ def admin_update_user(account_id):
         return jsonify({"success": False, "error": "CANNOT_DISABLE_SELF"}), 400
     new_status = new_status or target["account_status"]
     new_role = new_role or target_role
+    if new_role == "ADMIN":
+        if requested_permissions is None:
+            try:
+                requested_permissions = set(json.loads(target.get("admin_permissions") or "[]"))
+            except (TypeError, json.JSONDecodeError):
+                requested_permissions = set()
+        requested_permissions.add("review_cases")
     if new_role in SYSTEM_ADMIN_ROLES:
         company_id = None
     else:
@@ -3650,7 +6542,14 @@ def admin_update_company(company_id):
 
 @app.route("/guide")
 def guide_page():
-    return render_template("13-guide.html")
+    return render_template(
+        "13-guide.html",
+        **public_seo_context(
+            "/guide",
+            "دليل سنع — كيف تبدأ تشخيص شركتك الخدمية",
+            "دليل مبسط يشرح ما هو سنع، وكيف تبدأ تشخيص شركتك الخدمية، وترتب الأولويات، وتحوّل المعلومات إلى قرار وخطوة قابلة للقياس.",
+        ),
+    )
 
 
 def _knowledge_admin_account_allowed():
@@ -3683,7 +6582,15 @@ def articles_list():
     articles = db.execute(
         "SELECT slug, title, subtitle FROM methodology_docs WHERE doc_type='article' ORDER BY created_at DESC"
     ).fetchall()
-    return render_template("15-articles-list.html", articles=[dict(a) for a in articles])
+    return render_template(
+        "15-articles-list.html",
+        articles=[dict(a) for a in articles],
+        **public_seo_context(
+            "/articles",
+            "مقالات سنع للشركات الخدمية — مبيعات وتشغيل",
+            "مقالات عملية للشركات الخدمية حول زيادة المبيعات، تحسين التشغيل، الربحية، التسعير، مؤشرات الأداء، وتجربة العميل وقرارات النمو.",
+        ),
+    )
 
 
 @app.route("/articles/<slug>")
@@ -3694,7 +6601,46 @@ def article_page(slug):
     ).fetchone()
     if not doc:
         return "المقال غير موجود", 404
-    return render_template("16-article.html", doc=dict(doc))
+    article = dict(doc)
+    description = (
+        article.get("subtitle")
+        or f"مقال من سنع يشرح {article['title']} للشركات الخدمية بخطوات عملية قابلة للتطبيق."
+    ).strip()
+    description = description[:157].rstrip()
+    try:
+        article_tags = json.loads(article.get("sector_tags") or "{}")
+    except (TypeError, ValueError):
+        article_tags = {}
+    keywords = [article_tags.get("keyword")] + list(article_tags.get("content_tags") or [])
+    keywords = [item for item in keywords if item]
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": article["title"],
+        "description": description,
+        "url": f"{PUBLIC_SITE_URL}{url_for('article_page', slug=slug)}",
+        "mainEntityOfPage": f"{PUBLIC_SITE_URL}{url_for('article_page', slug=slug)}",
+        "inLanguage": "ar",
+        "datePublished": str(article.get("created_at") or "")[:10] or None,
+        "keywords": keywords,
+        "author": {"@type": "Organization", "name": "سنع"},
+        "publisher": {
+            "@type": "Organization",
+            "name": "سنع",
+            "url": f"{PUBLIC_SITE_URL}/",
+        },
+    }
+    return render_template(
+        "16-article.html",
+        doc=article,
+        **public_seo_context(
+            url_for("article_page", slug=slug),
+            f"{article['title']} — سنع",
+            description,
+            schema=schema,
+            og_type="article",
+        ),
+    )
 
 
 @app.route("/api/articles")
@@ -4295,16 +7241,44 @@ def case_diagnostic_baseline(case_id):
             "period_start": body.get("baseline_start"),
             "period_end": body.get("baseline_end"),
         })
-        comparison = validate_context({
-            "information_type": "Narrative",
-            "period_start": body.get("comparison_start"),
-            "period_end": body.get("comparison_end"),
-        })
-        if not all((
-            baseline["period_start"], baseline["period_end"],
-            comparison["period_start"], comparison["period_end"],
-        )):
-            raise ValueError("فترتا الأساس والمقارنة مطلوبتان.")
+        if not all((baseline["period_start"], baseline["period_end"])):
+            raise ValueError("حدد الفترة اللي عندك عنها بيانات فعلية.")
+        today = date.today().isoformat()
+        if baseline["period_start"] > today:
+            return jsonify({
+                "success": False,
+                "error": "FUTURE_DIAGNOSTIC_PERIOD",
+                "classification": "TARGET",
+                "message": "هذه فترة مستهدفة، وليست نتيجة فعلية بعد",
+            }), 400
+        if baseline["period_end"] > today:
+            return jsonify({
+                "success": False,
+                "error": "FUTURE_DIAGNOSTIC_PERIOD",
+                "classification": "FORECAST",
+                "message": "هذه فترة مستهدفة، وليست نتيجة فعلية بعد",
+            }), 400
+
+        comparison_start = body.get("comparison_start") or None
+        comparison_end = body.get("comparison_end") or None
+        if bool(comparison_start) != bool(comparison_end):
+            raise ValueError("حدد بداية الفترة السابقة ونهايتها، أو اختر ما عندي مقارنة الآن.")
+        comparison = {"period_start": None, "period_end": None}
+        if comparison_start and comparison_end:
+            comparison = validate_context({
+                "information_type": "Narrative",
+                "period_start": comparison_start,
+                "period_end": comparison_end,
+            })
+            if comparison["period_end"] > today:
+                raise ValueError("المقارنة تحتاج فترة انتهت فعليًا")
+            if (
+                comparison["period_start"] == baseline["period_start"]
+                and comparison["period_end"] == baseline["period_end"]
+            ):
+                raise ValueError("الفترة السابقة لازم تكون مختلفة عن الفترة الحالية.")
+            if comparison["period_end"] >= baseline["period_start"]:
+                raise ValueError("الفترة السابقة لازم تنتهي قبل بداية الفترة الحالية.")
     except ValueError as exc:
         return jsonify({
             "success": False,
@@ -4350,6 +7324,136 @@ def case_diagnostic_baseline(case_id):
     return jsonify({"success": True, "data": data})
 
 
+_COMPANY_SOURCE_TYPES = {"website", "platform", "other"}
+_COMPANY_SOCIAL_HOSTS = (
+    "instagram.com", "linkedin.com", "tiktok.com", "facebook.com",
+    "x.com", "twitter.com", "youtube.com", "snapchat.com",
+    "g.page", "maps.app.goo.gl", "google.com",
+)
+
+
+def _company_source_datetime(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(
+            tzinfo=None
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _infer_company_source_type(source_url):
+    parsed = urlparse(str(source_url or "").strip())
+    host = (parsed.hostname or "").lower()
+    path = (parsed.path or "").lower()
+    if any(host == item or host.endswith("." + item) for item in _COMPANY_SOCIAL_HOSTS):
+        if host.endswith("google.com") and "/maps" not in path:
+            return "website"
+        return "platform"
+    return "website"
+
+
+def _normalize_company_source_url(value):
+    candidate = str(value or "").strip()
+    if candidate and "://" not in candidate:
+        candidate = "https://" + candidate
+    parsed = urlparse(candidate)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("INVALID_SOURCE_URL")
+    return candidate
+
+
+def _company_source_reminder_state(db, company_id, now=None):
+    """حالة اختيارية مستقلة عن Discovery وScan وقرار الشركة."""
+    from sana_knowledge import ensure_schema as ensure_knowledge_schema
+    ensure_knowledge_schema(db)
+    company = db.execute(
+        """SELECT sds_done,created_at,website_url,social_media_url,
+                  business_reference_url,source_prompt_last_shown_at,
+                  source_prompt_dismissed_at,source_last_confirmed_at
+           FROM companies WHERE company_id=?""",
+        (company_id,),
+    ).fetchone()
+    if not company or not company["sds_done"]:
+        return {"show": False, "kind": None, "missing_types": []}
+
+    source_types = set()
+    if str(company["website_url"] or "").strip():
+        source_types.add("website")
+    if str(company["social_media_url"] or "").strip():
+        source_types.add("platform")
+    if str(company["business_reference_url"] or "").strip():
+        source_types.add("other")
+
+    source_rows = db.execute(
+        """SELECT origin,source_url,tags,created_at,updated_at
+           FROM research_sources
+           WHERE company_id=? AND review_status<>'archived'""",
+        (company_id,),
+    ).fetchall()
+    source_times = []
+    for row in source_rows:
+        if row["origin"] == "upload":
+            source_types.add("file")
+        elif row["source_url"]:
+            tag_match = re.search(
+                r"(?:^|[|,])company-source:(website|platform|other)(?:$|[|,])",
+                str(row["tags"] or ""),
+            )
+            source_types.add(
+                tag_match.group(1)
+                if tag_match else _infer_company_source_type(row["source_url"])
+            )
+        source_times.extend(filter(None, (
+            _company_source_datetime(row["updated_at"]),
+            _company_source_datetime(row["created_at"]),
+        )))
+
+    missing_types = [
+        source_type for source_type in ("website", "platform", "file")
+        if source_type not in source_types
+    ]
+    current_time = (now or datetime.utcnow()).replace(tzinfo=None)
+    last_prompt = max(filter(None, (
+        _company_source_datetime(company["source_prompt_last_shown_at"]),
+        _company_source_datetime(company["source_prompt_dismissed_at"]),
+    )), default=None)
+    in_cooldown = bool(
+        last_prompt and current_time - last_prompt < timedelta(days=30)
+    )
+    if missing_types:
+        return {
+            "show": not in_cooldown,
+            "kind": "missing",
+            "missing_types": missing_types,
+            "content_retrieved": False,
+        }
+
+    confirmation_times = source_times + list(filter(None, (
+        _company_source_datetime(company["source_last_confirmed_at"]),
+        _company_source_datetime(company["created_at"]),
+    )))
+    latest_confirmation = max(confirmation_times, default=None)
+    needs_confirmation = bool(
+        latest_confirmation
+        and current_time - latest_confirmation > timedelta(days=90)
+    )
+    return {
+        "show": bool(needs_confirmation and not in_cooldown),
+        "kind": "freshness" if needs_confirmation else None,
+        "missing_types": [],
+        "content_retrieved": False,
+    }
+
+
 @app.route("/api/companies")
 def companies_list():
     """قائمة الشركات — مقيَّدة بمفتاح المشرف فقط (P0-1: إغلاق التسريب)."""
@@ -4374,6 +7478,9 @@ def company_summary(company_id):
     company = db.execute("SELECT * FROM companies WHERE company_id=?", (company_id,)).fetchone()
     if not company:
         return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
 
     assets = db.execute("SELECT * FROM assets WHERE company_id=? ORDER BY current_score ASC",
                          (company_id,)).fetchall()
@@ -4390,15 +7497,22 @@ def company_summary(company_id):
     active_tasks = [t for t in tasks if t["status"] != "منجزة"]
 
     avg_score = round(sum(a["current_score"] for a in assets) / len(assets)) if assets else 0
+    client_assets = [_client_asset_view(asset) for asset in assets]
+    from sana_company_memory import retrieve_memory
+    memory = retrieve_memory(db, company_id)
 
     return jsonify({
         "success": True,
         "data": {
             "company": dict(company),
             "quality_score": avg_score,
-            "assets": [dict(a) for a in assets],
-            "weakest_asset": dict(weakest_asset) if weakest_asset else None,
-            "strongest_asset": dict(strongest_asset) if strongest_asset else None,
+            "assets": client_assets,
+            "weakest_asset": (
+                _client_asset_view(weakest_asset) if weakest_asset else None
+            ),
+            "strongest_asset": (
+                _client_asset_view(strongest_asset) if strongest_asset else None
+            ),
             "cases": [dict(c) for c in cases],
             "decisions": [dict(d) for d in decisions],
             "open_decisions_count": len(open_decisions),
@@ -4406,15 +7520,245 @@ def company_summary(company_id):
             "next_task": dict(active_tasks[0]) if active_tasks else None,
             "tasks": [dict(t) for t in tasks],
             "evidence_count": len(evidence),
+            "company_memory": memory,
+            "source_reminder": _company_source_reminder_state(db, company_id),
         },
         "meta": {"generated_at": datetime.utcnow().isoformat() + "Z"}
     })
 
 
-# ------------------------------------------------------------------
-# غرفة القرار والتنفيذ
-# ------------------------------------------------------------------
+@app.route("/api/companies/<company_id>/source-reminder", methods=["POST"])
+def company_source_reminder_action(company_id):
+    account = current_account()
+    if not account or not account.get("company_id"):
+        return jsonify({"success": False, "error": "ACCOUNT_REQUIRED"}), 401
+    body = request.get_json(silent=True) or {}
+    action = str(body.get("action") or "").strip()
+    if action not in {"shown", "later", "confirmed"}:
+        return jsonify({"success": False, "error": "INVALID_ACTION"}), 400
+    db = get_db()
+    if action == "shown":
+        db.execute(
+            """UPDATE companies SET source_prompt_last_shown_at=now()
+               WHERE company_id=?""",
+            (company_id,),
+        )
+    elif action == "later":
+        db.execute(
+            """UPDATE companies
+               SET source_prompt_last_shown_at=now(),
+                   source_prompt_dismissed_at=now()
+               WHERE company_id=?""",
+            (company_id,),
+        )
+    else:
+        db.execute(
+            """UPDATE companies
+               SET source_last_confirmed_at=now(),
+                   source_prompt_last_shown_at=now()
+               WHERE company_id=?""",
+            (company_id,),
+        )
+    db.commit()
+    return jsonify({
+        "success": True,
+        "data": _company_source_reminder_state(db, company_id),
+    })
 
+
+@app.route("/api/companies/<company_id>/source-reminder/url", methods=["POST"])
+def company_source_reminder_url(company_id):
+    from sana_knowledge import create_research_source
+    account = current_account()
+    if not account or not account.get("company_id"):
+        return jsonify({"success": False, "error": "ACCOUNT_REQUIRED"}), 401
+    body = request.get_json(silent=True) or {}
+    try:
+        source_url = _normalize_company_source_url(body.get("url"))
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    source_type = str(body.get("source_type") or "").strip()
+    if not source_type:
+        source_type = _infer_company_source_type(source_url)
+    if source_type not in _COMPANY_SOURCE_TYPES:
+        return jsonify({"success": False, "error": "INVALID_SOURCE_TYPE"}), 400
+
+    db = get_db()
+    existing = db.execute(
+        """SELECT research_source_id FROM research_sources
+           WHERE company_id=? AND lower(trim(source_url))=lower(trim(?))
+           LIMIT 1""",
+        (company_id, source_url),
+    ).fetchone()
+    column = {
+        "website": "website_url",
+        "platform": "social_media_url",
+        "other": "business_reference_url",
+    }[source_type]
+    db.execute(
+        f"""UPDATE companies SET {column}=CASE
+              WHEN {column} IS NULL OR trim({column})='' THEN ?
+              ELSE {column} END
+            WHERE company_id=?""",
+        (source_url, company_id),
+    )
+    if existing:
+        db.commit()
+        return jsonify({
+            "success": True,
+            "data": {
+                "research_source_id": existing["research_source_id"],
+                "source_type": source_type,
+                "duplicate": True,
+                "reminder": _company_source_reminder_state(db, company_id),
+            },
+        })
+    try:
+        result = create_research_source(
+            db,
+            {
+                "title": {
+                    "website": "موقع الشركة",
+                    "platform": "منصة الشركة",
+                    "other": "مرجع الشركة",
+                }[source_type],
+                "source_kind": "summary",
+                "origin": "url",
+                "source_url": source_url,
+                "rights_status": "pending",
+                "tags": f"company-source:{source_type}",
+                "notes": (
+                    "رابط قدمته الشركة كسياق فقط؛ لم يُفتح أو يُفحص، "
+                    "ولا يتحول إلى Fact أو Finding قبل retrieval وتحقق فعلي."
+                ),
+            },
+            owner_account_id=account["account_id"],
+            company_id=company_id,
+        )
+    except Exception:
+        db.rollback()
+        return jsonify({"success": False, "error": "SOURCE_CREATE_FAILED"}), 400
+    if not result.get("success"):
+        db.rollback()
+        return jsonify(result), 400
+    return jsonify({
+        "success": True,
+        "data": {
+            **result,
+            "source_type": source_type,
+            "reminder": _company_source_reminder_state(db, company_id),
+        },
+    }), 201
+
+
+@app.route("/api/companies/<company_id>/source-reminder/upload", methods=["POST"])
+def company_source_reminder_upload(company_id):
+    from sana_knowledge import create_uploaded_research_source
+    account = current_account()
+    if not account or not account.get("company_id"):
+        return jsonify({"success": False, "error": "ACCOUNT_REQUIRED"}), 401
+    uploaded = request.files.get("file")
+    if not uploaded:
+        return jsonify({"success": False, "error": "FILE_REQUIRED"}), 400
+    db = get_db()
+    try:
+        result = create_uploaded_research_source(
+            db,
+            filename=uploaded.filename,
+            mime_type=uploaded.mimetype,
+            content=uploaded.read(),
+            payload={
+                "title": uploaded.filename,
+                "source_kind": "file",
+                "rights_status": "pending",
+                "knowledge_scope": "private",
+                "tags": "company-source:file",
+                "notes": (
+                    "ملف قدمته الشركة إلى صندوق المصادر الخاص؛ يبقى في قيد "
+                    "المراجعة ولا يتحول تلقائيًا إلى Fact أو Finding."
+                ),
+                "ingestion_event": "company_source_reminder_upload",
+            },
+            owner_account_id=account["account_id"],
+            company_id=company_id,
+        )
+    except Exception:
+        db.rollback()
+        return jsonify({"success": False, "error": "FILE_UPLOAD_FAILED"}), 400
+    if not result.get("success"):
+        if (
+            result.get("error") == "DUPLICATE_FILE"
+            and result.get("research_source_id")
+        ):
+            return jsonify({
+                "success": True,
+                "data": {
+                    **result,
+                    "duplicate": True,
+                    "reminder": _company_source_reminder_state(db, company_id),
+                },
+            })
+        return jsonify(result), 409 if result.get("error") == "DUPLICATE_FILE" else 400
+    return jsonify({
+        "success": True,
+        "data": {
+            **result,
+            "reminder": _company_source_reminder_state(db, company_id),
+        },
+    }), 201
+
+
+@app.route("/api/companies/<company_id>/memory", methods=["GET", "POST"])
+def company_memory_api(company_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    db = get_db()
+    company = db.execute(
+        "SELECT company_id FROM companies WHERE company_id=?", (company_id,)
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    from sana_company_memory import record_memory, retrieve_memory
+    if request.method == "GET":
+        keys = [key for key in request.args.getlist("memory_key") if key]
+        data = retrieve_memory(
+            db, company_id, case_id=request.args.get("case_id"),
+            problem=request.args.get("problem"), kpi=request.args.get("kpi"),
+            decision_id=request.args.get("decision_id"),
+            task_id=request.args.get("task_id"), memory_keys=keys or None,
+            include_history=request.args.get("include_history") == "1",
+        )
+        return jsonify({"success": True, "data": data})
+    payload = request.get_json(silent=True) or {}
+    actor = current_account() or {}
+    try:
+        data = record_memory(
+            db, company_id,
+            memory_key=payload.get("memory_key"),
+            memory_type=payload.get("memory_type"),
+            value=payload.get("value"),
+            source_ref=payload.get("source_ref"),
+            source_type=payload.get("source_type", "account-input"),
+            observed_at=payload.get("observed_at") or date.today(),
+            period_start=payload.get("period_start"),
+            period_end=payload.get("period_end"),
+            context=payload.get("context"),
+            verification_status=payload.get("verification_status", "UNVERIFIED"),
+            freshness_class=payload.get("freshness_class", "MEDIUM"),
+            source_strength=payload.get("source_strength", 35),
+            verification_confidence=payload.get("verification_confidence", 0),
+            freshness_confidence=payload.get("freshness_confidence", 50),
+            owner_id=actor.get("account_id"), case_id=payload.get("case_id"),
+            asset_id=payload.get("asset_id"), decision_id=payload.get("decision_id"),
+            task_id=payload.get("task_id"), result_ref=payload.get("result_ref"),
+            reason=payload.get("reason"),
+        )
+        db.commit()
+        return jsonify({"success": True, "data": data}), 201
+    except (LookupError, ValueError) as exc:
+        db.rollback()
+        return jsonify({"success": False, "error": str(exc)}), 400
 def _execution_actor():
     account = current_account()
     if not account:
@@ -5137,6 +8481,16 @@ def case_detail(case_id):
     review_context = _build_scan_report_context(case["company_id"], case_id=case_id) or {}
     scan = review_context.get("scan") or {}
     reference_knowledge = review_context.get("reference_knowledge") or _reference_knowledge_fallback()
+    from sana_decision_room import decision_execution_loop
+    from sana_company_memory import retrieve_memory
+    loops = []
+    for decision in decisions:
+        try:
+            loops.append(decision_execution_loop(
+                db, case["company_id"], decision["decision_id"]
+            ))
+        except LookupError:
+            pass
     return jsonify({
         "success": True,
         "data": {
@@ -5146,7 +8500,10 @@ def case_detail(case_id):
             "decisions":       [dict(d) for d in decisions],
             "tasks":           [dict(t) for t in tasks],
             "p0_impact_reviews": [dict(r) for r in p0_impact_reviews],
-            "affected_assets": [dict(a) for a in affected_assets],
+            "decision_execution_loops": loops,
+            "affected_assets": [
+                _client_asset_view(asset) for asset in affected_assets
+            ],
             "sop_docs":        sop_docs,
             "reports":         [],  # لا توجد جداول تقارير مرتبطة بالقضية حالياً
             "scan":             scan,
@@ -5154,6 +8511,11 @@ def case_detail(case_id):
             "scan_journey":     review_context.get("scan_journey"),
             "knowledge_diagnostic": latest_diagnostic(db, case_id),
             "reference_knowledge": reference_knowledge,
+            "company_memory": retrieve_memory(
+                db, case["company_id"], case_id=case_id,
+                problem=case["declared_problem"],
+                include_history=False,
+            ),
         }
     })
 
@@ -5258,9 +8620,12 @@ def _scan_journey_details(
             (company_id,),
         ).fetchone()
         case_id = fallback_case["case_id"] if fallback_case else None
-    report_url = f"/company/{company_id}/scan-report"
-    assessment_url = "/assessment"
-    case_url = f"/case/{case_id}" if case_id else assessment_url
+    report_url = endpoint_path("scan_report_html", company_id=company_id)
+    assessment_url = endpoint_path("assessment")
+    case_url = (
+        endpoint_path("case_workspace", case_id=case_id)
+        if case_id else assessment_url
+    )
 
     states = {
         "NOT_RUN": {
@@ -5286,7 +8651,7 @@ def _scan_journey_details(
         },
         "COMPLETE": {
             "label": "اكتملت المراجعة — التقرير جاهز",
-            "message": "اكتملت المراجعة البشرية لهذا snapshot. أي دليل ناقص ودرجة غير مكتملة يبقيان N/A — Deferred.",
+            "message": "اكتملت المراجعة البشرية لهذه النتيجة. أي معلومة ناقصة أو درجة غير مكتملة تبقى غير متاحة.",
             "action_label": "افتح التقرير التنفيذي",
             "action_url": report_url,
             "tone": "complete",
@@ -5300,6 +8665,65 @@ def _scan_journey_details(
         "assessment_url": assessment_url,
         "case_url": case_url,
     }
+
+
+def _client_scan_result_redirect(company_id):
+    """لا تعرض الجواز أو التقرير للعميل قبل وجود أول نتيجة Scan."""
+    account = current_account()
+    if (
+        not account
+        or is_admin_preview()
+        or _admin_role() in SYSTEM_ADMIN_ROLES
+    ):
+        return None
+    db = get_db()
+    case = db.execute(
+        """SELECT case_id FROM cases WHERE company_id=?
+           ORDER BY opened_at DESC, case_id DESC LIMIT 1""",
+        (company_id,),
+    ).fetchone()
+    if not case:
+        return redirect(url_for("ceo_home"))
+    scan = db.execute(
+        """SELECT 1 FROM scan_runs
+           WHERE company_id=? AND case_id=? LIMIT 1""",
+        (company_id, case["case_id"]),
+    ).fetchone()
+    if scan:
+        return None
+    return redirect(url_for(
+        "case_result", case_id=case["case_id"], scan="required",
+    ))
+
+
+def _client_confidence_label(score):
+    """صياغة ثقة مفهومة للعميل، مع الحفاظ على الصفر كقيمة حقيقية."""
+    if score is None:
+        return "غير متاحة بعد"
+    try:
+        score = int(score)
+    except (TypeError, ValueError):
+        return "غير متاحة بعد"
+    if score >= 80:
+        return "مرتفعة"
+    if score >= 50:
+        return "متوسطة"
+    return "محدودة"
+
+
+def _client_asset_view(asset):
+    """إضافة اسم أصل عربي للمخرجات العميلية دون تغيير بيانات الأصل الأصلية."""
+    from sana_scan import ASSET_LABELS
+
+    view = dict(asset)
+    client_asset_name = ASSET_LABELS.get(view.get("asset_type"))
+    if not client_asset_name:
+        client_asset_name = view.get("client_asset_name") or "أصل غير مصنّف"
+    view["asset_name"] = client_asset_name
+    view["client_asset_name"] = client_asset_name
+    return view
+
+
 @app.route("/api/companies/<company_id>/passport")
 def passport_summary(company_id):
     guard = enforce_entity_company_scope(company_id)
@@ -5350,12 +8774,20 @@ def passport_summary(company_id):
     )
 
     financial_value = financial_value_gate()
+    client_scan = dict(scan)
+    client_scan["asset_scores"] = [
+        _client_asset_view(asset) for asset in scan_scores
+    ]
+    client_assets = [_client_asset_view(asset) for asset in assets]
+    from sana_company_memory import retrieve_memory
+    memory = retrieve_memory(db, company_id)
     return jsonify({
         "success": True,
         "data": {
             "company": dict(company),
+            "company_memory": memory,
             "journey": journey,
-            "scan": scan,
+            "scan": client_scan,
             "diagnostic_review": (scan_context or {}).get("diagnostic_review"),
             "reference_knowledge": (scan_context or {}).get("reference_knowledge")
                 or _reference_knowledge_fallback(),
@@ -5365,16 +8797,16 @@ def passport_summary(company_id):
                 "complete": len(complete_scores),
                 "total": len(scan_scores),
             },
-            "scan_asset_scores": scan_scores,
+            "scan_asset_scores": client_scan["asset_scores"],
             # Legacy keys remain for clients that still deserialize them, but
             # financial valuation is intentionally unavailable.
             "quality_score": operational_score,
             "current_value": None,
             "potential_value": None,
             "value_gap": None,
-            "assets": [dict(a) for a in assets],
-            "weakest_asset": dict(weakest) if weakest else None,
-            "strongest_asset": dict(strongest) if strongest else None,
+            "assets": client_assets,
+            "weakest_asset": _client_asset_view(weakest) if weakest else None,
+            "strongest_asset": _client_asset_view(strongest) if strongest else None,
             "weakest_asset_case_id": weakest_case["case_id"] if weakest_case else None,
             "score_ready": score_ready,
             "score_missing_reason": score_missing_reason,
@@ -5441,53 +8873,191 @@ SDS_QUESTIONS = {
 }
 
 
-@app.route("/api/companies/<company_id>/sds-question")
-def sds_question(company_id):
-    """SDS-002 MVP: يختار الأصل الأقل أدلة ويعيد سؤاله — بلا جدول جديد."""
-    guard = enforce_entity_company_scope(company_id)
-    if guard:
-        return guard
-    db = get_db()
+def _next_sds_question(db, company_id, case_id=None):
+    """السؤال التالي يغطي فجوة حقيقية فقط، ويتوقف عندما يصبح القرار ممكنًا."""
+    if case_id:
+        case = db.execute(
+            "SELECT case_id,related_asset_id FROM cases WHERE case_id=? AND company_id=?",
+            (case_id, company_id),
+        ).fetchone()
+        if not case:
+            return None
+    else:
+        case = None
     assets = db.execute(
         "SELECT * FROM assets WHERE company_id=?", (company_id,)
     ).fetchall()
     if not assets:
-        return jsonify({"success": False, "error": "NO_ASSETS"}), 404
+        return None
 
-    # COUNT مباشر من evidence لكل أصل — بلا عمود confidence جديد
+    from sana_scan import latest_scan
+    scan = latest_scan(db, case_id) if case_id else None
+    if scan and (
+        scan.get("decision_readiness") in {"READY", "CONDITIONAL"}
+        or scan.get("status") in {"REVIEW_REQUIRED", "COMPLETE"}
+    ):
+        return None
+    score_by_type = {
+        item.get("asset_type"): item
+        for item in (scan or {}).get("asset_scores") or []
+    }
+    conflict_ids = {
+        str(source_id)
+        for conflict in (scan or {}).get("open_conflicts") or []
+        for source_id in conflict.get("source_ids") or []
+    }
+
     evidence_per_asset = {}
     for a in assets:
-        cnt = db.execute(
-            "SELECT COUNT(*) as cnt FROM evidence WHERE company_id=? AND asset_id=?",
-            (company_id, a["asset_id"])
-        ).fetchone()["cnt"]
+        client_asset = _client_asset_view(a)
+        question_id = f"SDS-002:{a['asset_type']}"
+        rows = db.execute(
+            """SELECT evidence_id,date_collected,verification_status
+               FROM evidence
+               WHERE company_id=? AND asset_id=? AND source_ref=?
+               ORDER BY date_collected DESC,evidence_id DESC""",
+            (company_id, a["asset_id"], question_id),
+        ).fetchall()
+        memory = None
+        if case_id:
+            memory = db.execute(
+                """SELECT v.observed_at,v.verification_status
+                   FROM company_memory_items i
+                   JOIN company_memory_versions v
+                     ON v.version_id=i.current_version_id
+                   WHERE i.company_id=? AND i.memory_key=?""",
+                (company_id, f"adaptive:{case_id}:{question_id}"),
+            ).fetchone()
+
+        def _fresh(value):
+            if not value:
+                return False
+            try:
+                observed = value if isinstance(value, date) else date.fromisoformat(
+                    str(value).split("T", 1)[0].split(" ", 1)[0]
+                )
+            except (TypeError, ValueError):
+                return False
+            return observed >= date.today() - timedelta(days=365)
+
+        answered = any(
+            row["verification_status"] != "CONTRADICTED"
+            and str(row["evidence_id"]) not in conflict_ids
+            and _fresh(row["date_collected"])
+            for row in rows
+        ) or bool(
+            memory
+            and memory["verification_status"] != "CONTRADICTED"
+            and _fresh(memory["observed_at"])
+        )
+        score = score_by_type.get(a["asset_type"]) or {}
+        completeness = (score.get("information_completeness") or {}).get("score", 0)
+        evidence_confidence = (score.get("evidence_confidence") or {}).get("score", 0)
+        has_gap = (
+            not scan
+            or score.get("status") == "INCOMPLETE"
+            or bool(score.get("missing_evidence"))
+        )
         evidence_per_asset[a["asset_type"]] = {
-            "count":      cnt,
+            "count":      len(rows),
+            "answered":   answered,
+            "has_gap":    has_gap,
+            "completeness": completeness,
+            "evidence_confidence": evidence_confidence,
             "asset_id":   a["asset_id"],
-            "asset_name": a["asset_name"],
+            "asset_name": client_asset["asset_name"],
+            "client_asset_name": client_asset["client_asset_name"],
         }
 
-    # اختر الأصل صاحب أقل عدد أدلة — عشوائيًا عند التساوي
-    import random
-    valid = {k: v for k, v in evidence_per_asset.items() if k in SDS_QUESTIONS}
+    related_asset_id = case["related_asset_id"] if case else None
+    valid = {
+        key: value for key, value in evidence_per_asset.items()
+        if (
+            key in SDS_QUESTIONS
+            and value["has_gap"]
+            and not value["answered"]
+            and (
+                value["count"] > 0
+                or value["asset_id"] == related_asset_id
+            )
+        )
+    }
     if not valid:
-        return jsonify({"success": False, "error": "NO_QUESTION"}), 404
-    min_count  = min(v["count"] for v in valid.values())
-    candidates = [k for k, v in valid.items() if v["count"] == min_count]
-    chosen     = random.choice(candidates)
-    q          = SDS_QUESTIONS[chosen]
+        return None
+    chosen = min(
+        valid,
+        key=lambda key: (
+            0 if valid[key]["asset_id"] == related_asset_id else 1,
+            valid[key]["completeness"],
+            valid[key]["evidence_confidence"],
+            key,
+        ),
+    )
+    question = SDS_QUESTIONS[chosen]
+    if not case_id:
+        case = db.execute(
+            """SELECT case_id FROM cases
+               WHERE company_id=?
+               ORDER BY (related_asset_id=?) DESC, opened_at DESC, case_id DESC
+               LIMIT 1""",
+            (company_id, valid[chosen]["asset_id"]),
+        ).fetchone()
+        case_id = case["case_id"] if case else None
+    if not case_id:
+        return None
+    return {
+        "question_id": f"SDS-002:{chosen}",
+        "case_id": case_id,
+        "asset_type": chosen,
+        "asset_id": valid[chosen]["asset_id"],
+        "asset_name": valid[chosen]["asset_name"],
+        "client_asset_name": valid[chosen]["client_asset_name"],
+        "question": question["text"],
+        "options": question["options"],
+        "suggestions": question["suggestions"],
+        "gap_reason": (
+            ((score_by_type.get(chosen) or {}).get("missing_evidence") or [None])[0]
+        ),
+        "progress": {
+            "knowledge_coverage": round(
+                sum(item["completeness"] for item in evidence_per_asset.values())
+                / max(1, len(evidence_per_asset))
+            ),
+            "evidence_quality": round(
+                sum(item["evidence_confidence"] for item in evidence_per_asset.values())
+                / max(1, len(evidence_per_asset))
+            ),
+            "open_conflicts": len((scan or {}).get("open_conflicts") or []),
+            "decision_readiness": (scan or {}).get("decision_readiness") or "NOT_READY",
+        },
+        "evidence_per_asset": {
+            key: value["count"] for key, value in evidence_per_asset.items()
+        },
+    }
 
+
+@app.route("/api/companies/<company_id>/sds-question")
+def sds_question(company_id):
+    """SDS-002: سؤال واحد غير مجاب، مرتبط بقضية قائمة دون إنشاء قضية."""
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    data = _next_sds_question(
+        get_db(), company_id, request.args.get("case_id") or None
+    )
     return jsonify({
         "success": True,
-        "data": {
-            "asset_type":       chosen,
-            "asset_id":         evidence_per_asset[chosen]["asset_id"],
-            "asset_name":       evidence_per_asset[chosen]["asset_name"],
-            "question":         q["text"],
-            "options":          q["options"],
-            "suggestions":      q["suggestions"],
-            "evidence_per_asset": {k: v["count"] for k, v in evidence_per_asset.items()},
-        }
+        "data": data,
+        "meta": {
+            "complete": data is None,
+            "message": (
+                "التشخيص أصبح كافيًا لاتخاذ القرار."
+                if data is None else "يوجد سؤال واحد مرتبط بفجوة ستؤثر في القرار."
+            ),
+            "progress_basis": (
+                "تغطية المعرفة، جودة الأدلة، التعارضات المفتوحة، وجاهزية القرار"
+            ),
+        },
     })
 
 
@@ -5710,13 +9280,15 @@ def create_p0_case_decision(case_id):
             proposed.get("title") or "قرار مقترح للمراجعة",
             proposed.get("statement"),
             bottleneck.get("statement"),
-            70,
+            ((scan.get("decision_confidence") or {}).get("score")),
             (scan.get("opportunity") or {}).get("statement"),
             "مقترح",
             "P0",
             json.dumps({
                 "bottleneck": bottleneck,
                 "proposed_decision": proposed,
+                "decision_readiness": scan.get("decision_readiness"),
+                "decision_confidence": scan.get("decision_confidence"),
             }, ensure_ascii=False),
             scan["scan_id"],
             json.dumps(evidence_ids, ensure_ascii=False),
@@ -5748,6 +9320,9 @@ def passport_report_text(company_id):
     guard = enforce_entity_company_scope(company_id)
     if guard:
         return guard
+    scan_redirect = _client_scan_result_redirect(company_id)
+    if scan_redirect:
+        return scan_redirect
     company = context["company"]
     review = context["diagnostic_review"]
     journey = review["journey"]
@@ -5756,6 +9331,8 @@ def passport_report_text(company_id):
     inference = review.get("inference")
     opportunity = review.get("opportunity")
     gate = review["evidence_gate"]
+    confidence = review.get("client_confidence") or {}
+    cycle = review.get("client_evidence_request_cycle") or {}
 
     lines = [
         "══════════════════════════════════════════",
@@ -5763,63 +9340,94 @@ def passport_report_text(company_id):
         "══════════════════════════════════════════",
         "",
         f"تاريخ التصدير: {context['export_date']}",
-        f"company_id: {company['company_id']}",
-        f"company_code: {company.get('company_code') or 'N/A'}",
-        f"Snapshot: {review['snapshot']['scan_id'] or 'NOT_RUN'}",
         "",
         "❶  حالة Sana Scan",
-        f"   الحالة: {journey['status']} — {journey['label']}",
+        f"   الحالة: {journey['label']}",
+        f"   التوضيح: {journey['message']}",
         f"   الإجراء التالي: {journey['action_label']}",
         (
             f"   Sana Score التشغيلي: {context['operational_score']}/100"
             if context["operational_score"] is not None
-            else "   Sana Score التشغيلي: N/A — Deferred حتى تكتمل المحاور وتُراجع بشريًا."
+            else "   Sana Score التشغيلي: غير متاح حتى تكتمل المحاور وتُراجع بشريًا."
         ),
-        "   التقييم المالي: N/A — Deferred — لا توجد منهجية وأدلة مالية معتمدة.",
+        "   التقييم المالي: غير معروض — لا توجد معلومات مالية معتمدة.",
         "",
-        "❷  المشكلة والسؤال الحقيقي",
-        f"   المشكلة: {problem.get('statement') or 'غير محددة بعد'}",
-        f"   السؤال الحقيقي: {problem.get('real_question') or 'يُحدد بعد اكتمال Discovery'}",
-        f"   المصدر: {problem.get('source_id') or 'غير متاح'} · {problem.get('source_type') or 'Discovery'} · {problem.get('source_date') or 'تاريخ غير متاح'}",
+        "نهاية دورة الأدلة: "
+        f"{cycle.get('outcome_label') or 'لم تُحسم بعد'}",
+        f"   الطلبات الحرجة: {cycle.get('critical_request_count', 0)}",
+        (
+            "   الطلبات المغلقة: "
+            f"{cycle.get('closed_request_count', 0)} من "
+            f"{cycle.get('critical_request_count', 0)}"
+        ),
+        f"   الطلبات المتتبعة: {cycle.get('fingerprint_count', 0)}",
         "",
-        "❸  التشخيص والفرصة",
+        "❷  الثقة عبر مراحل القرار",
     ]
+    for stage in confidence.get("stages") or []:
+        stage_view = stage["view"]
+        score = (
+            f" · {stage_view['score']}٪"
+            if stage_view.get("score") is not None
+            else ""
+        )
+        lines.extend([
+            f"   {stage['title']}: {stage_view['label']}{score}",
+            f"      {stage_view['message']}",
+        ])
+    lines.extend([
+        "",
+        "❸  المشكلة والسؤال الحقيقي",
+        f"   المشكلة: {problem.get('statement') or 'غير محددة بعد'}",
+        f"   السؤال الحقيقي: {problem.get('real_question') or 'يُحدد بعد اكتمال جمع المعلومات'}",
+        "",
+        "❹  التشخيص والفرصة",
+    ])
     lines.append(f"   الفرضية: {(hypothesis or {}).get('statement') or 'لا توجد فرضية بعد'}")
-    lines.append(f"   الاستنتاج: {(inference or {}).get('statement') or 'N/A — Deferred حتى يصل دليل مستقل'}")
-    lines.append(f"   الفرصة: {(opportunity or {}).get('statement') or 'N/A — Deferred'}")
-    lines.extend(["", "❹  بوابة الأدلة"])
+    lines.append(f"   الاستنتاج: {(inference or {}).get('statement') or 'غير متاح حتى يصل دليل مستقل'}")
+    lines.append(f"   الفرصة: {(opportunity or {}).get('statement') or 'غير متاحة حتى تكتمل الأدلة'}")
+    lines.extend(["", "❺  المعلومات المطلوبة قبل التنفيذ"])
     if gate["missing_evidence"]:
-        lines.extend(f"   • {item}" for item in gate["missing_evidence"])
+        lines.extend(
+            f"   • {item}"
+            for item in context.get("scan_client_missing_evidence") or []
+        )
     else:
-        lines.append("   لا توجد بنود ناقصة في snapshot الحالي؛ المراجعة البشرية تبقى مطلوبة.")
-    lines.extend(["", "❺  مصادر العميل"])
+        lines.append("   لا توجد بنود ناقصة في النتيجة الحالية؛ تبقى المراجعة البشرية مطلوبة.")
+    lines.extend(["", "❻  المعلومات المستخدمة"])
     if review["client_evidence"]:
         for source in review["client_evidence"]:
             lines.append(
-                f"   {source['source_id']} · {source['classification']} · "
-                f"{source['source_type']} · {source.get('source_date') or 'تاريخ غير متاح'}"
+                f"   {source['client_classification']} · "
+                f"{source['client_source_label']} · "
+                f"{source.get('source_date') or 'تاريخ غير متاح'}"
             )
-            lines.append(f"      {source['statement']} — {source['source_ref']}")
+            confidence_text = (
+                f"{source['confidence']}٪ ({source['client_confidence_label']})"
+                if source.get("confidence") is not None
+                else "غير متاحة بعد"
+            )
+            lines.append(
+                f"      {source['statement']} · درجة الثقة: {confidence_text}"
+            )
     else:
-        lines.append("   لا توجد أدلة عميل مرتبطة بالـ snapshot.")
-    lines.extend(["", "❻  المعرفة المرجعية — ليست Evidence"])
+        lines.append("   لا توجد معلومات مرتبطة بالنتيجة الحالية.")
+    lines.extend(["", "❼  معلومات عامة مرتبطة"])
     references = review["reference_knowledge"].get("references") or []
     if references:
         for ref in references:
-            lines.append(
-                f"   • {ref.get('title')} · {ref.get('source_version') or ref.get('version') or 'دون إصدار'}"
-            )
+            lines.append(f"   • {ref.get('title')}")
             lines.append(
                 f"      سبب المطابقة: {' · '.join(ref.get('match_reasons') or []) or 'مرجع عام'}"
             )
             lines.append(
-                f"      الدليل المطلوب: {ref.get('required_client_evidence') or 'Fact أو Evidence خاص بالشركة'}"
+                f"      المعلومات المطلوبة: {ref.get('required_client_evidence') or 'معلومة خاصة بالشركة'}"
             )
     else:
         lines.append(f"   {review['reference_knowledge'].get('knowledge_gap')}")
 
     lines.append("══════════════════════════════════════════")
-    lines.append("أُنشئت بواسطة سنع — نتيجة حتمية قابلة للتتبع وليست تقييمًا ماليًا.")
+    lines.append("أُنشئت بواسطة سنع — نتيجة قابلة للتتبع وليست تقييمًا ماليًا.")
     lines.append("══════════════════════════════════════════")
 
     return jsonify({"success": True, "data": {"report_text": "\n".join(lines)}})
@@ -5940,6 +9548,13 @@ def _build_scan_report_context(company_id, case_id=None):
             "period_start": source.get("period_start"),
             "period_end": source.get("period_end"),
             "unit": source.get("unit"),
+            "client_classification": _client_source_classification(
+                source.get("classification")
+            ),
+            "client_source_label": _client_source_label(source.get("source_type")),
+            "client_confidence_label": _client_confidence_label(
+                source.get("confidence")
+            ),
         })
 
     findings = [dict(item) for item in (scan.get("findings") or [])]
@@ -5973,6 +9588,16 @@ def _build_scan_report_context(company_id, case_id=None):
         case_id=scan.get("case_id") or canonical_case_id,
         missing_evidence=scan.get("missing_evidence") or [],
     )
+    if scan.get("journey_outcome") == "UNKNOWN":
+        scan_journey.update({
+            "label": "المعلومة غير متاحة الآن",
+            "message": "سجّلنا أن المعلومة غير متاحة الآن؛ لن نعيد طلبها في هذه الدورة.",
+            "action_label": "راجع ما نعرفه",
+            "tone": "neutral",
+            "outcome": "UNKNOWN",
+        })
+    else:
+        scan_journey["outcome"] = scan.get("journey_outcome")
 
     evidence_citations = [
         item for item in citations
@@ -6029,6 +9654,18 @@ def _build_scan_report_context(company_id, case_id=None):
             (company_id, decision["decision_id"]),
         ).fetchone()
         task = dict(task) if task else {}
+        impact_review = {}
+        if task:
+            row = db.execute(
+                """SELECT * FROM p0_impact_reviews
+                   WHERE company_id=? AND decision_id=? AND task_id=?""",
+                (company_id, decision["decision_id"], task["task_id"]),
+            ).fetchone()
+            if row:
+                impact_review = dict(row)
+                impact_review.update(status="MEASURED", status_label="تم القياس")
+        if not impact_review:
+            impact_review = None
         impact = decision.get("expected_impact") or ""
         baseline, target = _number_pair(impact)
         phase = _phase(decision.get("phase_label"))
@@ -6078,6 +9715,7 @@ def _build_scan_report_context(company_id, case_id=None):
             ),
             "baseline": baseline or "غير موثق",
             "target": target or "غير موثق",
+            "impact_review": impact_review,
             "evidence": linked_evidence,
             "impact": impact or "لم يُسجل أثر متوقع بعد",
             "status": decision.get("status") or "مقترح",
@@ -6088,24 +9726,6 @@ def _build_scan_report_context(company_id, case_id=None):
                 linked_evidence,
                 impact,
             ]),
-        })
-
-    if not initiatives and proposed_decision:
-        proposed_sources = proposed_decision.get("source_ids") or []
-        initiatives.append({
-            "phase": "0–30 يومًا",
-            "decision_id": None,
-            "decision_title": "قرار مقترح للمراجعة البشرية",
-            "task": proposed_decision.get("statement") or "جمع الدليل واعتماد القرار",
-            "owner": "غير محدد — يلزم الاعتماد",
-            "due_date": "غير محدد — يلزم الاعتماد",
-            "kpi": "غير محدد — يلزم اعتماد مقياس نجاح",
-            "baseline": "غير موثق",
-            "target": "غير موثق",
-            "evidence": _initiative_sources(source_ids=proposed_sources),
-            "impact": opportunity.get("statement") if opportunity else "غير موثق",
-            "status": "مقترح — مراجعة بشرية مطلوبة",
-            "completeness": False,
         })
 
     phases = []
@@ -6127,18 +9747,18 @@ def _build_scan_report_context(company_id, case_id=None):
     elif status == "REVIEW_REQUIRED" and bottleneck:
         executive_answer = bottleneck.get("statement") or "يوجد اختناق مرشح يحتاج اعتمادًا بشريًا."
     elif status == "INCOMPLETE":
-        executive_answer = "لا يمكن اعتماد اختناق بعد؛ نحتاج Fact أو Evidence مستقلًا قبل القرار."
+        executive_answer = "لا يمكن اعتماد اختناق بعد؛ نحتاج معلومة مستقلة قبل القرار."
     else:
         executive_answer = "لم يُنتج التقرير اختناقًا قابلًا للاعتماد بعد."
 
     what_not_do = [
         "لا نبدأ توسعًا أو حملة جديدة قبل اعتماد الاختناق ومقياس نجاحه.",
-        "لا نعامل Hypothesis أو Assumption كحقيقة تنفيذية.",
+        "لا نعامل الاحتمال أو الافتراض كحقيقة تنفيذية.",
         "لا نعد بأثر مالي غير موثق؛ نثبت الأثر عبر KPI قبل وبعد.",
     ]
     if scan.get("missing_evidence"):
         what_not_do.insert(
-            0, "لا نغلق بوابة الأدلة: البنود الناقصة أدناه تظل N/A — Deferred حتى تصل مصادرها."
+            0, "لا نغلق بوابة الأدلة: البنود الناقصة تبقى غير متاحة حتى تصل مصادرها."
         )
 
     reference_knowledge = _safe_contextual_reference_knowledge(
@@ -6162,6 +9782,160 @@ def _build_scan_report_context(company_id, case_id=None):
         }
     hypothesis = hypotheses[0] if hypotheses else None
     inference = inferences[0] if inferences else None
+    impact_review = None
+    if scan.get("case_id"):
+        impact_row = db.execute(
+            """SELECT impact_outcome, result_summary, reviewed_at
+               FROM p0_impact_reviews
+               WHERE company_id=? AND case_id=?
+               ORDER BY reviewed_at DESC, review_id DESC LIMIT 1""",
+            (company_id, scan["case_id"]),
+        ).fetchone()
+        impact_review = dict(impact_row) if impact_row else None
+    client_confidence = _build_client_confidence_view(
+        scan,
+        status,
+        has_run=bool(latest_scan_row),
+        baseline_valid=bool(scan.get("diagnostic_baseline_valid")),
+        impact_review=impact_review,
+    )
+    client_missing_evidence = _client_missing_evidence(
+        scan.get("missing_evidence") or []
+    )
+    client_evidence_request_cycle = _client_evidence_request_cycle(
+        scan.get("evidence_request_cycle"),
+        outcome=scan.get("journey_outcome"),
+    )
+    priority_source_ids = {
+        str(source_id)
+        for source_id in ((bottleneck or opportunity or {}).get("source_ids") or [])
+    }
+    executive_signals = [
+        item for item in evidence_citations
+        if str(item.get("source_id")) in priority_source_ids
+    ]
+    if len(executive_signals) < 3:
+        existing_signal_ids = {
+            str(item.get("source_id")) for item in executive_signals
+        }
+        executive_signals.extend(
+            item for item in evidence_citations
+            if str(item.get("source_id")) not in existing_signal_ids
+        )
+    executive_signals = executive_signals[:3]
+    decision_ready = status in {"REVIEW_REQUIRED", "COMPLETE"}
+    current_decision = (
+        decisions[0] if decisions
+        else proposed_decision if decision_ready else None
+    )
+    next_action = next(
+        (
+            item for item in initiatives
+            if item.get("decision_id") and decision_ready
+        ),
+        None,
+    )
+    execution_plan_available = bool(
+        decision_ready
+        and any(item.get("decision_id") for item in initiatives)
+    )
+    quality = dict(scan.get("diagnostic_quality") or {})
+    if (
+        decision_ready
+        and quality.get("evidence_strength") == "STRONG"
+        and quality.get("data_reliability") in {"HIGH", "MEDIUM"}
+        and not scan.get("open_conflicts")
+    ):
+        report_tier = "EXPANDED"
+        report_tier_label = "تشخيص موسّع مدعوم"
+    elif decision_ready:
+        report_tier = "DIAGNOSTIC"
+        report_tier_label = "تشخيص مكتمل"
+    else:
+        report_tier = "PRELIMINARY"
+        report_tier_label = "تقرير أولي مختصر"
+
+    def _decision_rank(decision):
+        try:
+            linked = len(json.loads(decision.get("evidence_ids") or "[]"))
+        except (TypeError, json.JSONDecodeError):
+            linked = 0
+        completeness = sum(bool(decision.get(key)) for key in (
+            "recommended_action", "reason", "expected_impact",
+            "owner_name", "due_date", "success_metric",
+        ))
+        status_weight = 20 if decision.get("status") == "معتمد" else 10
+        return (
+            status_weight
+            + int(decision.get("confidence_score") or 0)
+            + min(15, linked * 5)
+            + completeness * 3
+        )
+
+    report_decisions = []
+    for rank, decision in enumerate(
+        sorted(decisions, key=_decision_rank, reverse=True)[:5],
+        start=1,
+    ):
+        item = dict(decision)
+        item.update({
+            "rank": rank,
+            "priority_score": _decision_rank(decision),
+            "priority_reason": (
+                decision.get("reason")
+                or "يرتبط مباشرة بالقضية وبالمعلومات المؤهلة في Sana Scan."
+            ),
+            "expected_impact_label": (
+                decision.get("expected_impact")
+                or "أثر متوقع يحتاج معيار نجاح وقياسًا قبل/بعد."
+            ),
+        })
+        report_decisions.append(item)
+
+    asset_scores = list(scan.get("asset_scores") or [])
+    strong_assets = [
+        item for item in asset_scores
+        if item.get("status") == "COMPLETE"
+        and item.get("score") is not None
+        and item["score"] >= 60
+    ]
+    weak_assets = [
+        item for item in asset_scores
+        if item.get("status") == "COMPLETE"
+        and item.get("score") is not None
+        and item["score"] < 60
+    ]
+    swot = {
+        "strengths": [{
+            "text": f"{_client_asset_view(item)['client_asset_name']}: {item['score']}/100",
+            "certainty": "مثبت",
+        } for item in strong_assets[:3]],
+        "weaknesses": [{
+            "text": f"{_client_asset_view(item)['client_asset_name']}: {item['score']}/100",
+            "certainty": "مثبت",
+        } for item in weak_assets[:3]],
+        "opportunities": ([{
+            "text": opportunity.get("statement"),
+            "certainty": (
+                "مثبت" if bottleneck and bottleneck.get("classification") == "Inference"
+                else "محتمل / يحتاج تحقق"
+            ),
+        }] if opportunity and opportunity.get("statement") else []),
+        "threats": ([{
+            "text": bottleneck.get("statement"),
+            "certainty": (
+                "مثبت" if bottleneck.get("classification") == "Inference"
+                else "محتمل / يحتاج تحقق"
+            ),
+        }] if bottleneck and bottleneck.get("statement") else []) + [{
+            "text": conflict.get("verification_question"),
+            "certainty": "محتمل / يحتاج تحقق",
+        } for conflict in (scan.get("open_conflicts") or [])[:2]],
+    }
+    swot["priority_link"] = (
+        (report_decisions[0].get("title") if report_decisions else None)
+        or (opportunity or {}).get("statement")
+    )
     diagnostic_review = {
         "contract_version": "SANA-DIAGNOSTIC-REVIEW-v1",
         "snapshot": {
@@ -6172,6 +9946,9 @@ def _build_scan_report_context(company_id, case_id=None):
             "methodology_version": scan.get("methodology_version"),
         },
         "journey": scan_journey,
+        "journey_outcome": scan.get("journey_outcome"),
+        "evidence_request_cycle": dict(scan.get("evidence_request_cycle") or {}),
+        "client_evidence_request_cycle": client_evidence_request_cycle,
         "problem": problem,
         "hypothesis": hypothesis,
         "inference": inference,
@@ -6183,6 +9960,7 @@ def _build_scan_report_context(company_id, case_id=None):
         "evidence_gate": {
             "open": status in {"NOT_RUN", "INCOMPLETE"},
             "missing_evidence": list(scan.get("missing_evidence") or []),
+            "requests": list(scan.get("evidence_requests") or []),
             "next_required": scan_journey["action_label"],
             "decision_allowed": status in {"REVIEW_REQUIRED", "COMPLETE"},
             "final_score_allowed": status in {"REVIEW_REQUIRED", "COMPLETE"}
@@ -6206,6 +9984,7 @@ def _build_scan_report_context(company_id, case_id=None):
             "ai_used": bool(scan.get("ai_used")),
             "reference_knowledge_available": reference_knowledge.get("available", True),
         },
+        "client_confidence": client_confidence,
     }
 
     return {
@@ -6220,6 +9999,11 @@ def _build_scan_report_context(company_id, case_id=None):
         "scan_opportunity": opportunity,
         "scan_proposed_decision": proposed_decision,
         "scan_missing_evidence": list(scan.get("missing_evidence") or []),
+        "scan_evidence_requests": list(scan.get("evidence_requests") or []),
+        "scan_evidence_request_cycle": dict(scan.get("evidence_request_cycle") or {}),
+        "scan_client_evidence_request_cycle": client_evidence_request_cycle,
+        "scan_journey_outcome": scan.get("journey_outcome"),
+        "scan_client_missing_evidence": client_missing_evidence,
         "scan_diagnostic_quality": dict(scan.get("diagnostic_quality") or {}),
         "scan_diagnostic_baseline": scan.get("diagnostic_baseline"),
         "scan_open_conflicts": list(scan.get("open_conflicts") or []),
@@ -6234,6 +10018,16 @@ def _build_scan_report_context(company_id, case_id=None):
         "scan_initiatives": initiatives,
         "scan_unplanned_decisions": unplanned_decisions,
         "scan_executive_answer": executive_answer,
+        "scan_executive_signals": executive_signals,
+        "scan_current_decision": current_decision,
+        "scan_next_action": next_action,
+        "scan_decision_ready": decision_ready,
+        "scan_execution_plan_available": execution_plan_available,
+        "scan_report_tier": report_tier,
+        "scan_report_tier_label": report_tier_label,
+        "scan_questions_complete": decision_ready,
+        "scan_swot": swot,
+        "scan_report_decisions": report_decisions,
         "scan_what_not_do": what_not_do,
         "scan_journey": scan_journey,
         "scan_score_progress": {
@@ -6258,6 +10052,7 @@ def _build_scan_report_context(company_id, case_id=None):
             else None
         ),
         "scan_review_note": scan_journey["message"],
+        "scan_client_confidence": client_confidence,
         "reference_knowledge": reference_knowledge,
         "diagnostic_review": diagnostic_review,
     }
@@ -6330,11 +10125,111 @@ def _build_passport_context(company_id):
         "complete": 0,
         "total": 0,
     }
+    context["assets_sorted"] = [
+        _client_asset_view(asset) for asset in context["assets_sorted"]
+    ]
+    context["scan"] = dict(context.get("scan") or {})
+    context["scan"]["asset_scores"] = [
+        _client_asset_view(asset)
+        for asset in context["scan"].get("asset_scores") or []
+    ]
+    context["weakest_asset"] = (
+        _client_asset_view(weakest) if weakest else None
+    )
     context["score_ready"] = context["operational_score"] is not None
     context["reference_knowledge"] = context.get(
         "reference_knowledge", _reference_knowledge_fallback()
     )
+    case_id = (context.get("scan_case") or {}).get("case_id")
+    if case_id:
+        from sana_human_review import client_payload
+        context["human_review"] = client_payload(db, company_id, case_id)
+    else:
+        context["human_review"] = None
+    from sana_billing import has_company_access
+    context["report_paid_access"] = (
+        _admin_role() in SYSTEM_ADMIN_ROLES
+        or has_company_access(db, company_id)
+    )
+    context["pricing_url"] = url_for("pricing_page", feature="report")
+    context["report_view"] = "main"
+    context["context_query"] = ""
+    assessment_url = endpoint_path("assessment")
+    context["report_summary_url"] = endpoint_path(
+        "scan_report_html", company_id=company_id
+    )
+    context["report_details_url"] = endpoint_path(
+        "scan_report_details_html", company_id=company_id
+    )
+    context["execution_plan_url"] = endpoint_path(
+        "execution_plan_html", company_id=company_id
+    )
+    context["report_pdf_url"] = endpoint_path(
+        "passport_report_pdf", company_id=company_id
+    )
+    context["execution_plan_pdf_url"] = (
+        endpoint_path("passport_report_pdf", company_id=company_id)
+        + "?view=execution-plan"
+    )
+    context["adaptive_questions_url"] = (
+        endpoint_path("case_workspace", case_id=case_id) + "#sdsSection"
+        if case_id else assessment_url
+    )
+    context["report_problem_url"] = (
+        endpoint_path("case_workspace", case_id=case_id) + "#caseQuestion"
+        if case_id else assessment_url
+    )
+    context["report_evidence_url"] = (
+        endpoint_path("case_workspace", case_id=case_id) + "#evidenceSection"
+        if case_id else assessment_url
+    )
+    context["report_decision_url"] = (
+        endpoint_path("case_workspace", case_id=case_id) + "#decisionsSection"
+        if case_id else assessment_url
+    )
+    context["report_results_url"] = (
+        endpoint_path("case_workspace", case_id=case_id) + "#resultsSection"
+        if case_id else assessment_url
+    )
+    context["report_next_url"] = (
+        context["report_results_url"]
+        if context.get("scan_next_action") else context["adaptive_questions_url"]
+    )
+    context["journey_urls"] = {
+        "discovery": endpoint_path("discovery"),
+        "onboarding": endpoint_path("onboarding"),
+        "home": endpoint_path("ceo_home"),
+        "passport": endpoint_path("business_passport"),
+        "logout": endpoint_path("logout"),
+        "company_report": endpoint_path(
+            "scan_report_html", company_id=company_id
+        ),
+        "company_plan": endpoint_path(
+            "execution_plan_html", company_id=company_id
+        ),
+    }
     return context
+
+
+def _render_scan_report_view(company_id, report_view):
+    company = get_db().execute(
+        "SELECT company_id FROM companies WHERE company_id=?", (company_id,)
+    ).fetchone()
+    if not company:
+        return jsonify({"success": False, "error": "COMPANY_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(company["company_id"])
+    if guard:
+        return guard
+    scan_redirect = _client_scan_result_redirect(company_id)
+    if scan_redirect:
+        return scan_redirect
+    ctx = _build_passport_context(company_id)
+    from flask_wtf.csrf import generate_csrf
+    ctx["csrf_value"] = generate_csrf()
+    ctx["report_view"] = report_view
+    ctx["context_query"] = p0_template_context()["context_query"]
+    return render_template("14-passport-report.html", **ctx)
+
 
 @app.route("/company/<company_id>/scan-report")
 def scan_report_html(company_id):
@@ -6347,8 +10242,119 @@ def scan_report_html(company_id):
     guard = enforce_entity_company_scope(company["company_id"])
     if guard:
         return guard
-    ctx = _build_passport_context(company_id)
-    return render_template("14-passport-report.html", **ctx)
+    if request.args.get("view") == "expert-summary":
+        from sana_human_review import summary_for_review
+        case_id = (request.args.get("case_id") or "").strip()
+        review_id = (request.args.get("review_id") or "").strip() or None
+        summary = summary_for_review(
+            get_db(), company_id, case_id, review_id,
+            allow_unapproved=_admin_role() in SYSTEM_ADMIN_ROLES,
+        )
+        if not summary:
+            return jsonify({
+                "success": False,
+                "error": "EXPERT_SUMMARY_NOT_AVAILABLE",
+            }), 404
+        return render_template("25-expert-review-summary.html", summary=summary)
+    return _render_scan_report_view(company_id, "main")
+
+
+@app.route("/company/<company_id>/scan-report/details")
+def scan_report_details_html(company_id):
+    return _render_scan_report_view(company_id, "details")
+
+
+@app.route("/company/<company_id>/execution-plan")
+def execution_plan_html(company_id):
+    return _render_scan_report_view(company_id, "plan")
+
+
+@app.route("/api/cases/<case_id>/human-review", methods=["GET", "POST", "DELETE"])
+def case_human_review(case_id):
+    from sana_human_review import (
+        add_event, client_payload, snapshot_for_case,
+    )
+    db = get_db()
+    case = db.execute(
+        "SELECT company_id FROM cases WHERE case_id=?", (case_id,)
+    ).fetchone()
+    if not case:
+        return jsonify({"success": False, "error": "CASE_NOT_FOUND"}), 404
+    guard = enforce_entity_company_scope(case["company_id"])
+    if guard:
+        return guard
+    if request.method == "GET":
+        return jsonify({"success": True, "data": client_payload(db, case["company_id"], case_id)})
+    if request.method == "DELETE":
+        review = db.execute(
+            """SELECT * FROM case_human_reviews
+               WHERE company_id=? AND case_id=? AND status IN ('REQUESTED','SCHEDULED')
+               ORDER BY requested_at DESC LIMIT 1 FOR UPDATE""",
+            (case["company_id"], case_id),
+        ).fetchone()
+        if not review:
+            return jsonify({"success": False, "message": "لا يوجد طلب مفتوح لإلغائه."}), 404
+        db.execute(
+            """UPDATE case_human_reviews SET status='CANCELLED',cancelled_at=now()
+               WHERE review_id=?""", (review["review_id"],)
+        )
+        add_event(
+            db, review["review_id"], case["company_id"], review["status"],
+            "CANCELLED", current_account()["account_id"],
+        )
+        db.commit()
+        return jsonify({"success": True, "data": client_payload(
+            db, case["company_id"], case_id
+        )})
+    body = request.get_json(silent=True) or {}
+    client_note = str(body.get("client_note") or "").strip()
+    if len(client_note) > 500:
+        return jsonify({
+            "success": False,
+            "message": "اختصر الملاحظة إلى 500 حرف أو أقل.",
+        }), 400
+    payload = client_payload(db, case["company_id"], case_id)
+    if payload["settings"].get("requires_subscription") and _admin_role() not in SYSTEM_ADMIN_ROLES:
+        return jsonify({
+            "success": False,
+            "error": "SUBSCRIPTION_REQUIRED",
+            "message": "مراجعة خبير سنع ضمن الاشتراك.",
+            "redirect": url_for("pricing_page", feature="expert_review"),
+        }), 402
+    if not payload["settings"]["available"]:
+        return jsonify({"success": False, "message": "الحجز المدفوع غير مفعّل حاليًا."}), 409
+    active = payload.get("review")
+    if active and active["status"] in {"REQUESTED", "SCHEDULED"}:
+        return jsonify({"success": False, "message": "يوجد طلب مراجعة مفتوح لهذه القضية."}), 409
+    account = current_account()
+    snapshot = snapshot_for_case(db, case["company_id"], case_id)
+    decision = snapshot.get("decision") or {}
+    review_id = "HRV-" + uuid.uuid4().hex[:12].upper()
+    db.execute(
+        """INSERT INTO case_human_reviews
+           (review_id,company_id,case_id,decision_id,requested_by,
+             reason_code,reason_label,status,before_snapshot_json,client_note,
+             expert_summary_status)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            review_id, case["company_id"], case_id, decision.get("decision_id"),
+            account["account_id"], "human_review_request",
+            "طلب مراجعة بشرية", "REQUESTED",
+            json.dumps(snapshot, ensure_ascii=False, default=str), client_note or None,
+            "DRAFT",
+        ),
+    )
+    add_event(db, review_id, case["company_id"], None, "REQUESTED", account["account_id"])
+    _admin_audit(
+        db, account["account_id"], "human_review_requested",
+        "case_human_review", review_id, case["company_id"],
+        reason="طلب العميل مراجعة بشرية",
+        metadata={"case_id": case_id, "has_client_note": bool(client_note)},
+    )
+    db.commit()
+    return jsonify({"success": True, "data": client_payload(
+        db, case["company_id"], case_id
+    )}), 201
 @app.route("/api/companies/<company_id>/scan/report-pdf")
 @app.route("/api/companies/<company_id>/passport/report-pdf")
 def passport_report_pdf(company_id):
@@ -6361,12 +10367,50 @@ def passport_report_pdf(company_id):
     guard = enforce_entity_company_scope(company["company_id"])
     if guard:
         return guard
+    from sana_billing import has_company_access
+    if (
+        _admin_role() not in SYSTEM_ADMIN_ROLES
+        and not has_company_access(get_db(), company_id)
+    ):
+        return redirect(url_for("pricing_page", feature="report_pdf"))
 
-    ctx = _build_passport_context(company_id)
-    if not ctx:
-        return jsonify({"success": False, "error": "BUILD_FAILED"}), 500
-
-    html_string = render_template("14-passport-report.html", **ctx)
+    expert_summary = request.args.get("view") == "expert-summary"
+    if not expert_summary:
+        scan_redirect = _client_scan_result_redirect(company_id)
+        if scan_redirect:
+            return scan_redirect
+    if expert_summary:
+        from sana_human_review import summary_for_review
+        case_id = (request.args.get("case_id") or "").strip()
+        review_id = (request.args.get("review_id") or "").strip() or None
+        summary = summary_for_review(
+            get_db(), company_id, case_id, review_id,
+            allow_unapproved=_admin_role() in SYSTEM_ADMIN_ROLES,
+        )
+        if not summary:
+            return jsonify({
+                "success": False,
+                "error": "EXPERT_SUMMARY_NOT_AVAILABLE",
+            }), 404
+        html_string = render_template(
+            "25-expert-review-summary.html", summary=summary,
+        )
+        safe_name = summary["company_name"].replace("/", "-")
+        download_name = f"Sana-Expert-Review_{safe_name}.pdf"
+    else:
+        ctx = _build_passport_context(company_id)
+        if not ctx:
+            return jsonify({"success": False, "error": "BUILD_FAILED"}), 500
+        execution_plan_export = request.args.get("view") == "execution-plan"
+        ctx["report_view"] = "plan" if execution_plan_export else "main"
+        ctx["context_query"] = p0_template_context()["context_query"]
+        html_string = render_template("14-passport-report.html", **ctx)
+        safe_name = ctx["company"]["name"].replace("/", "-")
+        download_name = (
+            f"Sana-Execution-Plan_{safe_name}.pdf"
+            if execution_plan_export
+            else f"Sana-Scan_{safe_name}.pdf"
+        )
 
     # lazy import — weasyprint يحتاج libpango كـ system lib
     import weasyprint  # noqa: PLC0415
@@ -6378,8 +10422,7 @@ def passport_report_pdf(company_id):
     ).write_pdf()
 
     from urllib.parse import quote as _quote
-    safe_name = ctx["company"]["name"].replace("/", "-")
-    encoded = _quote(f"Sana-Scan_{safe_name}.pdf", safe="")
+    encoded = _quote(download_name, safe="")
 
     return Response(
         pdf_bytes,
@@ -6656,11 +10699,176 @@ def create_case(company_id):
 # API — Evidence (add evidence = "رفع دليل")
 # ------------------------------------------------------------------
 
+@app.route("/api/companies/<company_id>/clarity-input/prepare", methods=["POST"])
+def prepare_clarity_input(company_id):
+    """يستخرج نص المرفق أو يفرّغ الصوت قبل حفظ إجابة السؤال التكيفي."""
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    case_id = (request.form.get("case_id") or "").strip()
+    question = (request.form.get("question") or "").strip()[:500]
+    upload = request.files.get("file")
+    if not case_id or not upload or not upload.filename:
+        return jsonify({
+            "success": False,
+            "error": "CLARITY_FILE_REQUIRED",
+            "message": "اختر ملفًا أو تسجيلًا لإضافته إلى الإجابة.",
+        }), 400
+    db = get_db()
+    case = db.execute(
+        "SELECT company_id FROM cases WHERE case_id=?", (case_id,)
+    ).fetchone()
+    if not case or case["company_id"] != company_id:
+        return jsonify({
+            "success": False,
+            "error": "CASE_NOT_FOUND",
+            "message": "تعذر العثور على القضية ضمن شركتك.",
+        }), 404
+
+    content = upload.read(10 * 1024 * 1024 + 1)
+    if not content or len(content) > 10 * 1024 * 1024:
+        return jsonify({
+            "success": False,
+            "error": "CLARITY_FILE_SIZE_INVALID",
+            "message": "حجم الملف يجب أن يكون بين 1 بايت و10 ميجابايت.",
+        }), 413
+    filename = os.path.basename(upload.filename)[:180]
+    mime_type = (upload.mimetype or "application/octet-stream").lower()
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    audio_types = {
+        "audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav",
+        "audio/webm", "audio/ogg", "audio/m4a",
+    }
+    image_types = {"image/jpeg", "image/png", "image/webp"}
+    allowed_extensions = {
+        "txt", "md", "csv", "json", "docx", "xlsx", "pdf",
+        "jpg", "jpeg", "png", "webp", "mp3", "mp4", "m4a",
+        "wav", "webm", "ogg",
+    }
+    if extension not in allowed_extensions:
+        return jsonify({
+            "success": False,
+            "error": "CLARITY_FILE_TYPE_INVALID",
+            "message": "استخدم صورة أو PDF أو Word أو Excel أو ملفًا نصيًا أو تسجيلًا صوتيًا.",
+        }), 415
+
+    base_url = (os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL") or "").rstrip("/")
+    api_key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY") or ""
+    extracted_text = ""
+    input_kind = "document"
+    try:
+        if mime_type in audio_types or extension in {"mp3", "m4a", "wav", "webm", "ogg"}:
+            if not base_url or not api_key:
+                raise RuntimeError("تعذر تشغيل التفريغ الصوتي الآن.")
+            response = requests.post(
+                f"{base_url}/audio/transcriptions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                files={"file": (filename, content, mime_type)},
+                data={"model": "gpt-4o-mini-transcribe", "language": "ar"},
+                timeout=90,
+            )
+            response.raise_for_status()
+            extracted_text = (response.json().get("text") or "").strip()
+            input_kind = "voice_transcript"
+        elif mime_type in image_types or extension in {"jpg", "jpeg", "png", "webp"}:
+            if not base_url or not api_key:
+                raise RuntimeError("تعذر قراءة الصورة الآن.")
+            encoded = base64.b64encode(content).decode("ascii")
+            response = requests.post(
+                f"{base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "gpt-5.4-mini",
+                    "max_completion_tokens": 700,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "استخرج فقط المعلومات الظاهرة في الصورة التي تساعد "
+                                    f"على إجابة هذا السؤال عن الشركة: {question or 'السؤال التشخيصي الحالي'}. "
+                                    "اكتب ملخصًا عربيًا قصيرًا دون تخمين أو توصية."
+                                ),
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{mime_type};base64,{encoded}"},
+                            },
+                        ],
+                    }],
+                },
+                timeout=90,
+            )
+            response.raise_for_status()
+            extracted_text = (
+                response.json().get("choices", [{}])[0]
+                .get("message", {}).get("content", "")
+            ).strip()
+            input_kind = "image_extract"
+        elif mime_type == "application/pdf" or extension == "pdf":
+            result = subprocess.run(
+                ["pdftotext", "-", "-"],
+                input=content,
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+            extracted_text = result.stdout.decode("utf-8", errors="replace").strip()
+            input_kind = "report_extract"
+        else:
+            from sana_knowledge import _extract_uploaded_text
+            extracted_text, extraction_status = _extract_uploaded_text(
+                filename, mime_type, content
+            )
+            if extraction_status != "extracted":
+                extracted_text = ""
+            input_kind = "report_extract"
+    except (requests.RequestException, subprocess.SubprocessError, RuntimeError) as exc:
+        app.logger.warning("clarity input preparation failed: %s", exc)
+        return jsonify({
+            "success": False,
+            "error": "CLARITY_PREPARATION_FAILED",
+            "message": "تعذر قراءة الملف الآن. يمكنك كتابة الخلاصة يدويًا والمحاولة لاحقًا.",
+        }), 502
+
+    extracted_text = re.sub(r"\s+", " ", extracted_text).strip()[:6000]
+    if not extracted_text:
+        return jsonify({
+            "success": False,
+            "error": "CLARITY_TEXT_EMPTY",
+            "message": "لم نجد نصًا واضحًا في الملف. اكتب الخلاصة يدويًا أو جرّب ملفًا أوضح.",
+        }), 422
+    return jsonify({
+        "success": True,
+        "data": {
+            "text": extracted_text,
+            "input_kind": input_kind,
+            "filename": filename,
+            "raw_file_retained": False,
+        },
+        "meta": {
+            "message": (
+                "تم تفريغ الصوت. راجع النص قبل الحفظ."
+                if input_kind == "voice_transcript"
+                else "تمت قراءة المرفق. راجع الخلاصة قبل الحفظ."
+            ),
+        },
+    })
+
+
 @app.route("/api/companies/<company_id>/evidence", methods=["POST"])
 def add_evidence(company_id):
     from sana_evidence import save_evidence as _save_evidence
+    from sana_scan import latest_scan, run_scan
     body = request.get_json(force=True)
     db = get_db()
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
 
     case_id     = body.get("case_id")
     asset_id    = body.get("asset_id")
@@ -6669,6 +10877,122 @@ def add_evidence(company_id):
     confidence  = int(body.get("confidence", 50))
     evidence_type = (body.get("evidence_type") or "Evidence").strip()
     source_ref = (body.get("source_ref") or "").strip()
+    adaptive_answer = body.get("adaptive_answer") is True
+    adaptive_question_id = (body.get("question_id") or "").strip()
+    adaptive_value = (body.get("answer") or "").strip()
+    adaptive_context = (
+        body.get("adaptive_context")
+        if isinstance(body.get("adaptive_context"), dict)
+        else {}
+    )
+    request_key = (body.get("request_key") or "").strip()
+    request_fingerprint = (body.get("request_fingerprint") or "").strip()
+    is_unknown_response = (
+        body.get("unknown") is True
+        or str(body.get("response") or "").upper() == "UNKNOWN"
+        or str(body.get("outcome") or "").upper() == "UNKNOWN"
+        or str(body.get("answer") or "").upper() == "UNKNOWN"
+        or str(body.get("answer") or "").strip() in {
+            "ما عندي الآن",
+            "لا أملك هذه المعلومة الآن",
+        }
+    )
+    evidence_response = None
+    if adaptive_answer:
+        if not case_id or not adaptive_question_id or not adaptive_value:
+            return jsonify({
+                "success": False,
+                "error": "ADAPTIVE_ANSWER_CONTEXT_REQUIRED",
+                "message": "الإجابة التكيفية تحتاج القضية والسؤال والإجابة.",
+            }), 400
+        source_type = "SDS-002 تشخيص تراكمي"
+        source_ref = adaptive_question_id
+        evidence_type = "Evidence"
+        confidence = min(confidence, 40)
+        body["information_type"] = "Narrative"
+        body["verification_status"] = "UNVERIFIED"
+        body["source_category"] = "SELF_REPORTED"
+    if is_unknown_response:
+        if not case_id:
+            return jsonify({
+                "success": False,
+                "error": "CASE_REQUIRED_FOR_UNKNOWN_EVIDENCE",
+                "message": "حدد القضية قبل تسجيل عدم توفر المعلومة.",
+            }), 400
+        case = db.execute(
+            "SELECT company_id FROM cases WHERE case_id=?", (case_id,)
+        ).fetchone()
+        if not case or case["company_id"] != company_id:
+            return jsonify({
+                "success": False,
+                "error": "CASE_NOT_FOUND",
+                "message": "تعذر العثور على القضية ضمن شركتك.",
+            }), 404
+        scan = latest_scan(db, case_id) or {}
+        cycle = scan.get("evidence_request_cycle") or {}
+        pending = cycle.get("pending_requests") or []
+        selected = next(
+            (
+                item for item in pending
+                if item.get("fingerprint") == request_fingerprint
+                or item.get("request_key") == request_fingerprint
+            ),
+            None,
+        ) if request_fingerprint else (pending[0] if pending else None)
+        if not selected:
+            return jsonify({
+                "success": False,
+                "error": "EVIDENCE_REQUEST_NOT_AVAILABLE",
+                "message": "لا يوجد طلب دليل حرج مفتوح يمكن إغلاقه بهذه الإجابة.",
+            }), 409
+        request_fingerprint = selected["fingerprint"]
+        request_key = selected.get("request_key") or request_fingerprint
+        title = title or f"لا أملك هذه المعلومة الآن: {selected['question']}"
+        source_type = "CLIENT_UNKNOWN"
+        source_ref = "CLIENT_UNKNOWN"
+        evidence_type = "Evidence"
+        asset_id = asset_id or (
+            db.execute(
+                "SELECT related_asset_id FROM cases WHERE case_id=? AND company_id=?",
+                (case_id, company_id),
+            ).fetchone() or {}
+        ).get("related_asset_id")
+        evidence_response = {
+            "fingerprint": request_fingerprint,
+            "request_key": request_key,
+            "outcome": "UNKNOWN",
+        }
+    if request_key:
+        case = db.execute(
+            "SELECT company_id FROM cases WHERE case_id=?", (case_id,)
+        ).fetchone()
+        if not case or case["company_id"] != company_id:
+            return jsonify({
+                "success": False,
+                "error": "CASE_NOT_FOUND",
+                "message": "تعذر العثور على القضية ضمن شركتك.",
+            }), 404
+        scan = latest_scan(db, case_id) or {}
+        matching_request = next(
+            (
+                item for item in (scan.get("evidence_requests") or [])
+                if item.get("request_key") == request_key
+            ),
+            None,
+        )
+        if not matching_request:
+            return jsonify({
+                "success": False,
+                "error": "EVIDENCE_REQUEST_NOT_FOUND",
+                "message": "هذا الطلب لم يعد مفتوحًا. حدّث الصفحة واختر الطلب الظاهر.",
+            }), 409
+        if matching_request.get("status") not in {"OPEN", "PENDING"}:
+            return jsonify({
+                "success": False,
+                "error": "EVIDENCE_REQUEST_ALREADY_SUBMITTED",
+                "message": "أرسلت معلومة لهذا الطلب بالفعل. انتقل إلى الطلب التالي.",
+            }), 409
+        asset_id = matching_request.get("asset_id") or asset_id
     if evidence_type not in {"Fact", "Evidence"}:
         return jsonify({
             "success": False,
@@ -6708,6 +11032,9 @@ def add_evidence(company_id):
         calibrated["verification_status"] = "UNVERIFIED"
         calibrated["source_category"] = "SELF_REPORTED"
         evidence_type = "Evidence"
+    if is_unknown_response:
+        calibrated["verification_status"] = "UNVERIFIED"
+        calibrated["source_category"] = "UNKNOWN"
 
     # حماية من الحفظ المزدوج: إن وُجد دليل مطابق تمامًا لا يُنشأ سجل جديد.
     existing = db.execute(
@@ -6718,12 +11045,24 @@ def add_evidence(company_id):
         (company_id, case_id, asset_id, title, source_type)
     ).fetchone()
     if existing:
+        existing_scan = latest_scan(db, case_id) if case_id else None
+        next_question = (
+            _next_sds_question(db, company_id, case_id)
+            if adaptive_answer and case_id else None
+        )
         return jsonify({
             "success": True,
-            "data": {"evidence_id": existing["evidence_id"]},
+            "data": {
+                "evidence_id": existing["evidence_id"],
+                "scan": existing_scan,
+                "next_question": next_question,
+                "result_url": f"/case/{case_id}/result" if case_id else None,
+                "message": "تم تحديث الصورة" if adaptive_answer else None,
+            },
             "meta": {
                 "duplicate": True,
-                "message": "هذا الدليل محفوظ مسبقًا بنفس المحتوى — لم يُنشأ سجل مكرر."
+                "message": "هذا الدليل محفوظ مسبقًا بنفس المحتوى — لم يُنشأ سجل مكرر.",
+                "manual_rerun_required": False if adaptive_answer else None,
             }
         }), 200
 
@@ -6750,7 +11089,76 @@ def add_evidence(company_id):
     )
     if not result["success"]:
         return jsonify({"success": False, "error": result["error"]}), 400
+    from sana_company_memory import record_memory
+    memory_key = (
+        f"adaptive:{case_id}:{adaptive_question_id}"
+        if adaptive_answer
+        else calibrated.get("topic_key") or f"evidence:{result['evidence_id']}"
+    )
+    try:
+        record_memory(
+            db, company_id, memory_key=memory_key,
+            memory_type="current_state" if adaptive_answer else "evidence",
+            value=({
+                "question": title.split(" — الإجابة:", 1)[0],
+                "answer": adaptive_value,
+                "claim": title,
+            } if adaptive_answer else {
+                "title": title, "raw_value": calibrated.get("raw_value"),
+                "normalized_value": calibrated.get("normalized_value"),
+                "unit": calibrated.get("unit"),
+            }),
+            source_ref=source_ref, source_type=source_type,
+            observed_at=calibrated.get("observed_at") or date.today(),
+            period_start=calibrated.get("period_start"),
+            period_end=calibrated.get("period_end"),
+            context={
+                "information_type": calibrated.get("information_type"),
+                "topic_key": calibrated.get("topic_key"),
+                "self_reported": calibrated.get("source_category") == "SELF_REPORTED",
+                "adaptive_answer": adaptive_answer,
+                "input_modes": list(adaptive_context.get("input_modes") or [])[:4],
+                "attachment_filename": str(
+                    adaptive_context.get("attachment_filename") or ""
+                )[:180],
+                "attachment_kind": str(
+                    adaptive_context.get("attachment_kind") or ""
+                )[:40],
+                "raw_file_retained": False,
+            },
+            verification_status=calibrated.get("verification_status", "UNVERIFIED"),
+            freshness_class="FAST" if calibrated.get("normalized_value") is not None else "MEDIUM",
+            source_strength=confidence,
+            verification_confidence=(
+                confidence if calibrated.get("verification_status") == "VERIFIED"
+                else 10 if adaptive_answer else 0
+            ),
+            freshness_confidence=50, owner_id=(current_account() or {}).get("account_id"),
+            case_id=case_id, asset_id=asset_id, source_id=result["evidence_id"],
+            reason=(
+                "إجابة تكيفية ذاتية تزيد اكتمال الصورة ولا تغيّر قوة الأصل بذاتها."
+                if adaptive_answer
+                else "إصدار ذاكرة مشتق من سجل الدليل الأصلي؛ لا يستبدل الدليل."
+            ),
+        )
+    except ValueError as exc:
+        db.rollback()
+        return jsonify({"success": False, "error": "MEMORY_RECORDING_FAILED",
+                        "message": str(exc)}), 400
 
+    reevaluated_scan = run_scan(
+        db,
+        case_id,
+        evidence_response={
+            "fingerprint": request_fingerprint,
+            "request_key": request_key,
+            "outcome": "UNKNOWN" if is_unknown_response else "ANSWERED",
+        } if case_id else None,
+    ) if case_id else None
+    next_question = (
+        _next_sds_question(db, company_id, case_id)
+        if adaptive_answer and case_id else None
+    )
     return jsonify({
         "success": True,
         "data": {
@@ -6758,8 +11166,18 @@ def add_evidence(company_id):
             "asset_id":    result.get("asset_id"),
             "asset_name":  result.get("asset_name"),
             "new_score":   result.get("new_score"),
+            "scan": reevaluated_scan,
+            "journey_outcome": (reevaluated_scan or {}).get("journey_outcome"),
+            "next_question": next_question,
+            "result_url": f"/case/{case_id}/result" if case_id else None,
+            "message": "تم تحديث الصورة" if adaptive_answer else None,
         },
-        "meta": {"duplicate": False}
+        "meta": {
+            "duplicate": False,
+            "request_key": request_key or None,
+            "reevaluated": bool(reevaluated_scan),
+            "manual_rerun_required": False if adaptive_answer else None,
+        }
     }), 201
 
 
@@ -7018,7 +11436,7 @@ def healthz():
 
 
 # ------------------------------------------------------------------
-# API — Tasks (إنجاز المهمة = ترفع الأصل المرتبط بالقرار تلقائيًا)
+# API — Tasks (إنجاز المهمة يسجل التنفيذ فقط؛ الدرجة تنتظر أثرًا موثقًا)
 # ------------------------------------------------------------------
 
 @app.route("/api/tasks/<task_id>/complete", methods=["POST"])
@@ -7067,62 +11485,17 @@ def complete_task(task_id):
                 "message": "القرار المرتبط بهذه المهمة لا ينتمي لشركتك."
             }), 403
 
-    updated_assets = []
-    if decision:
-        impacts = db.execute(
-            "SELECT * FROM decision_asset_impacts WHERE decision_id=? "
-            "ORDER BY is_primary DESC, impact_id ASC",
-            (decision["decision_id"],)
-        ).fetchall()
-
-        if impacts:
-            for impact in impacts:
-                asset = db.execute(
-                    "SELECT * FROM assets WHERE asset_id=?", (impact["asset_id"],)
-                ).fetchone()
-                if not asset:
-                    continue
-                new_score = min(100, asset["current_score"] + impact["score_impact"])
-                db.execute(
-                    "UPDATE assets SET current_score=? WHERE asset_id=?",
-                    (new_score, asset["asset_id"])
-                )
-                updated_assets.append({
-                    "asset_id": asset["asset_id"],
-                    "asset_name": asset["asset_name"],
-                    "previous_score": asset["current_score"],
-                    "new_score": new_score,
-                    "is_primary": bool(impact["is_primary"])
-                })
-        elif decision["asset_id"]:
-            # قرارات قديمة بلا سجلات تأثير — تحافظ على السلوك السابق (أصل واحد فقط)
-            asset = db.execute(
-                "SELECT * FROM assets WHERE asset_id=?", (decision["asset_id"],)
-            ).fetchone()
-            if asset:
-                new_score = min(100, asset["current_score"] + 5)
-                db.execute(
-                    "UPDATE assets SET current_score=? WHERE asset_id=?",
-                    (new_score, asset["asset_id"])
-                )
-                updated_assets.append({
-                    "asset_id": asset["asset_id"],
-                    "asset_name": asset["asset_name"],
-                    "previous_score": asset["current_score"],
-                    "new_score": new_score,
-                    "is_primary": True
-                })
-
     db.commit()
     return jsonify({
         "success": True,
         "data": {
             "task_id": task_id,
             "status": "منجزة",
-            "updated_assets": updated_assets,
-            # حقول متوافقة مع النسخة السابقة (أصل واحد) لتجنّب كسر أي مستهلك قديم
-            "asset_id": updated_assets[0]["asset_id"] if updated_assets else None,
-            "new_asset_score": updated_assets[0]["new_score"] if updated_assets else None
+            "updated_assets": [],
+            "asset_scores_changed": False,
+            "impact_measurement_required": True,
+            "asset_id": None,
+            "new_asset_score": None,
         }
     })
 
@@ -7165,14 +11538,113 @@ def record_p0_task_result(task_id):
     result_source_ref = (body.get("result_source_ref") or "").strip()
     impact_outcome = (body.get("impact_outcome") or "").strip().upper()
     impact_notes = (body.get("impact_notes") or "").strip()
-    if not all((result_summary, result_source_ref, impact_outcome, impact_notes)):
+    baseline_value = (body.get("baseline_value") or "").strip()
+    baseline_source_ref = (body.get("baseline_source_ref") or "").strip()
+    baseline_observed_at = (body.get("baseline_observed_at") or "").strip()
+    target_value = (body.get("target_value") or "").strip()
+    target_source_ref = (body.get("target_source_ref") or "").strip()
+    target_observed_at = (body.get("target_observed_at") or "").strip()
+    actual_value = (body.get("actual_value") or "").strip()
+    actual_source_ref = (body.get("actual_source_ref") or result_source_ref).strip()
+    actual_observed_at = (body.get("actual_observed_at") or "").strip()
+    measurement_unit = (body.get("measurement_unit") or "").strip()
+    kpi_direction = (body.get("kpi_direction") or "").strip().upper()
+    baseline_evidence_id = (body.get("baseline_evidence_id") or "").strip()
+    actual_evidence_id = (body.get("actual_evidence_id") or "").strip()
+    if not all((result_summary, result_source_ref, impact_notes)):
         return jsonify({
             "success": False,
             "error": "P0_RESULT_FIELDS_REQUIRED",
             "message": "يلزم وصف النتيجة ومرجعها وحكم الأثر وملاحظات المراجعة.",
         }), 400
-    if impact_outcome not in {"IMPROVED", "UNCHANGED", "WORSE", "INCONCLUSIVE"}:
+    if impact_outcome and impact_outcome not in {
+        "IMPROVED", "UNCHANGED", "WORSE", "INCONCLUSIVE"
+    }:
         return jsonify({"success": False, "error": "P0_IMPACT_OUTCOME_INVALID"}), 400
+    if not all((
+        baseline_value, baseline_source_ref, baseline_observed_at,
+        target_value, target_source_ref, target_observed_at,
+        actual_value, actual_source_ref, actual_observed_at,
+    )):
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_MEASURE_FIELDS_REQUIRED",
+            "message": "يلزم baseline وtarget وactual مع مصدر وتاريخ لكل قياس.",
+        }), 400
+    try:
+        baseline_date = date.fromisoformat(baseline_observed_at)
+        target_date = date.fromisoformat(target_observed_at)
+        actual_date = date.fromisoformat(actual_observed_at)
+    except ValueError:
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_MEASURE_DATE_INVALID",
+            "message": "تواريخ القياس يجب أن تكون بصيغة YYYY-MM-DD.",
+        }), 400
+    if target_date < baseline_date or actual_date < baseline_date:
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_MEASURE_ORDER_INVALID",
+            "message": "لا يمكن أن يسبق تاريخ الهدف أو القياس الفعلي تاريخ الـBaseline.",
+        }), 400
+    if len(impact_notes) < 10:
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_COMPARISON_RATIONALE_REQUIRED",
+            "message": "اشرح بوضوح كيف قورنت النتيجة الفعلية بالـBaseline والهدف.",
+        }), 400
+    try:
+        baseline_numeric = float(body.get("baseline_numeric"))
+        target_numeric = float(body.get("target_numeric"))
+        actual_numeric = float(body.get("actual_numeric"))
+    except (TypeError, ValueError):
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_NUMERIC_VALUES_REQUIRED",
+            "message": "Baseline وTarget وActual يجب أن تكون قيمًا رقمية قابلة للمقارنة.",
+        }), 400
+    if not measurement_unit or kpi_direction not in {
+        "HIGHER_IS_BETTER", "LOWER_IS_BETTER"
+    }:
+        return jsonify({
+            "success": False,
+            "error": "P0_IMPACT_KPI_DEFINITION_REQUIRED",
+            "message": "يلزم تحديد وحدة واحدة واتجاه KPI قبل المقارنة.",
+        }), 400
+    measure_evidence = {}
+    for role, evidence_id in (
+        ("baseline", baseline_evidence_id), ("actual", actual_evidence_id)
+    ):
+        evidence = db.execute(
+            """SELECT evidence_id,source_ref FROM evidence
+               WHERE evidence_id=? AND company_id=? AND case_id=?
+                 AND evidence_type IN ('Fact','Evidence')
+                 AND BTRIM(COALESCE(source_ref,'')) <> ''""",
+            (evidence_id, task["company_id"], task["case_id"]),
+        ).fetchone()
+        if not evidence:
+            return jsonify({
+                "success": False,
+                "error": "P0_IMPACT_EVIDENCE_INVALID",
+                "message": f"مصدر {role} يجب أن يكون دليلًا محفوظًا ومؤهلًا لنفس الشركة والقضية.",
+            }), 400
+        measure_evidence[role] = evidence
+    baseline_source_ref = measure_evidence["baseline"]["source_ref"]
+    actual_source_ref = measure_evidence["actual"]["source_ref"]
+    result_source_ref = actual_source_ref
+    target_source_ref = f"DECISION:{task['decision_id']}"
+    baseline_value = f"{baseline_numeric:g} {measurement_unit}"
+    target_value = f"{target_numeric:g} {measurement_unit}"
+    actual_value = f"{actual_numeric:g} {measurement_unit}"
+    if actual_numeric == baseline_numeric:
+        impact_outcome = "UNCHANGED"
+    elif (
+        (kpi_direction == "HIGHER_IS_BETTER" and actual_numeric > baseline_numeric)
+        or (kpi_direction == "LOWER_IS_BETTER" and actual_numeric < baseline_numeric)
+    ):
+        impact_outcome = "IMPROVED"
+    else:
+        impact_outcome = "WORSE"
 
     account = current_account()
     reviewed_by = account["account_id"] if account else None
@@ -7201,12 +11673,23 @@ def record_p0_task_result(task_id):
         db.execute(
             """INSERT INTO p0_impact_reviews
                (review_id,company_id,case_id,decision_id,task_id,
+                baseline_value,baseline_source_ref,baseline_observed_at,
+                target_value,target_source_ref,target_observed_at,
+                actual_value,actual_source_ref,actual_observed_at,
+                baseline_numeric,target_numeric,actual_numeric,measurement_unit,
+                kpi_direction,baseline_evidence_id,actual_evidence_id,
                 baseline_snapshot_json,result_summary,result_source_ref,
                 impact_outcome,impact_notes,reviewed_by)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 review_id, task["company_id"], task["case_id"], task["decision_id"],
-                task_id, json.dumps(baseline_snapshot, ensure_ascii=False),
+                task_id,
+                baseline_value, baseline_source_ref, baseline_observed_at,
+                target_value, target_source_ref, target_observed_at,
+                actual_value, actual_source_ref, actual_observed_at,
+                baseline_numeric, target_numeric, actual_numeric, measurement_unit,
+                kpi_direction, baseline_evidence_id, actual_evidence_id,
+                json.dumps(baseline_snapshot, ensure_ascii=False),
                 result_summary, result_source_ref, impact_outcome, impact_notes,
                 reviewed_by,
             ),
@@ -7218,6 +11701,35 @@ def record_p0_task_result(task_id):
                    value_note=?, updated_at=now()
                WHERE task_id=?""",
             (result_summary, task_id),
+        )
+        db.execute(
+            """INSERT INTO execution_task_audit
+               (audit_id,company_id,task_id,actor_id,from_status,to_status,
+                change_json,source_ref) VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                "TA-" + secrets.token_hex(8).upper(), task["company_id"], task_id,
+                reviewed_by, task["status"], "منجزة",
+                json.dumps({"status": "منجزة", "impact_review": review_id},
+                           ensure_ascii=False),
+                "p0-impact-review",
+            ),
+        )
+        from sana_company_memory import record_learning
+        record_learning(
+            db, task["company_id"], case_id=task["case_id"],
+            decision_id=task["decision_id"], task_id=task_id, result_ref=review_id,
+            changed=[result_summary] if impact_outcome == "IMPROVED" else [],
+            unchanged=[result_summary] if impact_outcome == "UNCHANGED" else [],
+            hypothesis_correct=(
+                True if impact_outcome == "IMPROVED" else
+                False if impact_outcome == "WORSE" else None
+            ),
+            decision_useful=(
+                True if impact_outcome == "IMPROVED" else
+                False if impact_outcome == "WORSE" else None
+            ),
+            execution_complete=True, remember=impact_notes,
+            source_ref=result_source_ref, owner_id=reviewed_by,
         )
         db.commit()
     except Exception:
@@ -7329,6 +11841,17 @@ def apply_verified_impact(task_id, evidence_id):
         return {"error": "NOT_VERIFIED", "message": "التأثير يُطبَّق فقط بعد التحقق بنتيجة 'مرتبط'"}
     if evidence["impact_applied"]:
         return {"error": "ALREADY_APPLIED", "message": "تم تطبيق التأثير مسبقاً لهذا الإثبات"}
+    measured_impact = db.execute(
+        """SELECT review_id,result_source_ref FROM p0_impact_reviews
+           WHERE task_id=? AND company_id=? AND impact_outcome='IMPROVED'
+           LIMIT 1""",
+        (task_id, evidence["task_company_id"]),
+    ).fetchone()
+    if not measured_impact:
+        return {
+            "error": "IMPACT_MEASUREMENT_REQUIRED",
+            "message": "ارتباط إثبات بالمهمة لا يثبت تحسن الأصل؛ يلزم Before/After موثق.",
+        }
 
     raw_impact = evidence.get("expected_asset_impact")
     if not raw_impact:
@@ -7337,7 +11860,7 @@ def apply_verified_impact(task_id, evidence_id):
     try:
         impact_data = _json.loads(raw_impact)
         asset_id = impact_data["asset_id"]
-        score_impact = int(impact_data["score_impact"])
+        requested_impact = int(impact_data["score_impact"])
     except Exception:
         return {"error": "INVALID_IMPACT_FORMAT"}
 
@@ -7349,6 +11872,7 @@ def apply_verified_impact(task_id, evidence_id):
     if not asset:
         return {"error": "ASSET_NOT_FOUND_OR_FORBIDDEN"}
 
+    score_impact = max(-2, min(2, requested_impact))
     previous_score = asset["current_score"]
     new_score = min(100, previous_score + score_impact)
 
@@ -7369,7 +11893,12 @@ def apply_verified_impact(task_id, evidence_id):
         "new_score": new_score,
         "score_impact_applied": score_impact,
         "evidence_id": evidence_id,
-        "task_id": task_id
+        "task_id": task_id,
+        "impact_review_id": measured_impact["review_id"],
+        "score_change_reason": (
+            "تغيير محدود بعد Before/After موثق بالمراجعة "
+            f"{measured_impact['review_id']} والمصدر {measured_impact['result_source_ref']}."
+        )
     }
 
 
@@ -7622,8 +12151,13 @@ def score_explanation(company_id):
         (company_id,)
     ).fetchall()
     recent_changes = [
-        {"asset_name": r["asset_name"], "title": r["title"],
-         "impact": r["score_impact"], "completed_at": r["completed_at"]}
+        {
+            "asset_name": _client_asset_view(r)["asset_name"],
+            "client_asset_name": _client_asset_view(r)["client_asset_name"],
+            "title": r["title"],
+            "impact": r["score_impact"],
+            "completed_at": r["completed_at"],
+        }
         for r in recent_rows
     ]
 
@@ -7642,7 +12176,13 @@ def score_explanation(company_id):
     pending_list = []
     for r in pending_rows:
         pending_by_asset[r["asset_id"]] = pending_by_asset.get(r["asset_id"], 0) + r["score_impact"]
-        pending_list.append({"asset_name": r["asset_name"], "title": r["title"], "impact": r["score_impact"]})
+        client_asset = _client_asset_view(r)
+        pending_list.append({
+            "asset_name": client_asset["asset_name"],
+            "client_asset_name": client_asset["client_asset_name"],
+            "title": r["title"],
+            "impact": r["score_impact"],
+        })
 
     projected_scores = []
     for a in assets:
@@ -9107,6 +13647,7 @@ def get_expert(expert_id):
 
 def _initialize_and_start_schedulers():
     """هيّئ قاعدة البيانات مرة واحدة دون حجب فتح منفذ الويب."""
+    _RUNTIME_HEALTH["startup"] = "initializing"
     try:
         retry_count = int(os.environ.get("SANA_SCHEMA_INIT_RETRIES", "10"))
     except (TypeError, ValueError):
@@ -9128,6 +13669,8 @@ def _initialize_and_start_schedulers():
                     f"{retry_count} attempts: {exc}",
                     flush=True,
                 )
+                _RUNTIME_HEALTH["startup"] = "failed"
+                _RUNTIME_HEALTH["last_critical_error"] = type(exc).__name__
                 return
             delay = min(2 ** attempt, 5)
             print(
@@ -9138,6 +13681,8 @@ def _initialize_and_start_schedulers():
             time.sleep(delay)
         except Exception as exc:
             print(f"[startup] database initialization failed: {exc}", flush=True)
+            _RUNTIME_HEALTH["startup"] = "failed"
+            _RUNTIME_HEALTH["last_critical_error"] = type(exc).__name__
             return
 
     try:
@@ -9146,10 +13691,15 @@ def _initialize_and_start_schedulers():
         seed_knowledge_db()
     except Exception as exc:
         print(f"[startup] database seeding failed: {exc}", flush=True)
+        _RUNTIME_HEALTH["last_critical_error"] = type(exc).__name__
+    else:
+        _RUNTIME_HEALTH["startup"] = "ok"
 
     # Railway's production web service is web-only. Scheduler ownership must
     # live in one explicit external runner, never in every Gunicorn worker.
     if os.environ.get("SANA_ENV", "").strip().lower() in {"production", "prod"}:
+        for worker in _RUNTIME_HEALTH["workers"]:
+            _RUNTIME_HEALTH["workers"][worker] = "external_required"
         print("[schedulers] disabled in production web runtime", flush=True)
         return
 
@@ -9159,6 +13709,7 @@ def _initialize_and_start_schedulers():
     if reminder_scheduler_enabled:
         from sana_decision_room import start_reminder_scheduler
         start_reminder_scheduler(_connect_pg)
+        _RUNTIME_HEALTH["workers"]["execution_reminders"] = "running"
         print("[execution-reminders] scheduler: every 15 minutes", flush=True)
 
     scheduler_enabled = os.environ.get(
@@ -9167,6 +13718,7 @@ def _initialize_and_start_schedulers():
     if scheduler_enabled:
         from knowledge_backup import start_daily_scheduler
         start_daily_scheduler(_connect_pg)
+        _RUNTIME_HEALTH["workers"]["knowledge_backup"] = "running"
         print(
             "[knowledge-backup] scheduler: reconcile now, then 00:00 Asia/Riyadh",
             flush=True,
@@ -9178,7 +13730,19 @@ def _initialize_and_start_schedulers():
     if research_scheduler_enabled:
         from sana_research_cycle import start_scheduler
         start_scheduler(_connect_pg)
+        _RUNTIME_HEALTH["workers"]["knowledge_research"] = "running"
         print("[knowledge-research] scheduler: checks every 15 minutes", flush=True)
+
+    billing_retry_scheduler_enabled = os.environ.get(
+        "ENABLE_BILLING_NOTIFICATION_RETRY_SCHEDULER", "1"
+    ) == "1"
+    if billing_retry_scheduler_enabled:
+        start_billing_notification_retry_scheduler(_connect_pg)
+        _RUNTIME_HEALTH["workers"]["billing_notification_retry"] = "running"
+        print(
+            "[billing-notification-retry] scheduler: checks every 60 seconds",
+            flush=True,
+        )
 
 
 _startup_thread_started = False
@@ -9434,6 +13998,9 @@ def _enforce_web_process_invariants():
         "ENABLE_EXECUTION_REMINDER_SCHEDULER",
         "ENABLE_KNOWLEDGE_BACKUP_SCHEDULER",
         "ENABLE_KNOWLEDGE_RESEARCH_SCHEDULER",
+        "SANA_BILLING_CLEANUP_WORKER",
+        "ENABLE_BILLING_NOTIFICATION_RETRY_SCHEDULER",
+        "SANA_BILLING_NOTIFICATION_RETRY_WORKER",
     }
     # الغياب يعني 0: عدم ضبط المتغير لا يفتح scheduler بالخطأ.
     enabled = [name for name in scheduler_flags if os.environ.get(name, "0") == "1"]
@@ -9454,6 +14021,439 @@ def _safe_contextual_reference_knowledge(db, company, case, bottleneck):
     except Exception:
         db.rollback()
         return _reference_knowledge_fallback()
+
+
+def _client_source_classification(value):
+    return {
+        "Fact": "حقيقة موثقة",
+        "Evidence": "دليل داعم",
+        "Hypothesis": "احتمال يحتاج تحققًا",
+        "Inference": "استنتاج من المعلومات",
+        "Recommendation": "خطوة مقترحة",
+    }.get(value, "معلومة تحتاج مراجعة")
+
+def _client_source_label(source_type):
+    return {
+        "اكتشاف_ذاتي": "معلومة مقدمة من الشركة",
+        "Discovery / Case": "وصف الشركة لحالتها",
+        "Case": "وصف الحالة",
+        "سجل تشغيل": "سجل تشغيلي",
+    }.get(source_type, "مصدر معلومات")
+
+def _client_missing_evidence(items):
+    """يعرض المطلوب من العميل دون نسخ رموز المصادر الداخلية."""
+    safe_items = []
+    for item in items or []:
+        text = str(item)
+        text = text.replace(
+            "Fact أو Evidence مستقل يدعم فرضية الاختناق قبل إصدار استنتاج أو توصية أو قرار",
+            "معلومة مستقلة تدعم فرضية الاختناق قبل إصدار استنتاج أو توصية أو قرار",
+        )
+        text = text.replace(
+            "تحديث البيانات القديمة قبل الاستنتاج:",
+            "تحديث البيانات القديمة قبل الاستنتاج.",
+        )
+        text = (
+            text.replace("Evidence", "معلومة")
+            .replace("Fact", "معلومة")
+            .replace("Discovery", "جلسة التعريف")
+            .replace("Actual", "بيانات فعلية")
+            .replace("SDS-001", "جلسة التعريف")
+        )
+        text = text.replace("معلومة مستقل", "معلومة مستقلة")
+        text = text.replace("بيانات فعلية موثّق", "بيانات فعلية موثقة")
+        text = re.sub(
+            r"^(Knowledge|Operations|Brand|Data|Independence):",
+            "المحور:",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            r"(?<![\w])(?:CASE|SCAN|EVIDENCE|ER|DEC|IMP|TSK)[A-Z0-9:_-]+",
+            "المصدر المرتبط",
+            text,
+            flags=re.IGNORECASE,
+        )
+        safe_items.append(text)
+    return list(dict.fromkeys(safe_items))
+
+
+def _client_evidence_request_cycle(cycle, *, outcome=None):
+    """يبني ملخصًا قابلًا للمشاركة لدورة الأدلة دون رموزها الداخلية."""
+    cycle = cycle if isinstance(cycle, dict) else {}
+    requests = [
+        item for item in (cycle.get("requests") or [])
+        if isinstance(item, dict)
+    ]
+    fingerprints = {
+        str(item.get("fingerprint")).strip()
+        for item in requests
+        if item.get("fingerprint")
+    }
+    fingerprints.update(
+        str(item).strip()
+        for item in (cycle.get("requested_fingerprints") or [])
+        if str(item).strip()
+    )
+    try:
+        critical_count = int(cycle.get("critical_request_count"))
+    except (TypeError, ValueError):
+        critical_count = len(requests)
+    critical_count = max(0, critical_count)
+    closed_count = sum(
+        1 for item in requests
+        if str(item.get("status") or "").upper() != "PENDING"
+    )
+    outcome = str(outcome or cycle.get("outcome") or "").upper() or None
+    outcome_labels = {
+        "DECISION": "قرار",
+        "CONDITIONAL_EXPERIMENT": "تجربة مشروطة",
+        "UNKNOWN": "UNKNOWN — المعلومة غير متاحة الآن",
+    }
+    return {
+        "outcome": outcome,
+        "outcome_label": outcome_labels.get(outcome, "لم تُحسم بعد"),
+        "critical_request_count": critical_count,
+        "closed_request_count": closed_count,
+        "fingerprint_count": len(fingerprints),
+    }
+
+
+def _client_readiness_view(status, *, score=None, message=None):
+    """يرسم حالات القرار الداخلية بلغة التقرير التي يفهمها العميل."""
+    status = status if status in {"READY", "CONDITIONAL", "NOT_READY"} else "NOT_READY"
+    labels = {
+        "READY": "جاهز",
+        "CONDITIONAL": "مشروط",
+        "NOT_READY": "غير جاهز",
+    }
+    default_messages = {
+        "READY": "المعلومات الحالية كافية للانتقال إلى الخطوة التالية بعد المراجعة.",
+        "CONDITIONAL": "يمكن البدء بخطوة محدودة قابلة للقياس، لكن لا نعتمد قرارًا كبيرًا بعد.",
+        "NOT_READY": "نحتاج معلومات إضافية قبل اعتماد خطوة تنفيذية.",
+    }
+    return {
+        "status": status,
+        "label": labels[status],
+        "message": message or default_messages[status],
+        "score": score,
+        "score_label": _client_confidence_label(score),
+    }
+
+def _build_client_confidence_view(
+    scan,
+    scan_status,
+    *,
+    has_run=False,
+    baseline_valid=False,
+    impact_review=None,
+):
+    """يبني عرض الثقة العام دون كشف provenance أو رموز قاعدة البيانات."""
+    quality = scan.get("diagnostic_quality") or {}
+    decision_confidence = scan.get("decision_confidence") or {}
+    readiness = scan.get("decision_readiness") or "NOT_READY"
+    score = decision_confidence.get("score")
+
+    if not has_run or scan_status in {"NOT_RUN", "INCOMPLETE"}:
+        pre_status = "NOT_READY"
+        pre_message = "لم تكتمل المعلومات اللازمة بعد؛ لا نعتمد نتيجة قبل استكمالها."
+    elif readiness == "READY" and quality.get("evidence_strength") == "STRONG":
+        pre_status = "READY"
+        pre_message = "المعلومات كافية لبناء قرار قابل للمراجعة."
+    elif readiness in {"READY", "CONDITIONAL"}:
+        pre_status = "CONDITIONAL"
+        pre_message = "الصورة مفيدة لخطوة محدودة، وتحتاج تحققًا إضافيًا قبل قرار كبير."
+    else:
+        pre_status = "NOT_READY"
+        pre_message = "المعلومات الحالية لا تكفي لاعتماد قرار تنفيذي."
+
+    if scan_status == "COMPLETE":
+        decision_status = "READY"
+        decision_message = "تمت مراجعة القرار واعتماده لهذه النتيجة."
+    elif readiness in {"READY", "CONDITIONAL"}:
+        decision_status = "CONDITIONAL"
+        decision_message = "يوجد اتجاه عملي، لكنه ينتظر المراجعة والاعتماد قبل التنفيذ."
+    else:
+        decision_status = "NOT_READY"
+        decision_message = "لا يوجد قرار تنفيذي معتمد بعد."
+
+    impact_status = "NOT_READY"
+    impact_message = "لم يُقَس الأثر بعد؛ لا نعرض فترة مرجعية أو نتيجة غير موثقة."
+    if impact_review:
+        outcome = impact_review.get("impact_outcome")
+        if outcome == "INCONCLUSIVE":
+            impact_status = "CONDITIONAL"
+            impact_message = "بدأ القياس، لكن النتيجة الحالية لا تكفي لإثبات الأثر."
+        elif baseline_valid:
+            impact_status = "READY"
+            impact_message = "يوجد قياس موثق للنتيجة يمكن مراجعته مقابل الفترة السابقة."
+        else:
+            impact_status = "CONDITIONAL"
+            impact_message = "توجد نتيجة مسجلة، لكن فترة المقارنة الكاملة غير متاحة بعد."
+
+    return {
+        "stages": [
+            {
+                "key": "pre_decision",
+                "title": "قبل القرار",
+                "view": _client_readiness_view(
+                    pre_status, message=pre_message
+                ),
+            },
+            {
+                "key": "decision",
+                "title": "القرار",
+                "view": _client_readiness_view(
+                    decision_status, score=score, message=decision_message
+                ),
+            },
+            {
+                "key": "impact",
+                "title": "قياس الأثر",
+                "view": _client_readiness_view(
+                    impact_status, message=impact_message
+                ),
+            },
+        ],
+        "decision_score": score,
+        "decision_label": _client_confidence_label(score),
+        "quality_label": _client_quality_label(
+            quality.get("evidence_strength")
+        ),
+        "data_label": _client_quality_label(
+            quality.get("data_reliability")
+        ),
+    }
+
+def _client_quality_label(value):
+    return {
+        "STRONG": "قوية",
+        "MODERATE": "متوسطة",
+        "WEAK": "محدودة",
+        "HIGH": "مرتفعة",
+        "MEDIUM": "متوسطة",
+        "LOW": "محدودة",
+    }.get(value, "غير مكتملة")
+
+def reset_database_schema():
+    """Restore the default schema selection after an isolated test run."""
+    global DATABASE_SCHEMA
+    global _BILLING_TEST_SCHEMA_PREVIOUS
+    global _BILLING_TEST_SCHEMA_PREVIOUS_ENV
+    global _BILLING_TEST_SCHEMA_STATE_SAVED
+    if _BILLING_TEST_SCHEMA_STATE_SAVED:
+        DATABASE_SCHEMA = _BILLING_TEST_SCHEMA_PREVIOUS
+        if _BILLING_TEST_SCHEMA_PREVIOUS_ENV is None:
+            os.environ.pop("SANA_DATABASE_SCHEMA", None)
+        else:
+            os.environ["SANA_DATABASE_SCHEMA"] = _BILLING_TEST_SCHEMA_PREVIOUS_ENV
+        _BILLING_TEST_SCHEMA_PREVIOUS = None
+        _BILLING_TEST_SCHEMA_PREVIOUS_ENV = None
+        _BILLING_TEST_SCHEMA_STATE_SAVED = False
+    else:
+        DATABASE_SCHEMA = None
+        os.environ.pop("SANA_DATABASE_SCHEMA", None)
+
+def drop_billing_test_schema(schema):
+    """Drop only a schema created for a billing test run."""
+    if not schema or not str(schema).startswith("sana_billing_test_"):
+        raise ValueError("BILLING_TEST_SCHEMA_INVALID")
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"DROP SCHEMA IF EXISTS {_quote_schema_identifier(schema)} CASCADE"
+            )
+    finally:
+        conn.close()
+
+def start_billing_notification_retry_scheduler(connect_db, interval_seconds=60):
+    """Start the in-process development scheduler; production uses an external runner."""
+    def loop():
+        while True:
+            try:
+                run_billing_notification_retry_cycle(connect_db)
+            except Exception as exc:
+                print(f"[billing-notification-retry] failed: {exc}", flush=True)
+            time.sleep(interval_seconds)
+
+    thread = _threading.Thread(
+        target=loop, name="sana-billing-notification-retry", daemon=True
+    )
+    thread.start()
+    return thread
+
+def _billing_notification_content(notification_type, payload):
+    """Rebuild billing email content from the non-sensitive outbox payload."""
+    if notification_type not in _BILLING_NOTIFICATION_TYPES:
+        raise ValueError("BILLING_NOTIFICATION_TYPE_INVALID")
+    status = "past_due" if notification_type.endswith("past_due") else "canceled"
+    if status == "past_due":
+        subject = "تعثر دفع اشتراك سنع — مطلوب تحديث وسيلة الدفع"
+        heading = "تعثر دفع اشتراك سنع"
+        explanation = (
+            "تعذر تحصيل دفعة الاشتراك الأخيرة. حدّث وسيلة الدفع أو راجع "
+            "الاشتراك حتى تعود الخدمة للعمل."
+        )
+        link_label = "تحديث وسيلة الدفع أو مراجعة الاشتراك"
+    else:
+        subject = "تم إلغاء اشتراك سنع — ابدأ اشتراكًا جديدًا"
+        heading = "تم إلغاء اشتراك سنع"
+        explanation = (
+            "تم إلغاء الاشتراك، ولذلك توقفت الخدمة. يمكنك بدء اشتراك جديد "
+            "من صفحة الأسعار."
+        )
+        link_label = "بدء اشتراك جديد"
+    recovery_url = str(payload.get("recovery_url") or "").strip()
+    if not recovery_url:
+        raise ValueError("BILLING_RECOVERY_URL_MISSING")
+    html_body = (
+        "<div dir='rtl'>"
+        f"<h2>{html.escape(heading)}</h2>"
+        f"<p>{html.escape(explanation)}</p>"
+        f"<p><a href='{html.escape(recovery_url)}'>"
+        f"{html.escape(link_label)}</a></p>"
+        "</div>"
+    )
+    return subject, html_body
+
+def process_billing_notification_retries(db, batch_size=25):
+    """Send due billing outbox rows; claims make concurrent workers safe."""
+    if not RESEND_API_KEY:
+        return {"status": "disabled", "processed": 0, "sent": 0, "failed": 0}
+    try:
+        batch_size = max(1, min(int(batch_size), 100))
+    except (TypeError, ValueError):
+        batch_size = 25
+    result = {"status": "processed", "processed": 0, "sent": 0, "failed": 0}
+    for _ in range(batch_size):
+        row = _claim_billing_notification_for_retry(db)
+        if not row:
+            break
+        result["processed"] += 1
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+            subject, html_body = _billing_notification_content(
+                row["notification_type"], payload
+            )
+            resend.Emails.send({
+                "from": "سنع <noreply@sanaclarity.com>",
+                "to": [row["recipient_email"]],
+                "subject": subject,
+                "html": html_body,
+            })
+        except Exception as exc:
+            _finish_billing_notification_retry(
+                db, row, sent=False, error_code=type(exc).__name__,
+            )
+            result["failed"] += 1
+        else:
+            _finish_billing_notification_retry(db, row, sent=True)
+            result["sent"] += 1
+    return result
+
+def run_billing_notification_retry_cycle(connect_db, batch_size=25):
+    """Run one isolated retry cycle for a cron job or scheduler."""
+    db = connect_db()
+    try:
+        return process_billing_notification_retries(db, batch_size=batch_size)
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+def _finish_billing_notification_retry(db, row, *, sent, error_code=None):
+    """Release a claim only if it still belongs to this worker."""
+    if sent:
+        db.execute(
+            """UPDATE admin_notification_outbox
+               SET status='sent',sent_at=now(),error_code=NULL,
+                   next_attempt_at=NULL,delivery_lock_token=NULL,
+                   delivery_locked_at=NULL
+               WHERE notification_id=? AND delivery_lock_token=?""",
+            (row["notification_id"], row["delivery_lock_token"]),
+        )
+    else:
+        attempt_count = int(row["attempt_count"])
+        db.execute(
+            """UPDATE admin_notification_outbox
+               SET status='failed',error_code=?,
+                   next_attempt_at=CASE
+                     WHEN ? < ? THEN now() + (? * INTERVAL '1 second')
+                     ELSE NULL
+                   END,
+                   delivery_lock_token=NULL,delivery_locked_at=NULL
+               WHERE notification_id=? AND delivery_lock_token=?""",
+            (
+                (error_code or "RESEND_SEND_FAILED")[:80],
+                attempt_count,
+                _BILLING_NOTIFICATION_MAX_ATTEMPTS,
+                _billing_retry_delay_seconds(attempt_count),
+                row["notification_id"],
+                row["delivery_lock_token"],
+            ),
+        )
+    db.commit()
+
+@app.route("/api/companies/<company_id>/memory/<memory_id>/confirm", methods=["POST"])
+def company_memory_confirm_api(company_id, memory_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    actor = current_account() or {}
+    db = get_db()
+    from sana_company_memory import confirm_memory
+    try:
+        data = confirm_memory(
+            db, company_id, memory_id,
+            actor_id=actor.get("account_id") or "admin-preview",
+            observed_at=payload.get("observed_at"),
+            reason=payload.get("reason"),
+            presented_version_id=payload.get("presented_version_id"),
+        )
+        db.commit()
+        return jsonify({"success": True, "data": data})
+    except (LookupError, ValueError) as exc:
+        db.rollback()
+        status = 404 if isinstance(exc, LookupError) else 400
+        return jsonify({"success": False, "error": str(exc)}), status
+
+
+@app.route("/api/companies/<company_id>/memory/conflicts/<conflict_id>/resolve", methods=["POST"])
+def company_memory_conflict_api(company_id, conflict_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    actor = current_account() or {}
+    db = get_db()
+    from sana_company_memory import resolve_memory_conflict
+    try:
+        data = resolve_memory_conflict(
+            db, company_id, conflict_id, action=payload.get("action"),
+            actor_id=actor.get("account_id") or "admin-preview",
+            reason=payload.get("reason"),
+        )
+        db.commit()
+        return jsonify({"success": True, "data": data})
+    except (LookupError, ValueError) as exc:
+        db.rollback()
+        status = 404 if isinstance(exc, LookupError) else 400
+        return jsonify({"success": False, "error": str(exc)}), status
+
+@app.route("/api/companies/<company_id>/memory/<memory_id>/history")
+def company_memory_history_api(company_id, memory_id):
+    guard = enforce_entity_company_scope(company_id)
+    if guard:
+        return guard
+    from sana_company_memory import list_memory_history
+    data = list_memory_history(get_db(), company_id, memory_id)
+    if not data:
+        return jsonify({"success": False, "error": "MEMORY_NOT_FOUND"}), 404
+    return jsonify({"success": True, "data": data})
 
 
 if __name__ == "__main__":

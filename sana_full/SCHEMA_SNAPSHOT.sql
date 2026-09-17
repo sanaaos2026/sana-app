@@ -224,3 +224,42 @@ CREATE TABLE IF NOT EXISTS users (
     status TEXT DEFAULT 'نشط'::text
 );
 
+-- ── company memory ──
+CREATE TABLE IF NOT EXISTS company_memory_governance (
+    governance_id TEXT NOT NULL, storage_destination TEXT NOT NULL,
+    case_link TEXT NOT NULL, asset_link TEXT NOT NULL, framework_link TEXT NOT NULL,
+    business_event TEXT NOT NULL, version TEXT NOT NULL DEFAULT 'v1.0',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS company_memory_items (
+    memory_id TEXT NOT NULL, company_id TEXT NOT NULL, memory_key TEXT NOT NULL,
+    memory_type TEXT NOT NULL, current_version_id TEXT, current_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+    owner_id TEXT, access_level TEXT NOT NULL DEFAULT 'company',
+    confidentiality TEXT NOT NULL DEFAULT 'private', retention_policy TEXT NOT NULL DEFAULT 'retain_history',
+    usage_rights TEXT NOT NULL DEFAULT 'no_cross_company',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS company_memory_versions (
+    version_id TEXT NOT NULL, memory_id TEXT NOT NULL, company_id TEXT NOT NULL,
+    memory_type TEXT NOT NULL, value_json TEXT NOT NULL, context_json TEXT NOT NULL DEFAULT '{}',
+    period_start DATE, period_end DATE, observed_at DATE NOT NULL, source_ref TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'unknown', case_id TEXT, asset_id TEXT, decision_id TEXT,
+    task_id TEXT, result_ref TEXT, reason TEXT, lifecycle_status TEXT NOT NULL DEFAULT 'CAPTURED',
+    verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED', freshness_class TEXT NOT NULL DEFAULT 'MEDIUM',
+    source_strength INTEGER NOT NULL DEFAULT 0, verification_confidence INTEGER NOT NULL DEFAULT 0,
+    freshness_confidence INTEGER NOT NULL DEFAULT 0, owner_id TEXT, governance_id TEXT NOT NULL,
+    supersedes_version_id TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS company_memory_links (
+    link_id TEXT NOT NULL, company_id TEXT NOT NULL, version_id TEXT NOT NULL,
+    source_type TEXT NOT NULL, source_id TEXT NOT NULL, relationship TEXT NOT NULL DEFAULT 'supports',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS company_memory_conflicts (
+    conflict_id TEXT NOT NULL, company_id TEXT NOT NULL, memory_id TEXT NOT NULL,
+    existing_version_id TEXT NOT NULL, incoming_version_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'OPEN', conflict_reason TEXT NOT NULL,
+    resolution_action TEXT, resolved_version_id TEXT, resolved_by TEXT, resolved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+

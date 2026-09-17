@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  {% include '_csrf-fetch.html' %}
+  <title>{{ seo_title }}</title>
+  {% include '_seo-head.html' %}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{--navy:#081227;--teal:#128b86;--gold:#e8ab39;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--bg:#f7f8fa}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans Arabic",sans-serif}
+    header{padding:22px 24px;display:flex;justify-content:space-between;align-items:center;max-width:1040px;margin:auto}
+    .brand{font-size:22px;font-weight:700;color:var(--navy)}a{color:var(--muted);text-decoration:none;font-size:13px}
+    main{min-height:calc(100vh - 75px);display:grid;place-items:center;padding:24px 16px 70px}.card{width:min(100%,580px);background:#fff;border:1px solid var(--line);border-radius:20px;padding:34px;box-shadow:0 18px 55px rgba(8,18,39,.08)}
+    .label{display:inline-block;background:#fff5db;color:#875b00;border-radius:20px;padding:5px 11px;font-size:12px;font-weight:700}.card h1{font-size:34px;margin:16px 0 8px;color:var(--navy)}.headline{font-size:19px;line-height:1.8;white-space:pre-line;margin:0 0 20px}
+    ul{list-style:none;padding:0;margin:0 0 20px;display:grid;gap:11px}li{display:flex;gap:9px;font-size:14px}li:before{content:"✓";color:var(--teal);font-weight:700}
+    .price-box{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:20px 0;margin-bottom:18px}.was{text-decoration:line-through;color:var(--muted);font-size:14px}.now{font-size:34px;font-weight:700;color:var(--navy)}.now small{font-size:13px;font-weight:500;color:var(--muted)}
+    .coupon-toggle{border:0;background:none;padding:0;color:var(--teal);cursor:pointer;font:inherit;font-size:13px}.coupon{display:none;gap:8px;margin-top:12px}.coupon.open{display:flex}.coupon input{flex:1;border:1px solid var(--line);border-radius:9px;padding:10px}.coupon button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 14px}
+    .summary{font-size:13px;margin:16px 0}.row{display:flex;justify-content:space-between;padding:5px 0}.discount{color:var(--teal)}.cta{width:100%;border:0;border-radius:11px;background:var(--navy);color:#fff;padding:14px;font:inherit;font-weight:700;font-size:16px;cursor:pointer}.cta:disabled{opacity:.55}.message{min-height:23px;font-size:13px;color:#a13b32;margin-top:10px}
+    @media(max-width:560px){.card{padding:25px 20px;border-radius:16px}.card h1{font-size:29px}.headline{font-size:17px}}
+  </style>
+</head>
+<body>
+<header><div class="brand">سنع</div><a href="/">الرئيسية</a></header>
+<main><section class="card">
+  <span class="label" id="saleLabel">عرض الإطلاق</span>
+  <h1 id="planName">سنع</h1>
+  <p class="headline" id="headline">وضوح لعملك وقرار أوضح.</p>
+  <ul id="features"></ul>
+  <div class="price-box">
+    <div class="was" id="basePrice"></div>
+    <div class="now"><span id="salePrice"></span> <small>ريال / شهر</small></div>
+    <button class="coupon-toggle" id="couponToggle">عندك كود خصم؟</button>
+    <div class="coupon" id="couponBox"><input id="couponCode" autocomplete="off" placeholder="اكتب الكود"><button id="applyCoupon">تطبيق</button></div>
+  </div>
+  <div class="summary">
+    <div class="row"><span>السعر</span><b id="summaryPrice"></b></div>
+    <div class="row discount"><span>الخصم</span><b id="summaryDiscount">0 ريال</b></div>
+    <div class="row"><span>المبلغ الآن</span><b id="summaryNow"></b></div>
+  </div>
+  <button class="cta" id="checkout">اشترك الآن</button>
+  <div class="message" id="message"></div>
+</section></main>
+<script>
+const fmt=n=>`${(n/100).toLocaleString('ar-SA')} ريال`;
+const requestedFeature=new URLSearchParams(location.search).get('feature')||'';
+let authenticated=false,code='',current={price_minor:0,discount_minor:0,amount_now_minor:0};
+async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok||!j.success)throw new Error(j.message||j.error||'تعذر الطلب');return j.data}
+function draw(){summaryPrice.textContent=fmt(current.price_minor);summaryDiscount.textContent=fmt(current.discount_minor);summaryNow.textContent=fmt(current.amount_now_minor);checkout.textContent=current.amount_now_minor===0?'ابدأ مجانًا':'اشترك الآن'}
+couponToggle.onclick=()=>couponBox.classList.toggle('open');
+applyCoupon.onclick=async()=>{message.textContent='';try{current=await post('/api/billing/quote',{code:couponCode.value});code=current.coupon_code||'';draw()}catch(e){message.textContent=e.message}};
+checkout.onclick=async()=>{message.textContent='';if(!authenticated){location.href='/signup';return}checkout.disabled=true;try{const d=await post('/api/billing/checkout',{code});location.href=d.redirect||d.url}catch(e){message.textContent=e.message;checkout.disabled=false}};
+(async()=>{try{const r=await fetch('/api/billing/offer'),j=await r.json(),o=j.data;authenticated=j.authenticated;planName.textContent=o.name;headline.textContent=requestedFeature==='expert_review'?'مراجعة خبير سنع والتقرير الكامل ضمن الاشتراك':(requestedFeature==='report_pdf'||requestedFeature==='report'?'حمّل التقرير الكامل وتابع القرار مع سنع':o.headline);saleLabel.textContent=o.sale_label;features.innerHTML=o.features.map(x=>`<li>${x}</li>`).join('');basePrice.textContent=`بدل ${fmt(o.base_price_minor)}`;salePrice.textContent=fmt(o.sale_price_minor).replace(' ريال','');current={price_minor:o.sale_price_minor,discount_minor:0,amount_now_minor:o.sale_price_minor};draw();if(new URLSearchParams(location.search).get('payment')==='pending')message.textContent='لم يكتمل الدفع بعد.'}catch(e){message.textContent='تعذر تحميل الباقة الآن.';checkout.disabled=true}})();
+</script>
+</body>
+</html>
