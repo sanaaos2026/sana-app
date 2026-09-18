@@ -7,6 +7,7 @@ providers = ["python"]
 # افتراضيًا في صورة بايثون القياسية. بدونها، مسار /passport/.../pdf سيفشل
 # بخطأ استيراد وقت الطلب (fail سيء صامت لولا هذا التوثيق).
 [phases.setup]
+nixPkgs = ["python312", "python312Packages.pip"]
 aptPkgs = [
     "libpango-1.0-0",
     "libpangocairo-1.0-0",
@@ -19,7 +20,7 @@ aptPkgs = [
 ]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = ["python3 -m pip install -r requirements.txt"]
 
 [start]
 cmd = "gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 app:app"
